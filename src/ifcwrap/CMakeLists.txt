@@ -109,11 +109,15 @@ if(NOT ${PYTHON_EXECUTABLE} STREQUAL "")
 endif()
 FIND_PACKAGE(Python COMPONENTS Interpreter)
 IF(Python_Interpreter_FOUND OR PYTHON_MODULE_INSTALL_DIR)
-    if (NOT WASM_BUILD)
-    # Not on WASM because we're cross compiling in that case
-    #
     # Python_SOABI example value is 'cp311-win_amd64'.
-    if(WIN32)
+    if(WASM_BUILD)
+        # For WASM we usually don't provide interpreter,
+        # so `find_package` couldn't find `Python_SOABI`.
+        # So we just hardcode it.
+        # .cpython-313-wasm32-emscripten.so
+        set(_python_version "${Python_VERSION_MAJOR}${Python_VERSION_MINOR}")
+        set(PYTHON_EXTENSION_SUFFIX ".cpython-${_python_version}-wasm32-emscripten.so")
+    elseif(WIN32)
         set(PYTHON_EXTENSION_SUFFIX ".${Python_SOABI}.pyd")
     else()
         set(PYTHON_EXTENSION_SUFFIX ".${Python_SOABI}.so")
@@ -131,7 +135,6 @@ IF(Python_Interpreter_FOUND OR PYTHON_MODULE_INSTALL_DIR)
             SUFFIX ${PYTHON_EXTENSION_SUFFIX}
         )
     endif()
-    endif(NOT WASM_BUILD)
 
     if (PYTHON_MODULE_INSTALL_DIR)
 	set(python_package_dir "${PYTHON_MODULE_INSTALL_DIR}")
