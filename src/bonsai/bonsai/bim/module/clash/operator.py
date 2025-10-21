@@ -16,6 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Bonsai.  If not, see <http://www.gnu.org/licenses/>.
 
+from . import prefilter
 import os
 import bpy
 import json
@@ -315,6 +316,32 @@ class ExecuteIfcClash(bpy.types.Operator, ExportHelper):
                     return ("snapshot.png", f.read())
 
             clasher.get_viewpoint_snapshot = get_viewpoint_snapshot
+
+        # Bbox prefilter hook (if enabled)
+        if self.props.enable_bbox_prefilter and self.props.bbox_database_path:
+            try:
+                from bonsai.bim.module.federation.spatial_index import FederationIndex
+
+                db_path = Path(self.props.bbox_database_path)
+
+                if prefilter.validate_spatial_index(db_path):
+                    spatial_index = FederationIndex(str(db_path))
+                    spatial_index.build()
+
+                    # Apply prefilter to clash sets
+                    for clash_set in self.props.clash_sets:
+                        set_a = [src.name for src in clash_set.a]
+                        set_b = [src.name for src in clash_set.b]
+
+                        candidates = prefilter.get_candidate_pairs(
+                            set_a, set_b, spatial_index, tolerance=0.0
+                        )
+
+                        self.report({'INFO'}, f"Prefilter: {len(candidates)} candidate pairs")
+                else:
+                    self.report({'WARNING'}, "Invalid spatial index database, skipping prefilter")
+            except Exception as e:
+                self.report({'WARNING'}, f"Prefilter failed: {str(e)}, continuing without prefilter")
 
         clasher.clash_sets = tool.Clash.export_clash_sets()
         clasher.clash()

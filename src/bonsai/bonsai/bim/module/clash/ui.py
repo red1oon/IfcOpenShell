@@ -142,6 +142,16 @@ class BIM_PT_ifcclash(Panel):
 
         layout.prop(props, "export_path")
 
+        # Bbox prefilter section
+        box = layout.box()
+        box.label(text="Performance Optimization", icon='SETTINGS')
+        row = box.row()
+        row.prop(props, "enable_bbox_prefilter", text="Use Spatial Index Prefilter")
+
+        if props.enable_bbox_prefilter:
+            row = box.row()
+            row.prop(props, "bbox_database_path", text="Database")
+
         row = layout.row()
         op = row.operator("bim.execute_ifc_clash")
         op.filepath = props.export_path

@@ -200,3 +200,15 @@ class BIMClashProperties(PropertyGroup):
         if not (clash_set := self.active_clash_set):
             return None
         return tool.Blender.get_active_uilist_element(clash_set.clashes, self.active_clash_index)
+
+    enable_bbox_prefilter: BoolProperty(
+        name="Enable Bbox Prefilter",
+        description="Use spatial index for pre-broadphase filtering",
+        default=False
+    )
+    bbox_database_path: StringProperty(
+        name="Bbox Database Path",
+        description="Path to spatial index database",
+        subtype='FILE_PATH',
+        default=""
+    )
