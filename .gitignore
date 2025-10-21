@@ -1,0 +1,75 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary/generated files
+*.log
+*.tmp
+*.bak
+*.orig
+*.rej
+*~
+.*.sw?
+
+# Build artifacts
+*.o
+*.a
+*.dylib
+*.dll
+
+# Project-specific
+# Duplicate/backup files
+*.1
+*.2
+*.3
+*.001
+*.002
+*.003
+
+# Test/development files
+CheckInside.sh
+code_patterns_complete.txt
+mep_structure_report.txt
+bonsai_config_finder.py
+
+# Documentation (keep in docs/ directory, not root)
+/docs/project-knowledge/
+
+# Blender/Bonsai specific
+*.blend1
+*.blend2
+shapshot.png

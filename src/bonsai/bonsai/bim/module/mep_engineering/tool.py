@@ -631,39 +631,43 @@ class IFCGeometryGenerator:
             # Detect IFC schema
             schema = ifc_file.schema
             print(f"   Schema: {schema}")
-            
+
             # Create or get electrical system
             electrical_system = self._get_or_create_system(ifc_file)
-            
+
             created_elements = []
-            
+
+            # Store route start/end for property tagging
+            route_start = waypoints[0]
+            route_end = waypoints[-1]
+
             # Create segments between waypoints
             for i in range(len(waypoints) - 1):
                 start_pt = Vector(waypoints[i])
                 end_pt = Vector(waypoints[i + 1])
-                
+
                 # Calculate segment properties
                 direction = end_pt - start_pt
                 length = direction.length
-                
+
                 if length < 0.01:  # Skip very short segments
                     continue
-                
+
                 segment = self._create_segment(
                     ifc_file, schema, start_pt, end_pt, length,
-                    diameter, i+1, electrical_system
+                    diameter, i+1, electrical_system, route_start, route_end
                 )
-                
+
                 if segment:
                     created_elements.append(segment)
                     #print(f"  ✓ Segment {i+1}: {start_pt} → {end_pt} (length: {length:.2f}m)")
-            
+
             # Create fittings at waypoints (except start/end)
             if len(waypoints) > 2:
                 for i in range(1, len(waypoints) - 1):
                     fitting = self._create_fitting(
                         ifc_file, schema, waypoints[i],
-                        diameter, i, electrical_system
+                        diameter, i, electrical_system, route_start, route_end
                     )
                     if fitting:
                         created_elements.append(fitting)
@@ -715,11 +719,11 @@ class IFCGeometryGenerator:
         print(f"   ✓ Created new system: {system.Name}")
         return system
     
-    def _create_segment(self, ifc_file, schema, start_pt, end_pt, length, 
-                       diameter, index, system):
+    def _create_segment(self, ifc_file, schema, start_pt, end_pt, length,
+                       diameter, index, system, route_start, route_end):
         """Create cable carrier segment between two points"""
         import ifcopenshell.api
-        
+
         try:
             # Create segment (schema-aware)
             if schema == "IFC2X3":
@@ -740,14 +744,14 @@ class IFCGeometryGenerator:
                 )
                 segment.Name = f"Cable Tray Segment {index}"
                 segment.PredefinedType = "CABLETRAYSEGMENT"
-            
+
             # Validate entity created
             if not segment or not hasattr(segment, 'GlobalId'):
                 print(f"  ✗ Failed to create segment {index}")
                 return None
-            
+
             print(f"  ✓ Created segment {index}: {segment.is_a()} (GlobalId: {segment.GlobalId})")
-            
+
             # Assign to electrical system
             try:
                 ifcopenshell.api.run(
@@ -758,7 +762,7 @@ class IFCGeometryGenerator:
                 )
             except Exception as e:
                 print(f"  ⚠  Warning: Could not assign segment to system: {e}")
-            
+
             # Add property set for dimensions
             try:
                 pset = ifcopenshell.api.run(
@@ -767,7 +771,7 @@ class IFCGeometryGenerator:
                     product=segment,
                     name="Pset_CableCarrierSegmentCommon"
                 )
-                
+
                 ifcopenshell.api.run(
                     "pset.edit_pset",
                     ifc_file,
@@ -779,19 +783,44 @@ class IFCGeometryGenerator:
                 )
             except Exception as e:
                 print(f"  ⚠  Warning: Could not add properties: {e}")
-            
+
+            # Add route info property set for coordinate-based clearing
+            try:
+                route_pset = ifcopenshell.api.run(
+                    "pset.add_pset",
+                    ifc_file,
+                    product=segment,
+                    name="Pset_MEP_RouteInfo"
+                )
+
+                ifcopenshell.api.run(
+                    "pset.edit_pset",
+                    ifc_file,
+                    pset=route_pset,
+                    properties={
+                        "RouteStartX": float(route_start[0]),
+                        "RouteStartY": float(route_start[1]),
+                        "RouteStartZ": float(route_start[2]),
+                        "RouteEndX": float(route_end[0]),
+                        "RouteEndY": float(route_end[1]),
+                        "RouteEndZ": float(route_end[2]),
+                    }
+                )
+            except Exception as e:
+                print(f"  ⚠  Warning: Could not add route info properties: {e}")
+
             return segment
-            
+
         except Exception as e:
             print(f"  ✗ Error creating segment {index}: {e}")
             import traceback
             traceback.print_exc()
             return None
     
-    def _create_fitting(self, ifc_file, schema, location, diameter, index, system):
+    def _create_fitting(self, ifc_file, schema, location, diameter, index, system, route_start, route_end):
         """Create cable carrier fitting (elbow) at waypoint"""
         import ifcopenshell.api
-        
+
         try:
             if schema == "IFC2X3":
                 fitting = ifcopenshell.api.run(
@@ -809,11 +838,11 @@ class IFCGeometryGenerator:
                 )
                 fitting.Name = f"Cable Tray Elbow {index}"
                 fitting.PredefinedType = "BEND"
-            
+
             # Validate entity
             if not fitting or not hasattr(fitting, 'GlobalId'):
                 return None
-            
+
             # Assign to electrical system
             try:
                 ifcopenshell.api.run(
@@ -824,9 +853,34 @@ class IFCGeometryGenerator:
                 )
             except Exception as e:
                 print(f"  ⚠  Warning: Could not assign fitting to system: {e}")
-            
+
+            # Add route info property set for coordinate-based clearing
+            try:
+                route_pset = ifcopenshell.api.run(
+                    "pset.add_pset",
+                    ifc_file,
+                    product=fitting,
+                    name="Pset_MEP_RouteInfo"
+                )
+
+                ifcopenshell.api.run(
+                    "pset.edit_pset",
+                    ifc_file,
+                    pset=route_pset,
+                    properties={
+                        "RouteStartX": float(route_start[0]),
+                        "RouteStartY": float(route_start[1]),
+                        "RouteStartZ": float(route_start[2]),
+                        "RouteEndX": float(route_end[0]),
+                        "RouteEndY": float(route_end[1]),
+                        "RouteEndZ": float(route_end[2]),
+                    }
+                )
+            except Exception as e:
+                print(f"  ⚠  Warning: Could not add route info properties to fitting: {e}")
+
             return fitting
-            
+
         except Exception as e:
             print(f"  ✗ Error creating fitting {index}: {e}")
             return None

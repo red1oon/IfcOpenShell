@@ -409,57 +409,181 @@ class ClearRoutingDebug(Operator):
 
     def execute(self, context):
         import json
+        import logging
         import ifcopenshell.api
         import bonsai.tool as bonsai_tool
+        from pathlib import Path
+        from datetime import datetime
+
+        # Setup logging to file
+        log_path = Path.home() / "Documents" / "bonsai.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Create logger with file handler (basicConfig doesn't work in Blender)
+        logger = logging.getLogger('ClearRoute')
+        logger.setLevel(logging.INFO)
+
+        # Remove existing handlers to avoid duplicates
+        logger.handlers.clear()
+
+        # Add file handler
+        file_handler = logging.FileHandler(str(log_path), mode='a')
+        file_handler.setLevel(logging.INFO)
+        formatter = logging.Formatter(
+            '%(asctime)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+        logger.info("=" * 60)
+        logger.info("Clear Route operation started")
 
         # Clear visualization (existing behavior)
         visualization.clear_debug_objects()
+        logger.info("Visualization objects cleared")
 
-        # NEW: Delete IFC conduit elements
+        # NEW: Delete IFC conduit elements BY COORDINATE MATCHING
         deleted_ifc = 0
         deleted_blender = 0
 
-        if "MEP_last_conduit_ids" in context.scene:
-            try:
-                ifc_file = bonsai_tool.Ifc.get()
-                global_ids = json.loads(context.scene["MEP_last_conduit_ids"])
+        # Get current Start/End coordinates from UI
+        mep_props = context.scene.BIMmepEngineeringProperties
+        route_start = tuple(mep_props.route_start_point)
+        route_end = tuple(mep_props.route_end_point)
 
-                for guid in global_ids:
-                    try:
-                        element = ifc_file.by_guid(guid)
-                        if element:
-                            # Delete IFC element
-                            ifcopenshell.api.run("root.remove_product", ifc_file, product=element)
-                            deleted_ifc += 1
+        logger.info(f"Searching for conduits with Start: {route_start}, End: {route_end}")
 
-                            # Delete associated Blender object if it exists
-                            for obj in bpy.data.objects:
-                                if obj.BIMObjectProperties.ifc_definition_id == element.id():
-                                    bpy.data.objects.remove(obj, do_unlink=True)
-                                    deleted_blender += 1
-                                    break
-                    except RuntimeError:
-                        pass
+        try:
+            ifc_file = bonsai_tool.Ifc.get()
 
-                del context.scene["MEP_last_conduit_ids"]
+            if not ifc_file:
+                logger.warning("No IFC file loaded")
+                self.report({'WARNING'}, "No IFC file loaded")
+                return {"CANCELLED"}
 
-                self.report({'INFO'},
-                           f"Cleared visualization, deleted {deleted_ifc} IFC elements and {deleted_blender} Blender objects")
-            except Exception as e:
-                self.report({'WARNING'},
-                           f"Cleared visualization, but encountered error deleting IFC elements: {str(e)}")
-                import traceback
-                traceback.print_exc()
-        else:
-            self.report({'INFO'}, "Debug objects cleared (no IFC conduits to delete)")
+            # Helper function to match coordinates with tolerance
+            def coords_match(coord1, coord2, tolerance=0.01):
+                """Check if two 3D coordinates match within tolerance (in meters)"""
+                return all(abs(c1 - c2) < tolerance for c1, c2 in zip(coord1, coord2))
+
+            # Find ALL conduits/fittings with matching Start/End coordinates
+            import ifcopenshell.util.element as ifc_util
+            matching_elements = []
+
+            # Search schema-appropriate element types
+            schema = ifc_file.schema
+            logger.info(f"IFC Schema: {schema}")
+
+            all_conduits = []
+            if schema == "IFC2X3":
+                # IFC2X3: Only IfcFlowSegment and IfcFlowFitting exist
+                all_conduits = (
+                    ifc_file.by_type("IfcFlowSegment") +
+                    ifc_file.by_type("IfcFlowFitting")
+                )
+            else:
+                # IFC4+: Use specific cable carrier types
+                all_conduits = (
+                    ifc_file.by_type("IfcFlowSegment") +
+                    ifc_file.by_type("IfcCableCarrierSegment") +
+                    ifc_file.by_type("IfcFlowFitting") +
+                    ifc_file.by_type("IfcCableCarrierFitting")
+                )
+
+            logger.info(f"Scanning {len(all_conduits)} total MEP elements for route matches...")
+
+            for conduit in all_conduits:
+                try:
+                    psets = ifc_util.get_psets(conduit)
+
+                    if "Pset_MEP_RouteInfo" in psets:
+                        route_info = psets["Pset_MEP_RouteInfo"]
+
+                        conduit_start = (
+                            route_info.get("RouteStartX", 0.0),
+                            route_info.get("RouteStartY", 0.0),
+                            route_info.get("RouteStartZ", 0.0)
+                        )
+                        conduit_end = (
+                            route_info.get("RouteEndX", 0.0),
+                            route_info.get("RouteEndY", 0.0),
+                            route_info.get("RouteEndZ", 0.0)
+                        )
+
+                        # Match with 10mm tolerance
+                        if coords_match(route_start, conduit_start, 0.01) and coords_match(route_end, conduit_end, 0.01):
+                            matching_elements.append(conduit)
+                            logger.info(f"  Found matching {conduit.is_a()} (GUID: {conduit.GlobalId})")
+                except Exception as e:
+                    # Skip elements that can't be queried
+                    pass
+
+            logger.info(f"Found {len(matching_elements)} matching conduit elements to delete")
+
+            # Delete all matching elements
+            for element in matching_elements:
+                try:
+                    # CRITICAL: Store ID BEFORE deletion
+                    element_id = element.id()
+                    element_guid = element.GlobalId
+                    element_class = element.is_a()
+
+                    logger.info(f"Processing {element_class} (GUID: {element_guid}, ID: {element_id})")
+
+                    # Delete IFC element
+                    ifcopenshell.api.run("root.remove_product", ifc_file, product=element)
+                    deleted_ifc += 1
+                    logger.info(f"  ✓ Deleted IFC element {element_guid}")
+
+                    # Delete associated Blender object if it exists
+                    blender_obj_found = False
+                    for obj in bpy.data.objects:
+                        if obj.BIMObjectProperties.ifc_definition_id == element_id:
+                            obj_name = obj.name
+                            bpy.data.objects.remove(obj, do_unlink=True)
+                            deleted_blender += 1
+                            blender_obj_found = True
+                            logger.info(f"  ✓ Deleted Blender object '{obj_name}' (ID: {element_id})")
+                            break
+
+                    if not blender_obj_found:
+                        logger.warning(f"  ⚠ No Blender object found for IFC ID {element_id}")
+                except RuntimeError as e:
+                    logger.error(f"  ✗ RuntimeError deleting {element_guid}: {str(e)}")
+                except Exception as e:
+                    logger.error(f"  ✗ Error deleting {element_guid}: {str(e)}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+
+            summary = f"Cleared visualization, deleted {deleted_ifc} IFC elements and {deleted_blender} Blender objects (from ALL routes with same Start/End)"
+            logger.info(f"SUMMARY: {summary}")
+            self.report({'INFO'}, summary)
+
+        except Exception as e:
+            error_msg = f"Cleared visualization, but encountered error deleting IFC elements: {str(e)}"
+            logger.error(error_msg)
+            import traceback
+            logger.error(traceback.format_exc())
+            self.report({'WARNING'}, error_msg)
 
         # Clear stored waypoints and obstacles
+        cleared_data = []
         if "MEP_last_route_waypoints" in context.scene:
             del context.scene["MEP_last_route_waypoints"]
+            cleared_data.append("waypoints")
         if "MEP_filtered_obstacles" in context.scene:
             del context.scene["MEP_filtered_obstacles"]
+            cleared_data.append("obstacles")
         if "MEP_cached_offset" in context.scene:
             del context.scene["MEP_cached_offset"]
+            cleared_data.append("offset")
+
+        if cleared_data:
+            logger.info(f"Cleared scene data: {', '.join(cleared_data)}")
+
+        logger.info("Clear Route operation completed")
+        logger.info("=" * 60)
 
         return {"FINISHED"}
 
