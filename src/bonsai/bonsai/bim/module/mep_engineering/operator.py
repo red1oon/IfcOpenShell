@@ -401,15 +401,66 @@ class VisualizeRoutingObstacles(Operator):
 
 
 class ClearRoutingDebug(Operator):
-    """Clear all routing debug objects"""
+    """Clear all routing debug objects AND generated IFC conduits"""
     bl_idname = "bim.clear_routing_debug"
-    bl_label = "Clear Debug"
-    bl_description = "Remove all MEP debug visualization objects"
+    bl_label = "Clear Route"
+    bl_description = "Remove MEP debug visualization AND delete generated IFC conduit elements"
     bl_options = {"REGISTER", "UNDO"}
-    
+
     def execute(self, context):
+        import json
+        import ifcopenshell.api
+        import bonsai.tool as bonsai_tool
+
+        # Clear visualization (existing behavior)
         visualization.clear_debug_objects()
-        self.report({'INFO'}, "Debug objects cleared")
+
+        # NEW: Delete IFC conduit elements
+        deleted_ifc = 0
+        deleted_blender = 0
+
+        if "MEP_last_conduit_ids" in context.scene:
+            try:
+                ifc_file = bonsai_tool.Ifc.get()
+                global_ids = json.loads(context.scene["MEP_last_conduit_ids"])
+
+                for guid in global_ids:
+                    try:
+                        element = ifc_file.by_guid(guid)
+                        if element:
+                            # Delete IFC element
+                            ifcopenshell.api.run("root.remove_product", ifc_file, product=element)
+                            deleted_ifc += 1
+
+                            # Delete associated Blender object if it exists
+                            for obj in bpy.data.objects:
+                                if obj.BIMObjectProperties.ifc_definition_id == element.id():
+                                    bpy.data.objects.remove(obj, do_unlink=True)
+                                    deleted_blender += 1
+                                    break
+                    except RuntimeError:
+                        pass
+
+                del context.scene["MEP_last_conduit_ids"]
+
+                self.report({'INFO'},
+                           f"Cleared visualization, deleted {deleted_ifc} IFC elements and {deleted_blender} Blender objects")
+            except Exception as e:
+                self.report({'WARNING'},
+                           f"Cleared visualization, but encountered error deleting IFC elements: {str(e)}")
+                import traceback
+                traceback.print_exc()
+        else:
+            self.report({'INFO'}, "Debug objects cleared (no IFC conduits to delete)")
+
+        # Clear stored waypoints and obstacles
+        if "MEP_last_route_waypoints" in context.scene:
+            del context.scene["MEP_last_route_waypoints"]
+        if "MEP_filtered_obstacles" in context.scene:
+            del context.scene["MEP_filtered_obstacles"]
+        if "MEP_cached_offset" in context.scene:
+            del context.scene["MEP_cached_offset"]
+
         return {"FINISHED"}
 
 
