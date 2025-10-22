@@ -346,3 +346,9 @@ For major changes, please open an issue first to discuss.
 
 **Status**: Active Development | **Version**: Phase 2B Complete (v0.2b)  
 **Last Updated**: 2025-01-14
+
+---
+
+## ⚠️ DISCLAIMER
+
+This project benefits from AI-assisted development tools. Please read the full disclosure and development philosophy at the [Bonsai 10D Vision README](https://github.com/red1oon/bonsai10d#disclaimer).
