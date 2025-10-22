@@ -17,6 +17,7 @@ Blender property groups for storing federation settings and state.
 """
 
 import bpy
+from pathlib import Path
 from bpy.types import PropertyGroup
 from bpy.props import (
     StringProperty,
@@ -27,6 +28,33 @@ from bpy.props import (
     EnumProperty,
 )
 from typing import TYPE_CHECKING
+
+
+def get_default_federation_db_path() -> str:
+    """
+    Get intelligent default path for federation database
+
+    Priority:
+    1. ~/Documents/bonsai/ if exists
+    2. ~/Documents/ if exists
+    3. /tmp/ as fallback
+
+    Returns filename: "federation_index.db"
+    """
+    home = Path.home()
+
+    # Priority 1: ~/Documents/bonsai/
+    bonsai_docs = home / "Documents" / "bonsai"
+    if bonsai_docs.exists() and bonsai_docs.is_dir():
+        return str(bonsai_docs / "federation_index.db")
+
+    # Priority 2: ~/Documents/
+    documents = home / "Documents"
+    if documents.exists() and documents.is_dir():
+        return str(documents / "federation_index.db")
+
+    # Priority 3: /tmp/ fallback
+    return "/tmp/federation_index.db"
 
 
 class FederatedFile(PropertyGroup):
@@ -81,9 +109,12 @@ class BIMFederationProperties(PropertyGroup):
     # Federation database settings
     federation_database_path: StringProperty(
         name="Federation Database",
-        description="Path to SQLite federation index database",
+        description="Path to SQLite federation index database.\n"
+                    "Auto-defaults to: ~/Documents/bonsai/federation_index.db\n"
+                    "You can edit this path to point to any .db file",
         subtype='FILE_PATH',
-        default=""
+        default=""  # Empty = will use auto-default on first access
+        # Note: No get/set callbacks = editable in UI
     )
     
     index_loaded: BoolProperty(

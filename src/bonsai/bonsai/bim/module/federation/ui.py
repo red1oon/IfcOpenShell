@@ -56,14 +56,14 @@ class BIM_UL_federated_files(UIList):
 
 class BIM_PT_federation(Panel):
     """Multi-Model Federation panel"""
-    bl_label = "Multi-Model Federation"
+    bl_label = "Federation Management"
     bl_idname = "BIM_PT_federation"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
     bl_options = {"DEFAULT_CLOSED"}
-    # Nest under Quality Control tab
-    bl_parent_id = "BIM_PT_tab_quality_control"
+    # Nest under Federation tab
+    bl_parent_id = "BIM_PT_tab_federation"
     
     def draw(self, context):
         layout = self.layout
@@ -139,7 +139,7 @@ class BIM_PT_federation(Panel):
         row = col.row(align=True)
         if props.index_loaded:
             row.operator("bim.unload_federation_index", icon="PANEL_CLOSE")
-            row.operator("bim.query_federation_index", text="Test Query", icon="VIEWZOOM")
+            row.operator("bim.query_federation_index", text="Run System Tests", icon="CHECKBOX_HLT")
         else:
             row.operator("bim.load_federation_index", icon="IMPORT")
         

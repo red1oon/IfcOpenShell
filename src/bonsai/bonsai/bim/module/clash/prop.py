@@ -154,6 +154,13 @@ class DisciplineClashCandidate(PropertyGroup):
     ifc_class_a: StringProperty(name="Element A IFC Class")
     ifc_class_b: StringProperty(name="Element B IFC Class")
 
+    # Selection state for multi-select visualization
+    selected: BoolProperty(
+        name="Selected",
+        description="Select this clash for visualization",
+        default=False
+    )
+
     # Bbox center coordinates for spatial lookup (when GUIDs don't match)
     bbox_center_a: FloatVectorProperty(
         name="Element A Bbox Center",
@@ -284,13 +291,13 @@ class BIMClashProperties(PropertyGroup):
         items=[
             ('CUSTOM', 'Custom', 'Custom discipline selection'),
             ('ARC_STR', 'Architecture vs Structure', 'Detect ARC-STR clashes'),
-            ('MEP_ARC', 'MEP vs Architecture', 'Detect MEP-ARC clashes'),
-            ('MEP_STR', 'MEP vs Structure', 'Detect MEP-STR clashes'),
-            ('ACMV_ARC', 'ACMV vs Architecture', 'Detect ACMV-ARC clashes'),
             ('ELEC_ARC', 'Electrical vs Architecture', 'Detect ELEC-ARC clashes'),
-            ('ALL_MEP', 'All MEP vs Structure/Architecture', 'All MEP disciplines vs ARC+STR'),
+            ('ACMV_ARC', 'ACMV vs Architecture', 'Detect ACMV-ARC clashes'),
+            ('FP_ARC', 'Fire Protection vs Architecture', 'Detect FP-ARC clashes'),
+            ('SP_ARC', 'Sanitary Plumbing vs Architecture', 'Detect SP-ARC clashes'),
+            ('ALL_MEP', 'All MEP vs ARC+STR (Demo)', 'All MEP (ELEC+ACMV+FP+SP) vs Architecture+Structure'),
         ],
-        default='CUSTOM'
+        default='ELEC_ARC'
     )
     discipline_tolerance: FloatProperty(
         name="Tolerance",

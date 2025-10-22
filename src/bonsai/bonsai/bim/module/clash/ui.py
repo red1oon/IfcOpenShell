@@ -45,22 +45,29 @@ class BIM_PT_ifcclash(Panel):
         layout = self.layout
         props = tool.Clash.get_clash_props()
 
-        # Discipline-based clash detection (simplified workflow)
+        # ================================================================
+        # QUICK CLASH BY DISCIPLINE (Federation-based)
+        # ================================================================
+        # Requires federation DB to be loaded from MEP Engineering panel
         box = layout.box()
-        box.label(text="Quick Clash by Discipline", icon="LIGHT")
+        box.label(text="Quick Clash by Discipline", icon="COMMUNITY")
 
+        # Discipline preset dropdown
         row = box.row()
         row.prop(props, "clash_preset", text="")
 
+        # Custom discipline selection
         if props.clash_preset == 'CUSTOM':
             row = box.row(align=True)
             row.prop(props, "discipline_a", text="")
             row.label(text="vs")
             row.prop(props, "discipline_b", text="")
 
+        # Tolerance
         row = box.row()
         row.prop(props, "discipline_tolerance")
 
+        # Run button
         row = box.row()
         row.operator("bim.clash_by_discipline",
                      text="Run Clash Detection",
@@ -69,19 +76,19 @@ class BIM_PT_ifcclash(Panel):
         # Display discipline clash results
         if props.discipline_clash_loaded and props.discipline_clash_candidates:
             layout.separator()
-            box = layout.box()
-            box.label(text=f"{len(props.discipline_clash_candidates)} Clash Candidates Found", icon="ERROR")
+            result_box = layout.box()
+            result_box.label(text=f"{len(props.discipline_clash_candidates)} Clash Candidates Found", icon="ERROR")
 
             # Header row
-            split = box.split(factor=0.05, align=True)
-            split.label(text="#")
-            row = split.row(align=True)
-            row.label(text="Element A")
-            row.label(text="Element B")
-            row.label(text="Type")
+            header = result_box.row(align=True)
+            header.label(text="#")
+            header.label(text="☐")  # Checkbox column header
+            header.label(text="Element A")
+            header.label(text="Element B")
+            header.label(text="Type")
 
             # Clash list
-            box.template_list(
+            result_box.template_list(
                 "BIM_UL_discipline_clashes",
                 "",
                 props,
@@ -90,14 +97,38 @@ class BIM_PT_ifcclash(Panel):
                 "active_discipline_clash_index"
             )
 
-            # Select clash button
-            row = box.row()
+            # Count selected clashes
+            selected_count = sum(1 for c in props.discipline_clash_candidates if c.selected)
+
+            # Selection helpers
+            if selected_count > 0:
+                sel_row = result_box.row(align=True)
+                sel_row.label(text=f"{selected_count} selected")
+                sel_row.operator("bim.deselect_all_clashes", text="Uncheck All", icon="PANEL_CLOSE")
+
+            # Action buttons
+            row = result_box.row(align=True)
             row.operator("bim.select_discipline_clash", text="Select & Zoom to Clash", icon="ZOOM_IN")
+
+            # Visualize Selected button - enable only if clashes are selected
+            col = row.column()
+            col.enabled = selected_count > 0
+            col.operator("bim.visualize_selected_discipline_clashes",
+                        text=f"Visualize Selected ({selected_count})",
+                        icon="HIDE_OFF")
+
+            row.operator("bim.clear_discipline_clash_visualization", text="Clear", icon="X")
+
+            # Show selection limit warning
+            if selected_count > 10:
+                warn_row = result_box.row()
+                warn_row.alert = True
+                warn_row.label(text=f"⚠ Too many selected ({selected_count}). Max 10 for visualization.", icon="ERROR")
 
             # Show selected clash details
             if 0 <= props.active_discipline_clash_index < len(props.discipline_clash_candidates):
                 candidate = props.discipline_clash_candidates[props.active_discipline_clash_index]
-                detail_box = box.box()
+                detail_box = result_box.box()
                 detail_box.label(text="Clash Details:", icon="INFO")
                 col = detail_box.column(align=True)
                 col.label(text=f"Element A: {candidate.name_a}")
@@ -108,7 +139,10 @@ class BIM_PT_ifcclash(Panel):
                 col.label(text=f"  GUID: {candidate.guid_b}")
                 col.label(text=f"  Class: {candidate.ifc_class_b}")
 
-        # Advanced: Traditional clash sets (collapsible)
+        # ================================================================
+        # TRADITIONAL CLASH SETS (File-based)
+        # ================================================================
+        layout.separator()
         layout.separator()
 
         def draw_traditional_clash_sets(layout_: bpy.types.UILayout, context_: bpy.types.Context) -> None:
@@ -207,14 +241,8 @@ class BIM_PT_ifcclash(Panel):
 
             layout_.prop(props, "export_path")
 
-            box_ = layout_.box()
-            box_.label(text="Performance Optimization", icon='SETTINGS')
-            row = box_.row()
+            row = layout_.row()
             row.prop(props, "enable_bbox_prefilter", text="Use Spatial Index Prefilter")
-
-            if props.enable_bbox_prefilter:
-                row = box_.row()
-                row.prop(props, "bbox_database_path", text="Database")
 
             row = layout_.row()
             op = row.operator("bim.execute_ifc_clash")
@@ -344,6 +372,10 @@ class BIM_UL_smart_groups(bpy.types.UIList):
 
 class BIM_UL_discipline_clashes(bpy.types.UIList):
     """UIList for discipline-based clash results"""
+
+    # Enable built-in filter UI
+    use_filter_show: bpy.props.BoolProperty(default=True)
+
     def draw_item(
         self,
         context,
@@ -357,18 +389,51 @@ class BIM_UL_discipline_clashes(bpy.types.UIList):
         fit_flag,
     ) -> None:
         if item:
-            split = layout.split(factor=0.05, align=True)
-            split.label(text=str(index + 1))
+            # Number column
+            row = layout.row(align=True)
+            row.label(text=str(index + 1), translate=False)
 
-            row = split.row(align=False)
+            # Checkbox column
+            row.prop(item, "selected", text="")
+
+            # Element A
             row.label(text=str(item.name_a), translate=False, icon="NONE")
+
+            # Element B
             row.label(text=str(item.name_b), translate=False, icon="NONE")
 
+            # Type (grayed out)
             col = row.column()
             col.enabled = False
             col.label(text=f"{item.ifc_class_a}/{item.ifc_class_b}")
         else:
             layout.label(text="", translate=False)
+
+    def filter_items(self, context, data, propname):
+        """Filter clash list by text search (supports wildcards)"""
+        clashes = getattr(data, propname)
+        helper_funcs = bpy.types.UI_UL_list
+
+        # Initialize filter flags (all visible by default)
+        flt_flags = [self.bitflag_filter_item] * len(clashes)
+        flt_neworder = []
+
+        # Text filtering
+        if self.filter_name:
+            filter_text = self.filter_name.lower()
+
+            for idx, clash in enumerate(clashes):
+                # Search in: Element A name, Element B name, IFC classes
+                searchable = f"{clash.name_a} {clash.name_b} {clash.ifc_class_a} {clash.ifc_class_b}".lower()
+
+                # Simple wildcard support: convert * to regex
+                import re
+                pattern = filter_text.replace('*', '.*')
+
+                if not re.search(pattern, searchable):
+                    flt_flags[idx] &= ~self.bitflag_filter_item  # Hide this item
+
+        return flt_flags, flt_neworder
 
 
 class BIM_UL_clashes(bpy.types.UIList):

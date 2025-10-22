@@ -614,9 +614,13 @@ class BIM_OT_clash_by_discipline(bpy.types.Operator):
         from pathlib import Path
 
         props = tool.Clash.get_clash_props()
+        fed_props = context.scene.BIMFederationProperties
 
-        # Setup logging
-        log_path = Path.home() / "Documents" / "bonsai.log"
+        # Setup logging to ~/Documents/bonsai/bonsai.log
+        log_dir = Path.home() / "Documents" / "bonsai"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / "bonsai.log"
+
         logger = logging.getLogger('DisciplineClash')
         logger.setLevel(logging.INFO)
         logger.handlers.clear()
@@ -631,8 +635,15 @@ class BIM_OT_clash_by_discipline(bpy.types.Operator):
         logger.info("DISCIPLINE-BASED CLASH DETECTION")
         logger.info("=" * 70)
 
-        # Load federation database
-        db_path = Path.home() / "federatedmodel.db"
+        # Load federation database from Federation panel
+        if not fed_props.federation_database_path:
+            error_msg = "Please load Federation Database in Multi-Model Federation panel"
+            logger.error(error_msg)
+            self.report({'ERROR'}, error_msg)
+            return {"CANCELLED"}
+
+        # Resolve Blender relative paths (// prefix)
+        db_path = Path(bpy.path.abspath(fed_props.federation_database_path))
         if not db_path.exists():
             error_msg = f"Federation database not found: {db_path}"
             logger.error(error_msg)
@@ -645,24 +656,47 @@ class BIM_OT_clash_by_discipline(bpy.types.Operator):
         disc_a = props.discipline_a
         disc_b = props.discipline_b
 
-        if props.clash_preset != 'CUSTOM':
+        # Handle multi-discipline expansion for ALL_MEP preset
+        disciplines_a = []
+        disciplines_b = []
+
+        if props.clash_preset == 'ALL_MEP':
+            # Expand ALL_MEP to all MEP disciplines
+            disciplines_a = ['ELEC', 'ACMV', 'FP', 'SP']
+            disciplines_b = ['ARC', 'STR']
+            logger.info(f"Applied preset: ALL_MEP - Expanding to all combinations")
+            logger.info(f"  MEP disciplines: {', '.join(disciplines_a)}")
+            logger.info(f"  vs: {', '.join(disciplines_b)}")
+        elif props.clash_preset != 'CUSTOM':
             preset_map = {
                 'ARC_STR': ('ARC', 'STR'),
-                'MEP_ARC': ('MEP', 'ARC'),
-                'MEP_STR': ('MEP', 'STR'),
                 'ACMV_ARC': ('ACMV', 'ARC'),
                 'ELEC_ARC': ('ELEC', 'ARC'),
+                'FP_ARC': ('FP', 'ARC'),
+                'SP_ARC': ('SP', 'ARC'),
             }
             if props.clash_preset in preset_map:
                 disc_a, disc_b = preset_map[props.clash_preset]
+                disciplines_a = [disc_a]
+                disciplines_b = [disc_b]
                 logger.info(f"Applied preset: {props.clash_preset}")
+        else:
+            # Custom selection
+            disciplines_a = [disc_a] if disc_a else []
+            disciplines_b = [disc_b] if disc_b else []
 
-        logger.info(f"Discipline A: {disc_a}")
-        logger.info(f"Discipline B: {disc_b}")
+        if not disciplines_a or not disciplines_b:
+            error_msg = "Please select disciplines for clash detection"
+            logger.error(error_msg)
+            self.report({'ERROR'}, error_msg)
+            return {"CANCELLED"}
+
+        logger.info(f"Discipline A: {', '.join(disciplines_a)}")
+        logger.info(f"Discipline B: {', '.join(disciplines_b)}")
         logger.info(f"Tolerance: {props.discipline_tolerance}")
 
         print("\n" + "=" * 70)
-        print(f"CLASH DETECTION: {disc_a} vs {disc_b}")
+        print(f"CLASH DETECTION: {', '.join(disciplines_a)} vs {', '.join(disciplines_b)}")
         print("=" * 70)
 
         try:
@@ -681,36 +715,61 @@ class BIM_OT_clash_by_discipline(bpy.types.Operator):
             print(f"\n✓ Loaded spatial index ({load_time:.2f}s)")
             print(f"  Total elements: {index.stats['total_elements']:,}")
 
-            # Query disciplines
+            # Query and combine elements from all specified disciplines
             print(f"\nQuerying disciplines...")
-            elements_a = index.query_by_discipline(disc_a)
-            elements_b = index.query_by_discipline(disc_b)
+            elements_a = []
+            for disc in disciplines_a:
+                disc_elements = index.query_by_discipline(disc)
+                elements_a.extend(disc_elements)
+                logger.info(f"  {disc}: {len(disc_elements):,} elements")
+                print(f"  {disc}: {len(disc_elements):,} elements")
 
-            logger.info(f"{disc_a} elements: {len(elements_a):,}")
-            logger.info(f"{disc_b} elements: {len(elements_b):,}")
+            elements_b = []
+            for disc in disciplines_b:
+                disc_elements = index.query_by_discipline(disc)
+                elements_b.extend(disc_elements)
+                logger.info(f"  {disc}: {len(disc_elements):,} elements")
+                print(f"  {disc}: {len(disc_elements):,} elements")
 
-            print(f"  {disc_a}: {len(elements_a):,} elements")
-            print(f"  {disc_b}: {len(elements_b):,} elements")
+            logger.info(f"Total Group A elements: {len(elements_a):,}")
+            logger.info(f"Total Group B elements: {len(elements_b):,}")
+            print(f"\nTotal Group A: {len(elements_a):,} elements")
+            print(f"Total Group B: {len(elements_b):,} elements")
 
             if not elements_a:
-                error_msg = f"No elements found for discipline {disc_a}"
+                error_msg = f"No elements found for disciplines: {', '.join(disciplines_a)}"
                 logger.error(error_msg)
                 self.report({'ERROR'}, error_msg)
                 return {"CANCELLED"}
 
             if not elements_b:
-                error_msg = f"No elements found for discipline {disc_b}"
+                error_msg = f"No elements found for disciplines: {', '.join(disciplines_b)}"
                 logger.error(error_msg)
                 self.report({'ERROR'}, error_msg)
                 return {"CANCELLED"}
 
-            # Find bbox intersections
-            print(f"\nAnalyzing bbox intersections...")
+            # Define noise filters - IFC types to ignore
+            NOISE_TYPES = {
+                'IfcSpace',           # Abstract spatial volumes
+                'IfcOpeningElement',  # Designed openings (doors, windows)
+                'IfcAnnotation',      # 2D annotations, text, dimensions
+                'IfcGrid',            # Grid lines
+                'IfcAxis2Placement3D', # Coordinate systems
+            }
+
+            # Find bbox intersections with noise filtering
+            print(f"\nAnalyzing bbox intersections (with noise filtering)...")
             start_time = time.time()
             candidates = []
+            filtered_count = 0
 
             for elem_a in elements_a:
                 for elem_b in elements_b:
+                    # Filter: Skip noise types
+                    if elem_a.ifc_class in NOISE_TYPES or elem_b.ifc_class in NOISE_TYPES:
+                        filtered_count += 1
+                        continue
+
                     if prefilter.bboxes_intersect(elem_a.bbox, elem_b.bbox, tolerance=props.discipline_tolerance):
                         candidates.append({
                             'guid_a': elem_a.guid,
@@ -727,23 +786,30 @@ class BIM_OT_clash_by_discipline(bpy.types.Operator):
 
             # Calculate statistics
             total_combinations = len(elements_a) * len(elements_b)
-            reduction = 100 * (1 - len(candidates) / total_combinations) if total_combinations > 0 else 0
+            filtered_combinations = total_combinations - filtered_count
+            reduction = 100 * (1 - len(candidates) / filtered_combinations) if filtered_combinations > 0 else 0
+
+            logger.info(f"Filtered out {filtered_count:,} noise combinations (Spaces, Openings, Annotations)")
 
             # Report results
             logger.info("=" * 70)
             logger.info("RESULTS:")
-            logger.info(f"Total combinations: {total_combinations:,}")
-            logger.info(f"Bbox candidates:    {len(candidates):,}")
-            logger.info(f"Reduction:          {reduction:.1f}%")
-            logger.info(f"Analysis time:      {analysis_time:.2f} seconds")
+            logger.info(f"Total combinations:     {total_combinations:,}")
+            logger.info(f"Filtered noise:         {filtered_count:,}")
+            logger.info(f"After filtering:        {filtered_combinations:,}")
+            logger.info(f"Clash candidates:       {len(candidates):,}")
+            logger.info(f"Reduction:              {reduction:.1f}%")
+            logger.info(f"Analysis time:          {analysis_time:.2f} seconds")
             logger.info("=" * 70)
 
             print(f"\n{'=' * 70}")
             print("RESULTS:")
-            print(f"  Total combinations: {total_combinations:,}")
-            print(f"  Bbox candidates:    {len(candidates):,}")
-            print(f"  Reduction:          {reduction:.1f}%")
-            print(f"  Analysis time:      {analysis_time:.2f} seconds")
+            print(f"  Total combinations:     {total_combinations:,}")
+            print(f"  Filtered noise:         {filtered_count:,}")
+            print(f"  After filtering:        {filtered_combinations:,}")
+            print(f"  Clash candidates:       {len(candidates):,}")
+            print(f"  Reduction:              {reduction:.1f}%")
+            print(f"  Analysis time:          {analysis_time:.2f} seconds")
             print(f"{'=' * 70}\n")
 
             # Store candidates in scene properties
@@ -1069,3 +1135,209 @@ class BIM_OT_analyze_bbox_candidates(bpy.types.Operator):
             import traceback
             traceback.print_exc()
             return {"CANCELLED"}
+
+
+class BIM_OT_visualize_selected_discipline_clashes(bpy.types.Operator):
+    """Visualize selected discipline clash candidates in viewport"""
+    bl_idname = "bim.visualize_selected_discipline_clashes"
+    bl_label = "Visualize Selected Clashes"
+    bl_description = "Show selected clash candidates as colored spheres in viewport (max 10)"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        props = tool.Clash.get_clash_props()
+
+        # Get selected clashes
+        selected_clashes = [c for c in props.discipline_clash_candidates if c.selected]
+
+        if not selected_clashes:
+            self.report({'WARNING'}, "No clashes selected. Please check clashes in the list to visualize them.")
+            return {"CANCELLED"}
+
+        # Enforce 10-item limit
+        if len(selected_clashes) > 10:
+            self.report({'ERROR'}, f"Too many clashes selected ({len(selected_clashes)}). Maximum is 10 for visualization.")
+            return {"CANCELLED"}
+
+        # Create collection for clash markers
+        collection_name = "Selected_Clash_Markers"
+
+        # Remove old collection if exists
+        if collection_name in bpy.data.collections:
+            old_collection = bpy.data.collections[collection_name]
+            for obj in old_collection.objects:
+                bpy.data.objects.remove(obj, do_unlink=True)
+            bpy.data.collections.remove(old_collection)
+
+        # Create new collection
+        clash_collection = bpy.data.collections.new(collection_name)
+        context.scene.collection.children.link(clash_collection)
+
+        print(f"\n=== Visualizing {len(selected_clashes)} Selected Clashes ===")
+        print(f"Collection: {collection_name}")
+
+        # Create individual markers for each selected clash
+        created_objects = []
+        for idx, candidate in enumerate(selected_clashes):
+            center_a = candidate.bbox_center_a
+            center_b = candidate.bbox_center_b
+
+            # Calculate midpoint between elements
+            midpoint = (
+                (center_a[0] + center_b[0]) / 2,
+                (center_a[1] + center_b[1]) / 2,
+                (center_a[2] + center_b[2]) / 2
+            )
+
+            print(f"  Clash {idx+1}: {candidate.ifc_class_a} vs {candidate.ifc_class_b}")
+            print(f"    Center A: ({center_a[0]:.2f}, {center_a[1]:.2f}, {center_a[2]:.2f})")
+            print(f"    Center B: ({center_b[0]:.2f}, {center_b[1]:.2f}, {center_b[2]:.2f})")
+            print(f"    Midpoint: ({midpoint[0]:.2f}, {midpoint[1]:.2f}, {midpoint[2]:.2f})")
+
+            # Create marker sphere
+            sphere_name = f"Clash_{idx+1}_{candidate.ifc_class_a}_vs_{candidate.ifc_class_b}"
+            empty = bpy.data.objects.new(sphere_name, None)
+            empty.empty_display_type = 'SPHERE'
+            empty.empty_display_size = 8.0  # 8 meters - visible at building scale
+            empty.location = midpoint
+            empty.color = (1.0, 0.0, 0.0, 1.0)  # Red
+            empty.show_name = True  # Show clash description
+
+            # Add to collection
+            clash_collection.objects.link(empty)
+            created_objects.append(empty)
+            print(f"    Created: {sphere_name}")
+
+        # Frame all created markers in viewport using context override
+        print(f"\n--- Auto-framing {len(created_objects)} markers in viewport ---")
+        if created_objects:
+            # Deselect all objects first (optimize: only iterate created objects list)
+            bpy.ops.object.select_all(action='DESELECT')
+
+            # Select all clash markers
+            for obj in created_objects:
+                obj.select_set(True)
+
+            print(f"Selected {len(created_objects)} markers for framing")
+
+            # Find 3D viewport and frame with context override
+            viewport_found = False
+            for area in context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            # Use context override to call view_selected from Properties panel
+                            override = {'area': area, 'region': region}
+                            with context.temp_override(**override):
+                                try:
+                                    bpy.ops.view3d.view_selected()
+                                    print("✓ Successfully framed markers in viewport")
+                                    viewport_found = True
+                                except Exception as e:
+                                    print(f"⚠ Failed to frame viewport: {e}")
+                            break
+                    if viewport_found:
+                        break
+
+            if not viewport_found:
+                print("⚠ No 3D viewport found - markers created but not framed")
+
+            # Deselect markers (cleanup)
+            for obj in created_objects:
+                obj.select_set(False)
+        else:
+            print("⚠ No objects created to frame")
+
+        self.report({'INFO'}, f"Visualized {len(selected_clashes)} clash markers - framed in viewport")
+        print(f"\n✓ COMPLETE: Created {len(selected_clashes)} clash markers\n")
+
+        return {"FINISHED"}
+
+
+class BIM_OT_deselect_all_clashes(bpy.types.Operator):
+    """Uncheck all selected clash candidates"""
+    bl_idname = "bim.deselect_all_clashes"
+    bl_label = "Uncheck All"
+    bl_description = "Deselect all checked clash candidates"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        props = tool.Clash.get_clash_props()
+        count = 0
+
+        for candidate in props.discipline_clash_candidates:
+            if candidate.selected:
+                candidate.selected = False
+                count += 1
+
+        self.report({'INFO'}, f"Unchecked {count} clashes")
+        return {"FINISHED"}
+
+
+class BIM_OT_clear_discipline_clash_visualization(bpy.types.Operator):
+    """Clear all discipline clash visualizations from viewport"""
+    bl_idname = "bim.clear_discipline_clash_visualization"
+    bl_label = "Clear Visualization"
+    bl_description = "Remove all clash marker spheres from viewport"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        # Clear both possible collection names
+        collection_names = ["Selected_Clash_Markers", "Discipline_Clash_Clusters"]
+        cleared_collections = 0
+        cleared_objects = 0
+
+        print("\n=== Clearing Clash Visualizations ===")
+
+        for collection_name in collection_names:
+            if collection_name in bpy.data.collections:
+                clash_collection = bpy.data.collections[collection_name]
+                print(f"Found collection: {collection_name} with {len(clash_collection.objects)} objects")
+
+                # Remove all objects in collection
+                objects_to_remove = list(clash_collection.objects)
+                for obj in objects_to_remove:
+                    print(f"  Removing: {obj.name}")
+                    bpy.data.objects.remove(obj, do_unlink=True)
+                    cleared_objects += 1
+
+                # Remove collection from scene
+                bpy.data.collections.remove(clash_collection)
+                cleared_collections += 1
+                print(f"  Removed collection: {collection_name}")
+
+        # Also look for any orphaned clash markers not in collections
+        orphaned = 0
+        for obj in list(bpy.data.objects):
+            if obj.name.startswith("Clash_") or "Cluster_" in obj.name:
+                print(f"Found orphaned clash marker: {obj.name}")
+                bpy.data.objects.remove(obj, do_unlink=True)
+                orphaned += 1
+                cleared_objects += 1
+
+        print(f"\nCleared: {cleared_collections} collections, {cleared_objects} objects ({orphaned} orphaned)")
+
+        # After clearing, frame the building to return user to context
+        if cleared_objects > 0:
+            print("Returning viewport to building view...")
+            # Find 3D viewport and frame all objects (like pressing Home)
+            for area in context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            override = {'area': area, 'region': region}
+                            with context.temp_override(**override):
+                                try:
+                                    bpy.ops.view3d.view_all()  # Home key equivalent
+                                    print("✓ Returned to building view")
+                                except Exception as e:
+                                    print(f"⚠ Could not frame building: {e}")
+                            break
+                    break
+
+        if cleared_objects == 0:
+            self.report({'INFO'}, "No clash visualizations to clear")
+        else:
+            self.report({'INFO'}, f"Cleared {cleared_objects} clash markers - returned to building view")
+
+        return {"FINISHED"}

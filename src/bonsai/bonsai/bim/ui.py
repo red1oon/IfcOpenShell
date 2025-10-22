@@ -1046,6 +1046,34 @@ class BIM_PT_tab_clash_detection(Panel):
         pass
 
 
+class BIM_PT_tab_federation(Panel):
+    bl_label = "Multi-Model Federation"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "scene"
+
+    @classmethod
+    def poll(cls, context):
+        return tool.Blender.is_tab(context, "QUALITY")
+
+    def draw(self, context):
+        pass
+
+
+class BIM_PT_tab_mep_engineering(Panel):
+    bl_label = "MEP Engineering"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "scene"
+
+    @classmethod
+    def poll(cls, context):
+        return tool.Blender.is_tab(context, "QUALITY")
+
+    def draw(self, context):
+        pass
+
+
 class BIM_PT_tab_sandbox(Panel):
     bl_label = "Sandbox"
     bl_space_type = "PROPERTIES"

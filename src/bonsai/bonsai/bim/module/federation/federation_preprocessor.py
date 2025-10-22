@@ -1,39 +1,43 @@
 #!/usr/bin/env python3
 """
-Qualified Path: src/bonsai/bonsai/bim/module/federation/federation_preprocessor.py
+Create Merged IFC with Federation Database
+==========================================
 
-Federation Preprocessor - Standalone IFC Bbox Extraction
----------------------------------------------------------
-Extracts bounding boxes from multiple IFC files and stores in SQLite database
-for fast spatial queries during multi-model coordination.
+This script:
+1. Merges 7 IFC files using IfcPatch MergeProjects (preserves GUIDs)
+2. Builds federation spatial database from merged file
+3. Ensures 100% GUID consistency between DB and IFC
 
-Usage:
-    python federation_preprocessor.py \
-        --files ARC.ifc ACMV.ifc STR.ifc \
-        --output terminal1_federation.db \
-        --disciplines ARC ACMV STR
-
-Requirements:
-    - ifcopenshell
-    - sqlite3 (built-in)
-    - multiprocessing (built-in)
+Output:
+- merged_federated.ifc (single IFC with all disciplines)
+- federatedmodel_merged.db (spatial index with matching GUIDs)
 """
 
-import argparse
-import json
-import logging
-import multiprocessing
-import sqlite3
+import sys
+import os
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
-import ifcopenshell
+# Use local ifcopenshell installation in current directory
+try:
+    import ifcopenshell
+    import ifcpatch
+    print(f"✓ IfcOpenShell loaded: {ifcopenshell.version}")
+except ImportError as e:
+    print(f"ERROR: Cannot import IfcOpenShell: {e}")
+    print("\nRun: pip3 install ifcopenshell ifcpatch --target=.")
+    sys.exit(1)
+
+import sqlite3
 import ifcopenshell.geom
+import multiprocessing
+import shutil
 
-
-# Schema version for future migrations
-SCHEMA_VERSION = "1.0.0"
+try:
+    import psutil
+    HAS_PSUTIL = True
+except ImportError:
+    HAS_PSUTIL = False
 
 # IFC classes to include (geometric elements only)
 GEOMETRIC_CLASSES = {
@@ -41,11 +45,11 @@ GEOMETRIC_CLASSES = {
     "IfcWall", "IfcWallStandardCase", "IfcCurtainWall",
     "IfcBeam", "IfcColumn", "IfcSlab", "IfcRoof", "IfcFooting", "IfcPile",
     "IfcStair", "IfcStairFlight", "IfcRamp", "IfcRampFlight",
-    
+
     # Building elements
     "IfcDoor", "IfcWindow", "IfcPlate", "IfcMember", "IfcCovering",
     "IfcRailing", "IfcBuildingElementProxy",
-    
+
     # MEP elements
     "IfcDuctSegment", "IfcDuctFitting", "IfcAirTerminal",
     "IfcPipeSegment", "IfcPipeFitting", "IfcFlowTerminal",
@@ -53,400 +57,464 @@ GEOMETRIC_CLASSES = {
     "IfcCableSegment", "IfcDistributionElement",
     "IfcFlowController", "IfcFlowFitting", "IfcFlowMovingDevice",
     "IfcFlowStorageDevice", "IfcFlowTreatmentDevice",
-    
+
     # Furniture and equipment
     "IfcFurnishingElement", "IfcFurniture", "IfcSystemFurnitureElement",
 }
 
 
-class ProgressTracker:
-    """Track and report preprocessing progress"""
-    
-    def __init__(self, output_path: Path):
-        self.output_path = output_path
-        self.start_time = time.time()
-        self.files_processed = 0
-        self.total_elements = 0
-        self.file_stats = []
-    
-    def update_file(self, filename: str, discipline: str, element_count: int, duration: float):
-        """Record statistics for a processed file"""
-        self.files_processed += 1
-        self.total_elements += element_count
-        
-        self.file_stats.append({
-            "filename": filename,
-            "discipline": discipline,
-            "elements": element_count,
-            "duration_seconds": round(duration, 2)
-        })
-        
-        self._write_progress()
-    
-    def _write_progress(self):
-        """Write progress to JSON file"""
-        elapsed = time.time() - self.start_time
-        
-        progress_data = {
-            "schema_version": SCHEMA_VERSION,
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "status": "in_progress" if self.files_processed > 0 else "starting",
-            "files_processed": self.files_processed,
-            "total_elements": self.total_elements,
-            "elapsed_seconds": round(elapsed, 2),
-            "files": self.file_stats
-        }
-        
-        with open(self.output_path, 'w') as f:
-            json.dump(progress_data, f, indent=2)
-    
-    def finalize(self, db_path: Path, success: bool = True):
-        """Write final summary"""
-        elapsed = time.time() - self.start_time
-        
-        summary = {
-            "schema_version": SCHEMA_VERSION,
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "status": "completed" if success else "failed",
-            "total_files": self.files_processed,
-            "total_elements": self.total_elements,
-            "total_duration_seconds": round(elapsed, 2),
-            "database_path": str(db_path),
-            "database_size_mb": round(db_path.stat().st_size / (1024 * 1024), 2) if db_path.exists() else 0,
-            "files": self.file_stats
-        }
-        
-        with open(self.output_path, 'w') as f:
-            json.dump(summary, f, indent=2)
-        
-        return summary
+def print_header(text):
+    """Print a formatted header"""
+    print("\n" + "=" * 70)
+    print(text)
+    print("=" * 70)
 
 
-class FederationPreprocessor:
-    """Extract bounding boxes from IFC files for federation"""
-    
-    def __init__(self, output_db_path: Path, progress_file: Optional[Path] = None):
-        self.output_db_path = Path(output_db_path)
-        self.progress_file = progress_file or self.output_db_path.with_suffix('.json')
-        self.progress = ProgressTracker(self.progress_file)
-        self.logger = self._setup_logging()
-    
-    def _setup_logging(self) -> logging.Logger:
-        """Configure logging"""
-        logger = logging.getLogger('FederationPreprocessor')
-        logger.setLevel(logging.INFO)
-        
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-        
-        return logger
-    
-    def _init_database(self):
-        """Create database schema"""
-        conn = sqlite3.connect(self.output_db_path)
-        cursor = conn.cursor()
-        
-        # Schema version table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS schema_info (
-                key TEXT PRIMARY KEY,
-                value TEXT
-            )
-        """)
-        cursor.execute("INSERT OR REPLACE INTO schema_info (key, value) VALUES (?, ?)",
-                      ("version", SCHEMA_VERSION))
-        
-        # Main elements table
-        # Metadata table (non-spatial attributes)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS elements_meta (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                guid TEXT UNIQUE NOT NULL,
-                discipline TEXT NOT NULL,
-                ifc_class TEXT NOT NULL,
-                filepath TEXT NOT NULL
-            )
-        """)
-        
-        # Non-spatial indices
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_guid ON elements_meta(guid)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_discipline ON elements_meta(discipline)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_ifc_class ON elements_meta(ifc_class)")
-        
-        # Spatial index (SQLite R-tree virtual table for 3D bounding boxes)
-        cursor.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS elements_rtree USING rtree(
-                id,              -- References elements_meta.id
-                min_x, max_x,    -- X-axis bounds
-                min_y, max_y,    -- Y-axis bounds
-                min_z, max_z     -- Z-axis bounds
-            )
-        """)
-        
-        conn.commit()
-        conn.close()
-        
-        self.logger.info(f"Initialized database: {self.output_db_path}")
-    
-    def process_ifc_files(self, file_paths: List[Path], disciplines: Optional[List[str]] = None):
-        """
-        Process multiple IFC files and extract bounding boxes
-        
-        Args:
-            file_paths: List of IFC file paths
-            disciplines: Optional list of discipline tags (auto-detected from filenames if None)
-        """
-        self.logger.info(f"Starting preprocessing of {len(file_paths)} files")
-        
-        # Initialize database
-        self._init_database()
-        
-        # Auto-detect disciplines from filenames if not provided
-        if disciplines is None:
-            disciplines = [self._detect_discipline(fp) for fp in file_paths]
-        
-        # Process each file
-        for file_path, discipline in zip(file_paths, disciplines):
-            try:
-                self._process_single_file(file_path, discipline)
-            except Exception as e:
-                self.logger.error(f"Failed to process {file_path}: {e}")
-                import traceback
-                traceback.print_exc()
-        
-        # Finalize progress report
-        summary = self.progress.finalize(self.output_db_path, success=True)
-        self._print_summary(summary)
-    
-    def _detect_discipline(self, file_path: Path) -> str:
-        """Auto-detect discipline tag from filename"""
-        # Common patterns: ARC.ifc, ACMV_R01.ifc, Terminal1_STR.ifc
-        stem = file_path.stem.upper()
-        
-        # Extract first word/abbreviation
-        for part in stem.split('_'):
-            if len(part) >= 2 and part.isalpha():
-                return part[:10]  # Limit to 10 chars
-        
-        # Fallback: use stem
-        return stem[:10]
-    
-    def _process_single_file(self, file_path: Path, discipline: str):
-        """Process a single IFC file"""
-        start_time = time.time()
-        
-        self.logger.info(f"Processing {file_path.name} (discipline: {discipline})")
-        
-        # Open IFC file
-        ifc_file = ifcopenshell.open(file_path)
-        
-        # Extract bounding boxes
-        elements_data = self._extract_bboxes_multicore(ifc_file, file_path, discipline)
-        
-        # Store to database
-        self._store_to_database(elements_data)
-        
-        # Update progress
-        duration = time.time() - start_time
-        self.progress.update_file(
-            filename=file_path.name,
-            discipline=discipline,
-            element_count=len(elements_data),
-            duration=duration
-        )
-        
-        self.logger.info(f"✓ Completed {file_path.name}: {len(elements_data)} elements in {duration:.1f}s")
-    
-    def _extract_bboxes_multicore(self, ifc_file: ifcopenshell.file, 
-                                   file_path: Path, discipline: str) -> List[Dict]:
-        """Extract bounding boxes using multicore geometry processing"""
-        elements_data = []
-        
-        # Create geometry settings
-        settings = ifcopenshell.geom.settings()
-        settings.set(settings.USE_WORLD_COORDS, True)
-        
-        # Create iterator with multicore support
-        num_cores = multiprocessing.cpu_count()
-        iterator = ifcopenshell.geom.iterator(settings, ifc_file, num_cores)
-        
-        if not iterator.initialize():
-            self.logger.warning(f"Failed to initialize geometry iterator for {file_path.name}")
-            return elements_data
-        
-        processed_count = 0
-        while True:
-            try:
-                shape = iterator.get()
-                element = ifc_file.by_id(shape.id)
-                
-                # Filter to geometric elements only
-                if element.is_a() not in GEOMETRIC_CLASSES:
-                    if not iterator.next():
-                        break
-                    continue
-                
-                # Extract bounding box from geometry
-                bbox = self._calculate_bbox(shape)
-                
-                if bbox:
-                    global_id = getattr(element, 'GlobalId', None)
-                    if not global_id:
-                        # Generate fallback ID
-                        global_id = f"NO_GUID_{element.id()}"
-                    
-                    elements_data.append({
-                        'guid': global_id,
-                        'discipline': discipline,
-                        'ifc_class': element.is_a(),
-                        'min_x': bbox[0],
-                        'min_y': bbox[1],
-                        'min_z': bbox[2],
-                        'max_x': bbox[3],
-                        'max_y': bbox[4],
-                        'max_z': bbox[5],
-                        'filepath': str(file_path.absolute())
-                    })
-                    
-                    processed_count += 1
-                    if processed_count % 1000 == 0:
-                        self.logger.info(f"  Processed {processed_count} elements...")
-                
-            except Exception as e:
-                self.logger.warning(f"  Skipping element due to error: {e}")
-            
-            if not iterator.next():
-                break
-        
-        return elements_data
-    
-    def _calculate_bbox(self, shape) -> Optional[Tuple[float, float, float, float, float, float]]:
-        """Calculate bounding box from shape geometry"""
+def check_disk_space(required_gb=10):
+    """Check if sufficient disk space is available"""
+    print_header("SAFETY CHECK: DISK SPACE")
+
+    stat = shutil.disk_usage("/home/red1")
+    free_gb = stat.free / (1024 ** 3)
+    total_gb = stat.total / (1024 ** 3)
+    used_gb = stat.used / (1024 ** 3)
+    usage_percent = (stat.used / stat.total) * 100
+
+    print(f"\nDisk usage:")
+    print(f"  Total: {total_gb:.1f} GB")
+    print(f"  Used:  {used_gb:.1f} GB ({usage_percent:.1f}%)")
+    print(f"  Free:  {free_gb:.1f} GB")
+    print(f"\nRequired: {required_gb} GB minimum")
+
+    if free_gb < required_gb:
+        print(f"\n✗ ERROR: Insufficient disk space!")
+        print(f"  Free: {free_gb:.1f} GB")
+        print(f"  Required: {required_gb} GB")
+        print(f"\nPlease free up space before running this script.")
+        print(f"Suggestions:")
+        print(f"  - Clear cache: rm -rf ~/.cache/*")
+        print(f"  - Remove old files")
+        print(f"  - Move large files to external storage")
+        return False
+
+    if usage_percent > 90:
+        print(f"\n⚠ WARNING: Disk is {usage_percent:.1f}% full")
+        print(f"  Proceeding, but recommend freeing more space soon")
+    else:
+        print(f"\n✓ Sufficient disk space available ({free_gb:.1f} GB free)")
+
+    return True
+
+
+def check_memory(required_gb=8):
+    """Check if sufficient memory is available"""
+    print_header("SAFETY CHECK: MEMORY")
+
+    if HAS_PSUTIL:
+        mem = psutil.virtual_memory()
+        available_gb = mem.available / (1024 ** 3)
+        total_gb = mem.total / (1024 ** 3)
+        used_gb = mem.used / (1024 ** 3)
+
+        swap = psutil.swap_memory()
+        swap_free_gb = swap.free / (1024 ** 3)
+
+        print(f"\nMemory status:")
+        print(f"  Total RAM: {total_gb:.1f} GB")
+        print(f"  Used:      {used_gb:.1f} GB")
+        print(f"  Available: {available_gb:.1f} GB")
+        print(f"  Swap free: {swap_free_gb:.1f} GB")
+        print(f"\nRequired: {required_gb} GB minimum")
+
+        if available_gb < required_gb:
+            print(f"\n✗ ERROR: Insufficient memory!")
+            print(f"  Available: {available_gb:.1f} GB")
+            print(f"  Required: {required_gb} GB")
+            print(f"\nPlease close other applications to free memory.")
+            return False
+
+        print(f"\n✓ Sufficient memory available ({available_gb:.1f} GB)")
+        return True
+    else:
+        # Fallback: Use /proc/meminfo (Linux only)
         try:
-            # Get vertices from geometry
+            with open('/proc/meminfo', 'r') as f:
+                meminfo = {}
+                for line in f:
+                    parts = line.split(':')
+                    if len(parts) == 2:
+                        key = parts[0].strip()
+                        value = int(parts[1].strip().split()[0])
+                        meminfo[key] = value
+
+            available_kb = meminfo.get('MemAvailable', meminfo.get('MemFree', 0))
+            total_kb = meminfo.get('MemTotal', 0)
+            available_gb = available_kb / (1024 ** 2)
+            total_gb = total_kb / (1024 ** 2)
+
+            print(f"\nMemory status (from /proc/meminfo):")
+            print(f"  Total RAM: {total_gb:.1f} GB")
+            print(f"  Available: {available_gb:.1f} GB")
+            print(f"\nRequired: {required_gb} GB minimum")
+
+            if available_gb < required_gb:
+                print(f"\n✗ ERROR: Insufficient memory!")
+                print(f"  Available: {available_gb:.1f} GB")
+                print(f"  Required: {required_gb} GB")
+                return False
+
+            print(f"\n✓ Sufficient memory available ({available_gb:.1f} GB)")
+            return True
+        except Exception as e:
+            print(f"\n⚠ WARNING: Cannot check memory (psutil not available)")
+            print(f"  Error: {e}")
+            print(f"  Proceeding anyway - ensure {required_gb}GB RAM is free")
+            return True  # Proceed cautiously
+
+
+def estimate_output_size(file_paths):
+    """Estimate size of merged IFC file"""
+    total_size_mb = sum(p.stat().st_size for p in file_paths) / (1024 ** 2)
+    # Merged file is typically 1.2-1.5x the sum of input files
+    estimated_merge_mb = total_size_mb * 1.5
+    # Database is typically 0.3-0.5x the merged file size
+    estimated_db_mb = estimated_merge_mb * 0.5
+    estimated_total_mb = estimated_merge_mb + estimated_db_mb
+
+    return estimated_total_mb / 1024  # Return in GB
+
+
+def merge_ifc_files(file_paths, output_path):
+    """Merge multiple IFC files using IfcPatch MergeProjects"""
+    print_header("STEP 1: MERGING IFC FILES")
+
+    print(f"\nMerging {len(file_paths)} IFC files...")
+    print(f"Base file: {file_paths[0].name}")
+
+    # Load base file
+    start_time = time.time()
+    base_ifc = ifcopenshell.open(file_paths[0])
+    print(f"  Loaded base: {len(base_ifc.by_type('IfcProduct'))} products")
+
+    # Merge remaining files
+    for i, file_path in enumerate(file_paths[1:], start=2):
+        print(f"\n  [{i}/{len(file_paths)}] Merging: {file_path.name}")
+        try:
+            ifcpatch.execute({
+                "file": base_ifc,
+                "recipe": "MergeProjects",
+                "arguments": [str(file_path)]
+            })
+            print(f"      → Merged successfully")
+        except Exception as e:
+            print(f"      ✗ ERROR: {e}")
+            raise
+
+    # Write merged file
+    print(f"\nWriting merged file: {output_path.name}")
+    base_ifc.write(output_path)
+
+    merge_duration = time.time() - start_time
+    file_size_mb = output_path.stat().st_size / (1024 * 1024)
+
+    print(f"\n✓ Merge complete:")
+    print(f"  Duration: {merge_duration:.1f} seconds")
+    print(f"  Output: {output_path}")
+    print(f"  Size: {file_size_mb:.2f} MB")
+    print(f"  Total products: {len(base_ifc.by_type('IfcProduct'))}")
+
+    return base_ifc
+
+
+def build_guid_discipline_map(file_paths, disciplines):
+    """Build GUID → Discipline mapping before merge"""
+    print_header("STEP 2: BUILD GUID → DISCIPLINE MAPPING")
+
+    print("\nScanning source files to map GUIDs to disciplines...")
+    guid_map = {}
+
+    for file_path, discipline in zip(file_paths, disciplines):
+        print(f"\n  {discipline}: {file_path.name}")
+        ifc = ifcopenshell.open(file_path)
+
+        count = 0
+        for element in ifc.by_type('IfcProduct'):
+            guid = getattr(element, 'GlobalId', None)
+            if guid:
+                guid_map[guid] = {
+                    'discipline': discipline,
+                    'source_file': str(file_path),
+                    'ifc_class': element.is_a()
+                }
+                count += 1
+
+        print(f"      → {count} GUIDs mapped")
+
+    print(f"\n✓ Total GUIDs mapped: {len(guid_map)}")
+    return guid_map
+
+
+def extract_bboxes_from_merged(merged_ifc_path, guid_map):
+    """Extract bounding boxes from merged IFC file"""
+    print_header("STEP 3: EXTRACT BOUNDING BOXES")
+
+    print(f"\nProcessing merged file: {merged_ifc_path.name}")
+
+    ifc_file = ifcopenshell.open(merged_ifc_path)
+    elements_data = []
+
+    # Create geometry settings
+    settings = ifcopenshell.geom.settings()
+    settings.set(settings.USE_WORLD_COORDS, True)
+
+    # Create iterator with multicore support
+    num_cores = multiprocessing.cpu_count()
+    print(f"Using {num_cores} CPU cores for geometry processing...")
+
+    iterator = ifcopenshell.geom.iterator(settings, ifc_file, num_cores)
+
+    if not iterator.initialize():
+        print("ERROR: Failed to initialize geometry iterator")
+        return elements_data
+
+    processed_count = 0
+    start_time = time.time()
+
+    while True:
+        try:
+            shape = iterator.get()
+            element = ifc_file.by_id(shape.id)
+
+            # Filter to geometric elements only
+            if element.is_a() not in GEOMETRIC_CLASSES:
+                if not iterator.next():
+                    break
+                continue
+
+            # Extract bounding box from geometry
             geometry = shape.geometry
             verts = geometry.verts
-            
-            # Group into (x, y, z) tuples
-            vertices = [(verts[i], verts[i+1], verts[i+2]) 
-                       for i in range(0, len(verts), 3)]
-            
-            if not vertices:
-                return None
-            
-            # Calculate min/max for each axis
-            xs, ys, zs = zip(*vertices)
-            
-            return (
-                min(xs), min(ys), min(zs),  # min_x, min_y, min_z
-                max(xs), max(ys), max(zs)   # max_x, max_y, max_z
-            )
-            
+
+            if verts:
+                vertices = [(verts[i], verts[i+1], verts[i+2])
+                           for i in range(0, len(verts), 3)]
+
+                xs, ys, zs = zip(*vertices)
+                bbox = (min(xs), min(ys), min(zs), max(xs), max(ys), max(zs))
+
+                global_id = getattr(element, 'GlobalId', None)
+                if not global_id:
+                    global_id = f"NO_GUID_{element.id()}"
+
+                # Get discipline from mapping
+                discipline_info = guid_map.get(global_id, {})
+                discipline = discipline_info.get('discipline', 'UNKNOWN')
+                source_file = discipline_info.get('source_file', str(merged_ifc_path))
+
+                elements_data.append({
+                    'guid': global_id,
+                    'discipline': discipline,
+                    'ifc_class': element.is_a(),
+                    'min_x': bbox[0], 'min_y': bbox[1], 'min_z': bbox[2],
+                    'max_x': bbox[3], 'max_y': bbox[4], 'max_z': bbox[5],
+                    'filepath': source_file
+                })
+
+                processed_count += 1
+                if processed_count % 1000 == 0:
+                    elapsed = time.time() - start_time
+                    rate = processed_count / elapsed
+                    print(f"  Processed {processed_count} elements ({rate:.1f} elem/sec)...")
+
         except Exception as e:
-            self.logger.debug(f"Failed to calculate bbox: {e}")
-            return None
-    
-    def _store_to_database(self, elements_data: List[Dict]):
-        """Store element data to SQLite database (metadata + spatial R-tree)"""
-        if not elements_data:
-            return
-        
-        conn = sqlite3.connect(self.output_db_path)
-        cursor = conn.cursor()
-        
-        # Insert each element into both tables
-        for elem in elements_data:
-            # Insert metadata first
-            cursor.execute("""
-                INSERT OR REPLACE INTO elements_meta (guid, discipline, ifc_class, filepath)
-                VALUES (?, ?, ?, ?)
-            """, (elem['guid'], elem['discipline'], elem['ifc_class'], elem['filepath']))
-            
-            # Get the ID (either newly inserted or existing)
-            cursor.execute("SELECT id FROM elements_meta WHERE guid = ?", (elem['guid'],))
-            elem_id = cursor.fetchone()[0]
-            
-            # Delete old R-tree entry if exists (can't update R-tree, must delete+insert)
-            cursor.execute("DELETE FROM elements_rtree WHERE id = ?", (elem_id,))
-            
-            # Insert into R-tree
-            cursor.execute("""
-                INSERT INTO elements_rtree (id, min_x, max_x, min_y, max_y, min_z, max_z)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (elem_id, elem['min_x'], elem['max_x'], 
-                  elem['min_y'], elem['max_y'], elem['min_z'], elem['max_z']))
-        
-        conn.commit()
-        conn.close()
-    
-    def _print_summary(self, summary: Dict):
-        """Print final summary to console"""
-        print("\n" + "="*60)
-        print("FEDERATION PREPROCESSING COMPLETE")
-        print("="*60)
-        print(f"Status:           {summary['status']}")
-        print(f"Total Files:      {summary['total_files']}")
-        print(f"Total Elements:   {summary['total_elements']:,}")
-        print(f"Duration:         {summary['total_duration_seconds']:.1f} seconds")
-        print(f"Database:         {summary['database_path']}")
-        print(f"Database Size:    {summary['database_size_mb']:.2f} MB")
-        print(f"Progress Report:  {self.progress_file}")
-        print("\nPer-File Statistics:")
-        print("-"*60)
-        for file_stat in summary['files']:
-            print(f"  {file_stat['filename']:<30} "
-                  f"{file_stat['discipline']:<8} "
-                  f"{file_stat['elements']:>6} elements "
-                  f"({file_stat['duration_seconds']:.1f}s)")
-        print("="*60 + "\n")
+            print(f"  Warning: Skipping element due to error: {e}")
+
+        if not iterator.next():
+            break
+
+    duration = time.time() - start_time
+    print(f"\n✓ Bbox extraction complete:")
+    print(f"  Duration: {duration:.1f} seconds")
+    print(f"  Elements: {len(elements_data)}")
+    print(f"  Rate: {len(elements_data)/duration:.1f} elem/sec")
+
+    return elements_data
+
+
+def create_federation_database(db_path, elements_data):
+    """Create federation database with spatial index"""
+    print_header("STEP 4: CREATE FEDERATION DATABASE")
+
+    print(f"\nCreating database: {db_path.name}")
+
+    # Remove old database if exists
+    if db_path.exists():
+        db_path.unlink()
+        print(f"  Removed old database")
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # Schema version table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS schema_info (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    cursor.execute("INSERT INTO schema_info VALUES (?, ?)", ("version", "1.0.0"))
+
+    # Metadata table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS elements_meta (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guid TEXT UNIQUE NOT NULL,
+            discipline TEXT NOT NULL,
+            ifc_class TEXT NOT NULL,
+            filepath TEXT NOT NULL
+        )
+    """)
+
+    # Indices
+    cursor.execute("CREATE INDEX idx_guid ON elements_meta(guid)")
+    cursor.execute("CREATE INDEX idx_discipline ON elements_meta(discipline)")
+    cursor.execute("CREATE INDEX idx_ifc_class ON elements_meta(ifc_class)")
+
+    # Spatial index (R-tree)
+    cursor.execute("""
+        CREATE VIRTUAL TABLE elements_rtree USING rtree(
+            id,
+            min_x, max_x,
+            min_y, max_y,
+            min_z, max_z
+        )
+    """)
+
+    print(f"  Schema created")
+
+    # Insert elements
+    print(f"  Inserting {len(elements_data)} elements...")
+
+    for i, elem in enumerate(elements_data):
+        # Insert metadata
+        cursor.execute("""
+            INSERT INTO elements_meta (guid, discipline, ifc_class, filepath)
+            VALUES (?, ?, ?, ?)
+        """, (elem['guid'], elem['discipline'], elem['ifc_class'], elem['filepath']))
+
+        elem_id = cursor.lastrowid
+
+        # Insert into R-tree
+        cursor.execute("""
+            INSERT INTO elements_rtree (id, min_x, max_x, min_y, max_y, min_z, max_z)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (elem_id, elem['min_x'], elem['max_x'],
+              elem['min_y'], elem['max_y'], elem['min_z'], elem['max_z']))
+
+        if (i + 1) % 5000 == 0:
+            print(f"    {i + 1}/{len(elements_data)}...")
+
+    conn.commit()
+
+    # Statistics
+    cursor.execute("SELECT discipline, COUNT(*) FROM elements_meta GROUP BY discipline ORDER BY discipline")
+    stats = cursor.fetchall()
+
+    conn.close()
+
+    db_size_mb = db_path.stat().st_size / (1024 * 1024)
+
+    print(f"\n✓ Database created:")
+    print(f"  Path: {db_path}")
+    print(f"  Size: {db_size_mb:.2f} MB")
+    print(f"\n  Elements by discipline:")
+    for discipline, count in stats:
+        print(f"    {discipline}: {count:,}")
+
+    return db_path
 
 
 def main():
-    """Command-line interface"""
-    parser = argparse.ArgumentParser(
-        description="Extract bounding boxes from IFC files for multi-model federation"
-    )
-    parser.add_argument(
-        '--files', 
-        nargs='+', 
-        required=True,
-        help='IFC file paths to process'
-    )
-    parser.add_argument(
-        '--output', 
-        required=True,
-        help='Output SQLite database path'
-    )
-    parser.add_argument(
-        '--disciplines',
-        nargs='+',
-        help='Discipline tags (auto-detected from filenames if omitted)'
-    )
-    parser.add_argument(
-        '--progress',
-        help='Progress report JSON file path (default: output_path.json)'
-    )
-    
+    """Main execution - called from command line or Bonsai operator"""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Merge IFC files and create federation database")
+    parser.add_argument("--files", nargs='+', required=True, help="IFC files to process")
+    parser.add_argument("--output", required=True, help="Output database path")
+    parser.add_argument("--disciplines", nargs='+', required=True, help="Discipline tags for each file")
+    parser.add_argument("--progress", help="Progress JSON file path")
+
     args = parser.parse_args()
-    
-    # Convert to Path objects
+
+    print_header("MERGED IFC FEDERATION WORKFLOW")
+
+    # Convert string paths to Path objects
     file_paths = [Path(f) for f in args.files]
-    output_path = Path(args.output)
-    progress_path = Path(args.progress) if args.progress else None
-    
-    # Validate input files exist
-    for file_path in file_paths:
-        if not file_path.exists():
-            print(f"ERROR: File not found: {file_path}")
-            return 1
-    
-    # Process files
-    preprocessor = FederationPreprocessor(output_path, progress_path)
-    preprocessor.process_ifc_files(file_paths, args.disciplines)
-    
-    return 0
+    disciplines = args.disciplines
+
+    # Database path from args
+    db_path = Path(args.output)
+
+    # Merged IFC path: same directory as database, change .db to .ifc
+    merged_ifc_path = db_path.with_suffix('.ifc')
+
+    print(f"\nInput files: {len(file_paths)}")
+    print(f"Output IFC: {merged_ifc_path}")
+    print(f"Output DB: {db_path}")
+
+    # Estimate required space
+    estimated_size_gb = estimate_output_size(file_paths)
+    required_space_gb = estimated_size_gb + 5  # Add 5GB safety margin
+
+    print(f"\nEstimated output size: {estimated_size_gb:.2f} GB")
+    print(f"Required free space: {required_space_gb:.1f} GB (with safety margin)")
+
+    # Check disk space BEFORE starting
+    if not check_disk_space(required_gb=required_space_gb):
+        print("\n✗ Aborting due to insufficient disk space")
+        return 1
+
+    # Check memory BEFORE starting
+    if not check_memory(required_gb=8):
+        print("\n✗ Aborting due to insufficient memory")
+        return 1
+
+    start_time = time.time()
+
+    try:
+        # Step 1: Build GUID → Discipline mapping
+        guid_map = build_guid_discipline_map(file_paths, disciplines)
+
+        # Step 2: Merge IFC files
+        merged_ifc = merge_ifc_files(file_paths, merged_ifc_path)
+
+        # Step 3: Extract bboxes from merged file
+        elements_data = extract_bboxes_from_merged(merged_ifc_path, guid_map)
+
+        # Step 4: Create federation database
+        create_federation_database(db_path, elements_data)
+
+        # Final summary
+        total_duration = time.time() - start_time
+
+        print_header("COMPLETE")
+        print(f"\n✓ Merged federation workflow complete!")
+        print(f"  Total duration: {total_duration:.1f} seconds ({total_duration/60:.1f} minutes)")
+        print(f"\nOutput files:")
+        print(f"  Merged IFC: {merged_ifc_path}")
+        print(f"  Federation DB: {db_path}")
+        print(f"\nNext steps:")
+        print(f"  1. Load {merged_ifc_path.name} in Blender")
+        print(f"  2. Run clash detection using {db_path.name}")
+        print(f"  3. GUIDs will match 100% (no spatial lookup needed)")
+
+        return 0
+
+    except Exception as e:
+        print(f"\n✗ ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
 
 
 if __name__ == "__main__":
