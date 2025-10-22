@@ -186,36 +186,69 @@ class PreprocessFederatedModels(Operator):
             self.report({'ERROR'}, f"Preprocessor script not found: {preprocessor_script}")
             return {"CANCELLED"}
         
-        # Build command
-        cmd = [
-            sys.executable,
-            str(preprocessor_script),
-            "--files", *file_paths,
-            "--output", str(db_path.absolute()),
-            "--disciplines", *disciplines,
-            "--progress", str(progress_path)
-        ]
-        
         self.report({'INFO'}, f"Starting preprocessing of {len(file_paths)} files...")
-        
-        # Run subprocess
+
+        # Run preprocessing directly in-process (subprocess doesn't have ifcopenshell access)
         try:
-            # Run in background (non-blocking) - inherit stdout/stderr for console visibility
-            subprocess.Popen(cmd)
-            
+            # Import and run the preprocessor main function directly
+            from . import federation_preprocessor
+
+            # Build args namespace to match command-line interface
+            class Args:
+                def __init__(self):
+                    self.files = file_paths
+                    self.output = str(db_path.absolute())
+                    self.disciplines = disciplines
+                    self.progress = str(progress_path)
+
+            # Run in separate thread to avoid blocking UI
+            import threading
+
+            def run_preprocessing():
+                try:
+                    # Temporarily replace sys.argv for argparse
+                    old_argv = sys.argv
+                    sys.argv = [
+                        'federation_preprocessor.py',
+                        '--files', *file_paths,
+                        '--output', str(db_path.absolute()),
+                        '--disciplines', *disciplines,
+                        '--progress', str(progress_path)
+                    ]
+                    federation_preprocessor.main()
+                    sys.argv = old_argv
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    props.preprocessing_in_progress = False
+
+            threading.Thread(target=run_preprocessing, daemon=True).start()
+
             props.preprocessing_in_progress = True
             self.report({'INFO'}, f"Preprocessing started. Check progress at: {progress_path.name}")
-            
+
             # Register a timer to check progress
             bpy.app.timers.register(
                 lambda: self._check_preprocessing_progress(context),
                 first_interval=2.0,
                 persistent=True
             )
-            
+
         except Exception as e:
+            # Log to ERROR.log
+            error_log = Path.home() / "Documents/bonsai/ERROR.log"
+            try:
+                import traceback
+                import datetime
+                with open(error_log, "a") as f:
+                    f.write(f"\n{'='*70}\n")
+                    f.write(f"{datetime.datetime.now()} - PreprocessFederatedModels\n")
+                    f.write(f"{'='*70}\n")
+                    f.write(traceback.format_exc())
+            except:
+                pass
+
             self.report({'ERROR'}, f"Failed to start preprocessing: {str(e)}")
-            import traceback
             traceback.print_exc()
             return {"CANCELLED"}
         
