@@ -623,7 +623,7 @@ class QueryFederationIndex(Operator):
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
             tables = {row[0] for row in cursor.fetchall()}
 
-            required_tables = {'elements_meta', 'spatial_index'}
+            required_tables = {'elements_meta', 'elements_rtree'}
             missing_tables = required_tables - tables
 
             if missing_tables:

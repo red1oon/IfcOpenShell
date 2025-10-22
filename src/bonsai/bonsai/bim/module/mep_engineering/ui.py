@@ -10,7 +10,7 @@ from bpy.types import Panel
 
 class BIM_PT_mep_engineering(Panel):
     """MEP Engineering panel in Blender UI"""
-    bl_label = "MEP Engineering"
+    bl_label = "Conduit Testing"
     bl_idname = "BIM_PT_mep_engineering"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"

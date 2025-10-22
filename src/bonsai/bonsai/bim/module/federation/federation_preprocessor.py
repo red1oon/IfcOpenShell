@@ -16,15 +16,49 @@ Output:
 import sys
 import os
 import time
+import logging
 from pathlib import Path
+
+# Setup logging to both console and bonsai.log
+BONSAI_LOG = Path.home() / "Documents/bonsai/bonsai.log"
+
+def setup_logging():
+    """Configure logging to console and bonsai.log"""
+    logger = logging.getLogger('federation_preprocessor')
+    logger.setLevel(logging.INFO)
+
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+
+    # File handler for bonsai.log
+    try:
+        file_handler = logging.FileHandler(BONSAI_LOG)
+        file_handler.setLevel(logging.INFO)
+
+        # Format: timestamp - level - message
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        console_handler.setFormatter(formatter)
+        file_handler.setFormatter(formatter)
+
+        logger.addHandler(console_handler)
+        logger.addHandler(file_handler)
+    except Exception as e:
+        # If can't write to bonsai.log, just use console
+        logger.addHandler(console_handler)
+
+    return logger
+
+# Initialize logger
+logger = setup_logging()
 
 # Use local ifcopenshell installation in current directory
 try:
     import ifcopenshell
     import ifcpatch
-    print(f"✓ IfcOpenShell loaded: {ifcopenshell.version}")
+    logger.info(f"✓ IfcOpenShell loaded: {ifcopenshell.version}")
 except ImportError as e:
-    print(f"ERROR: Cannot import IfcOpenShell: {e}")
+    logger.error(f"Cannot import IfcOpenShell: {e}")
     print("\nRun: pip3 install ifcopenshell ifcpatch --target=.")
     sys.exit(1)
 
@@ -216,12 +250,16 @@ def merge_ifc_files(file_paths, output_path):
 
     merge_duration = time.time() - start_time
     file_size_mb = output_path.stat().st_size / (1024 * 1024)
+    total_products = len(base_ifc.by_type('IfcProduct'))
 
     print(f"\n✓ Merge complete:")
     print(f"  Duration: {merge_duration:.1f} seconds")
     print(f"  Output: {output_path}")
     print(f"  Size: {file_size_mb:.2f} MB")
-    print(f"  Total products: {len(base_ifc.by_type('IfcProduct'))}")
+    print(f"  Total products: {total_products}")
+
+    # Log milestone
+    logger.info(f"IFC merge complete: {len(file_paths)} files → {file_size_mb:.2f} MB, {total_products:,} products ({merge_duration:.1f}s)")
 
     return base_ifc
 
@@ -251,6 +289,10 @@ def build_guid_discipline_map(file_paths, disciplines):
         print(f"      → {count} GUIDs mapped")
 
     print(f"\n✓ Total GUIDs mapped: {len(guid_map)}")
+
+    # Log milestone
+    logger.info(f"GUID mapping complete: {len(guid_map):,} GUIDs mapped from {len(file_paths)} files")
+
     return guid_map
 
 
@@ -333,10 +375,15 @@ def extract_bboxes_from_merged(merged_ifc_path, guid_map):
             break
 
     duration = time.time() - start_time
+    rate = len(elements_data)/duration if duration > 0 else 0
+
     print(f"\n✓ Bbox extraction complete:")
     print(f"  Duration: {duration:.1f} seconds")
     print(f"  Elements: {len(elements_data)}")
-    print(f"  Rate: {len(elements_data)/duration:.1f} elem/sec")
+    print(f"  Rate: {rate:.1f} elem/sec")
+
+    # Log milestone
+    logger.info(f"Bbox extraction complete: {len(elements_data):,} elements processed ({rate:.1f} elem/sec, {duration:.1f}s)")
 
     return elements_data
 
@@ -428,6 +475,9 @@ def create_federation_database(db_path, elements_data):
     print(f"  Path: {db_path}")
     print(f"  Size: {db_size_mb:.2f} MB")
     print(f"\n  Elements by discipline:")
+
+    # Log milestone
+    logger.info(f"Federation database created: {db_path.name}, {db_size_mb:.2f} MB, {len(elements_data):,} elements")
     for discipline, count in stats:
         print(f"    {discipline}: {count:,}")
 
@@ -508,10 +558,22 @@ def main():
         print(f"  2. Run clash detection using {db_path.name}")
         print(f"  3. GUIDs will match 100% (no spatial lookup needed)")
 
+        # Log milestone to bonsai.log
+        logger.info("=" * 70)
+        logger.info("FEDERATION PREPROCESSING COMPLETE")
+        logger.info("=" * 70)
+        logger.info(f"Total duration: {total_duration:.1f} seconds ({total_duration/60:.1f} minutes)")
+        logger.info(f"Output IFC: {merged_ifc_path}")
+        logger.info(f"Output DB: {db_path}")
+        logger.info(f"Total elements: {len(elements_data):,}")
+        logger.info(f"Disciplines: {len(set(e['discipline'] for e in elements_data))}")
+        logger.info("=" * 70)
+
         return 0
 
     except Exception as e:
         print(f"\n✗ ERROR: {e}")
+        logger.error(f"Federation preprocessing failed: {e}")
         import traceback
         traceback.print_exc()
         return 1
