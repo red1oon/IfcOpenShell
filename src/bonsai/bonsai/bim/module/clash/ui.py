@@ -45,138 +45,211 @@ class BIM_PT_ifcclash(Panel):
         layout = self.layout
         props = tool.Clash.get_clash_props()
 
-        row = layout.row(align=True)
-        row.operator("bim.add_clash_set")
-        row.operator("bim.import_clash_sets", text="", icon="IMPORT")
-        row.operator("bim.export_clash_sets", text="", icon="EXPORT")
-
-        if not props.clash_sets:
-            return
-
-        layout.template_list("BIM_UL_clash_sets", "", props, "clash_sets", props, "active_clash_set_index")
-
-        if not props.active_clash_set:
-            return
-
-        clash_set = props.active_clash_set
-
-        row = layout.row(align=True)
-        row.prop(clash_set, "name")
-        row.operator("bim.remove_clash_set", icon="X", text="").index = props.active_clash_set_index
-
-        row = layout.row()
-        row.prop(clash_set, "mode")
-
-        if clash_set.mode == "intersection":
-            row = layout.row()
-            row.prop(clash_set, "tolerance")
-            row = layout.row()
-            row.prop(clash_set, "check_all")
-        elif clash_set.mode == "collision":
-            row = layout.row()
-            row.prop(clash_set, "allow_touching")
-        elif clash_set.mode == "clearance":
-            row = layout.row()
-            row.prop(clash_set, "clearance")
-            row = layout.row()
-            row.prop(clash_set, "check_all")
-        else:
-            assert_never(clash_set.mode)
-
-        def draw_clash_set_group(group: tool.Clash.ClashSourceGroup) -> None:
-            row = layout.row(align=True)
-            row.label(text=f"Group {group.upper()}:", icon="OUTLINER_OB_POINTCLOUD")
-            row.operator("bim.add_clash_source", icon="ADD", text="").group = group
-
-            sources = clash_set.get_clash_sources_group(group)
-            if not sources:
-                return
-            layout_ = layout.box()
-            for index, source in enumerate(sources):
-                row = layout_.row(align=True)
-                row.column().label(text="", icon="POINTCLOUD_POINT")
-
-                # Draw user attention to empty filepaths.
-                col = row.column()
-                col.alert = not bool(source.name)
-                col.prop(source, "name", text="", placeholder="source.ifc")
-
-                op = row.operator("bim.select_clash_source", icon="FILE_FOLDER", text="")
-                op.index = index
-                op.group = group
-                # Make sure file selection sticks to "name" field.
-                row.label(text="", icon="BLANK1")
-
-                row.prop(source, "mode", text="")
-                op = row.operator("bim.remove_clash_source", icon="X", text="")
-                op.index = index
-                op.group = group
-
-                if source.mode != "a":
-
-                    def draw_filter(layout: bpy.types.UILayout, context: bpy.types.Context) -> None:
-                        bonsai.bim.helper.draw_filter(
-                            layout,
-                            source.filter_groups,
-                            ClashData,
-                            f"clash_{props.active_clash_set_index}_{group}_{index}",
-                        )
-
-                    bonsai.bim.helper.draw_expandable_panel(
-                        layout_,
-                        context,
-                        "Filter",
-                        draw_filter,
-                        default_closed=True,
-                        panel_id=f"filter_{group}_{index}",
-                    )
-
-        layout.separator()
-        draw_clash_set_group("a")
-        layout.separator()
-        draw_clash_set_group("b")
-        layout.separator()
-
-        row = layout.row()
-        row.prop(props, "should_create_clash_snapshots")
-
-        layout.prop(props, "export_path")
-
-        # Bbox prefilter section
+        # Discipline-based clash detection (simplified workflow)
         box = layout.box()
-        box.label(text="Performance Optimization", icon='SETTINGS')
+        box.label(text="Quick Clash by Discipline", icon="LIGHT")
+
         row = box.row()
-        row.prop(props, "enable_bbox_prefilter", text="Use Spatial Index Prefilter")
+        row.prop(props, "clash_preset", text="")
 
-        if props.enable_bbox_prefilter:
-            row = box.row()
-            row.prop(props, "bbox_database_path", text="Database")
+        if props.clash_preset == 'CUSTOM':
+            row = box.row(align=True)
+            row.prop(props, "discipline_a", text="")
+            row.label(text="vs")
+            row.prop(props, "discipline_b", text="")
 
-        row = layout.row()
-        op = row.operator("bim.execute_ifc_clash")
-        op.filepath = props.export_path
+        row = box.row()
+        row.prop(props, "discipline_tolerance")
 
-        row = layout.row()
-        if clash_set.clashes_loaded:
-            row.column().label(text=f"{len(clash_set.clashes)} Clashes Found", icon="PIVOT_CURSOR")
+        row = box.row()
+        row.operator("bim.clash_by_discipline",
+                     text="Run Clash Detection",
+                     icon="PLAY")
 
-            col = row.column()
-            col.alignment = "RIGHT"
-            col.prop(clash_set, "clashes_loaded", text="", icon="TRASH", invert_checkbox=True)
+        # Display discipline clash results
+        if props.discipline_clash_loaded and props.discipline_clash_candidates:
+            layout.separator()
+            box = layout.box()
+            box.label(text=f"{len(props.discipline_clash_candidates)} Clash Candidates Found", icon="ERROR")
 
-            split = layout.split(factor=0.07, align=True)
+            # Header row
+            split = box.split(factor=0.05, align=True)
             split.label(text="#")
-
             row = split.row(align=True)
-            row.label(text="Group A Element")
-            row.label(text="Group B Element")
+            row.label(text="Element A")
+            row.label(text="Element B")
             row.label(text="Type")
 
-            layout.template_list("BIM_UL_clashes", "", props.active_clash_set, "clashes", props, "active_clash_index")
-            row = layout.row()
-            row.operator("bim.select_clash")
-        else:
-            row.label(text="Clashes Are Not Loaded", icon="PIVOT_CURSOR")
+            # Clash list
+            box.template_list(
+                "BIM_UL_discipline_clashes",
+                "",
+                props,
+                "discipline_clash_candidates",
+                props,
+                "active_discipline_clash_index"
+            )
+
+            # Select clash button
+            row = box.row()
+            row.operator("bim.select_discipline_clash", text="Select & Zoom to Clash", icon="ZOOM_IN")
+
+            # Show selected clash details
+            if 0 <= props.active_discipline_clash_index < len(props.discipline_clash_candidates):
+                candidate = props.discipline_clash_candidates[props.active_discipline_clash_index]
+                detail_box = box.box()
+                detail_box.label(text="Clash Details:", icon="INFO")
+                col = detail_box.column(align=True)
+                col.label(text=f"Element A: {candidate.name_a}")
+                col.label(text=f"  GUID: {candidate.guid_a}")
+                col.label(text=f"  Class: {candidate.ifc_class_a}")
+                col.separator()
+                col.label(text=f"Element B: {candidate.name_b}")
+                col.label(text=f"  GUID: {candidate.guid_b}")
+                col.label(text=f"  Class: {candidate.ifc_class_b}")
+
+        # Advanced: Traditional clash sets (collapsible)
+        layout.separator()
+
+        def draw_traditional_clash_sets(layout_: bpy.types.UILayout, context_: bpy.types.Context) -> None:
+            row = layout_.row(align=True)
+            row.operator("bim.add_clash_set")
+            row.operator("bim.import_clash_sets", text="", icon="IMPORT")
+            row.operator("bim.export_clash_sets", text="", icon="EXPORT")
+
+            if not props.clash_sets:
+                layout_.label(text="No clash sets configured", icon="INFO")
+                return
+
+            layout_.template_list("BIM_UL_clash_sets", "", props, "clash_sets", props, "active_clash_set_index")
+
+            if not props.active_clash_set:
+                return
+
+            clash_set = props.active_clash_set
+
+            row = layout_.row(align=True)
+            row.prop(clash_set, "name")
+            row.operator("bim.remove_clash_set", icon="X", text="").index = props.active_clash_set_index
+
+            row = layout_.row()
+            row.prop(clash_set, "mode")
+
+            if clash_set.mode == "intersection":
+                row = layout_.row()
+                row.prop(clash_set, "tolerance")
+                row = layout_.row()
+                row.prop(clash_set, "check_all")
+            elif clash_set.mode == "collision":
+                row = layout_.row()
+                row.prop(clash_set, "allow_touching")
+            elif clash_set.mode == "clearance":
+                row = layout_.row()
+                row.prop(clash_set, "clearance")
+                row = layout_.row()
+                row.prop(clash_set, "check_all")
+            else:
+                assert_never(clash_set.mode)
+
+            def draw_clash_set_group(group: tool.Clash.ClashSourceGroup) -> None:
+                row = layout_.row(align=True)
+                row.label(text=f"Group {group.upper()}:", icon="OUTLINER_OB_POINTCLOUD")
+                row.operator("bim.add_clash_source", icon="ADD", text="").group = group
+
+                sources = clash_set.get_clash_sources_group(group)
+                if not sources:
+                    return
+                box_ = layout_.box()
+                for index, source in enumerate(sources):
+                    row = box_.row(align=True)
+                    row.column().label(text="", icon="POINTCLOUD_POINT")
+
+                    col = row.column()
+                    col.alert = not bool(source.name)
+                    col.prop(source, "name", text="", placeholder="source.ifc")
+
+                    op = row.operator("bim.select_clash_source", icon="FILE_FOLDER", text="")
+                    op.index = index
+                    op.group = group
+                    row.label(text="", icon="BLANK1")
+
+                    row.prop(source, "mode", text="")
+                    op = row.operator("bim.remove_clash_source", icon="X", text="")
+                    op.index = index
+                    op.group = group
+
+                    if source.mode != "a":
+                        def draw_filter(layout__: bpy.types.UILayout, context__: bpy.types.Context) -> None:
+                            bonsai.bim.helper.draw_filter(
+                                layout__,
+                                source.filter_groups,
+                                ClashData,
+                                f"clash_{props.active_clash_set_index}_{group}_{index}",
+                            )
+
+                        bonsai.bim.helper.draw_expandable_panel(
+                            box_,
+                            context_,
+                            "Filter",
+                            draw_filter,
+                            default_closed=True,
+                            panel_id=f"filter_{group}_{index}",
+                        )
+
+            layout_.separator()
+            draw_clash_set_group("a")
+            layout_.separator()
+            draw_clash_set_group("b")
+            layout_.separator()
+
+            row = layout_.row()
+            row.prop(props, "should_create_clash_snapshots")
+
+            layout_.prop(props, "export_path")
+
+            box_ = layout_.box()
+            box_.label(text="Performance Optimization", icon='SETTINGS')
+            row = box_.row()
+            row.prop(props, "enable_bbox_prefilter", text="Use Spatial Index Prefilter")
+
+            if props.enable_bbox_prefilter:
+                row = box_.row()
+                row.prop(props, "bbox_database_path", text="Database")
+
+            row = layout_.row()
+            op = row.operator("bim.execute_ifc_clash")
+            op.filepath = props.export_path
+
+            row = layout_.row()
+            if clash_set.clashes_loaded:
+                row.column().label(text=f"{len(clash_set.clashes)} Clashes Found", icon="PIVOT_CURSOR")
+
+                col = row.column()
+                col.alignment = "RIGHT"
+                col.prop(clash_set, "clashes_loaded", text="", icon="TRASH", invert_checkbox=True)
+
+                split = layout_.split(factor=0.07, align=True)
+                split.label(text="#")
+
+                row = split.row(align=True)
+                row.label(text="Group A Element")
+                row.label(text="Group B Element")
+                row.label(text="Type")
+
+                layout_.template_list("BIM_UL_clashes", "", clash_set, "clashes", props, "active_clash_index")
+                row = layout_.row()
+                row.operator("bim.select_clash")
+            else:
+                row.label(text="Clashes Are Not Loaded", icon="PIVOT_CURSOR")
+
+        bonsai.bim.helper.draw_expandable_panel(
+            layout,
+            context,
+            "Advanced: Traditional Clash Sets (File-based)",
+            draw_traditional_clash_sets,
+            default_closed=True,
+            panel_id="traditional_clash_sets",
+        )
 
 
 class BIM_PT_clash_manager(Panel):
@@ -265,6 +338,35 @@ class BIM_UL_smart_groups(bpy.types.UIList):
     ) -> None:
         if item:
             layout.label(text=str(item.number), translate=False, icon="NONE", icon_value=0)
+        else:
+            layout.label(text="", translate=False)
+
+
+class BIM_UL_discipline_clashes(bpy.types.UIList):
+    """UIList for discipline-based clash results"""
+    def draw_item(
+        self,
+        context,
+        layout: bpy.types.UILayout,
+        data,
+        item,
+        icon,
+        active_data,
+        active_propname,
+        index,
+        fit_flag,
+    ) -> None:
+        if item:
+            split = layout.split(factor=0.05, align=True)
+            split.label(text=str(index + 1))
+
+            row = split.row(align=False)
+            row.label(text=str(item.name_a), translate=False, icon="NONE")
+            row.label(text=str(item.name_b), translate=False, icon="NONE")
+
+            col = row.column()
+            col.enabled = False
+            col.label(text=f"{item.ifc_class_a}/{item.ifc_class_b}")
         else:
             layout.label(text="", translate=False)
 

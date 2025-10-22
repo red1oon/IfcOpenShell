@@ -22,6 +22,9 @@ from . import ui, prop, operator
 classes = (
     operator.AddClashSet,
     operator.AddClashSource,
+    operator.BIM_OT_analyze_bbox_candidates,
+    operator.BIM_OT_clash_by_discipline,
+    operator.BIM_OT_select_discipline_clash,
     operator.ExecuteIfcClash,
     operator.ExportClashSets,
     operator.ImportClashSets,
@@ -38,12 +41,14 @@ classes = (
     prop.ClashSource,
     prop.ClashSet,
     prop.SmartClashGroup,
+    prop.DisciplineClashCandidate,
     prop.BIMClashProperties,
     ui.BIM_PT_ifcclash,
     ui.BIM_PT_clash_manager,
     ui.BIM_PT_smart_clash_manager,
     ui.BIM_UL_clashes,
     ui.BIM_UL_clash_sets,
+    ui.BIM_UL_discipline_clashes,
     ui.BIM_UL_smart_groups,
 )
 

@@ -333,11 +333,20 @@ class ExecuteIfcClash(bpy.types.Operator, ExportHelper):
                         set_a = [src.name for src in clash_set.a]
                         set_b = [src.name for src in clash_set.b]
 
+                        # Use clash set's tolerance/clearance for prefilter
+                        tolerance = 0.0
+                        if clash_set.mode == "clearance":
+                            tolerance = clash_set.clearance
+                        elif clash_set.mode == "intersection":
+                            tolerance = clash_set.tolerance
+
                         candidates = prefilter.get_candidate_pairs(
-                            set_a, set_b, spatial_index, tolerance=0.0
+                            set_a, set_b, spatial_index, tolerance=tolerance
                         )
 
-                        self.report({'INFO'}, f"Prefilter: {len(candidates)} candidate pairs")
+                        self.report({'INFO'},
+                            f"Bbox prefilter: {len(candidates)} candidate pairs "
+                            f"(see ~/Documents/bonsai.log for details)")
                 else:
                     self.report({'WARNING'}, "Invalid spatial index database, skipping prefilter")
             except Exception as e:
@@ -591,3 +600,472 @@ class SelectSmartGroup(bpy.types.Operator):
         with bpy.context.temp_override(**context_override):
             bpy.ops.view3d.view_selected()
         return {"FINISHED"}
+
+
+class BIM_OT_clash_by_discipline(bpy.types.Operator):
+    """Run discipline-based clash detection using federation database"""
+    bl_idname = "bim.clash_by_discipline"
+    bl_label = "Clash by Discipline"
+    bl_description = "Quick clash detection by discipline using spatial index"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        import time
+        from pathlib import Path
+
+        props = tool.Clash.get_clash_props()
+
+        # Setup logging
+        log_path = Path.home() / "Documents" / "bonsai.log"
+        logger = logging.getLogger('DisciplineClash')
+        logger.setLevel(logging.INFO)
+        logger.handlers.clear()
+
+        file_handler = logging.FileHandler(str(log_path), mode='a')
+        file_handler.setLevel(logging.INFO)
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+        logger.info("=" * 70)
+        logger.info("DISCIPLINE-BASED CLASH DETECTION")
+        logger.info("=" * 70)
+
+        # Load federation database
+        db_path = Path.home() / "federatedmodel.db"
+        if not db_path.exists():
+            error_msg = f"Federation database not found: {db_path}"
+            logger.error(error_msg)
+            self.report({'ERROR'}, error_msg)
+            return {"CANCELLED"}
+
+        logger.info(f"Database: {db_path}")
+
+        # Apply preset if selected
+        disc_a = props.discipline_a
+        disc_b = props.discipline_b
+
+        if props.clash_preset != 'CUSTOM':
+            preset_map = {
+                'ARC_STR': ('ARC', 'STR'),
+                'MEP_ARC': ('MEP', 'ARC'),
+                'MEP_STR': ('MEP', 'STR'),
+                'ACMV_ARC': ('ACMV', 'ARC'),
+                'ELEC_ARC': ('ELEC', 'ARC'),
+            }
+            if props.clash_preset in preset_map:
+                disc_a, disc_b = preset_map[props.clash_preset]
+                logger.info(f"Applied preset: {props.clash_preset}")
+
+        logger.info(f"Discipline A: {disc_a}")
+        logger.info(f"Discipline B: {disc_b}")
+        logger.info(f"Tolerance: {props.discipline_tolerance}")
+
+        print("\n" + "=" * 70)
+        print(f"CLASH DETECTION: {disc_a} vs {disc_b}")
+        print("=" * 70)
+
+        try:
+            from bonsai.bim.module.federation.spatial_index import FederationIndex
+
+            # Load spatial index
+            start_time = time.time()
+            index = FederationIndex(db_path)
+            index.build()
+            load_time = time.time() - start_time
+
+            logger.info(f"Loaded spatial index in {load_time:.2f} seconds")
+            logger.info(f"Total elements: {index.stats['total_elements']:,}")
+            logger.info(f"Available disciplines: {', '.join(sorted(index.stats['disciplines']))}")
+
+            print(f"\n✓ Loaded spatial index ({load_time:.2f}s)")
+            print(f"  Total elements: {index.stats['total_elements']:,}")
+
+            # Query disciplines
+            print(f"\nQuerying disciplines...")
+            elements_a = index.query_by_discipline(disc_a)
+            elements_b = index.query_by_discipline(disc_b)
+
+            logger.info(f"{disc_a} elements: {len(elements_a):,}")
+            logger.info(f"{disc_b} elements: {len(elements_b):,}")
+
+            print(f"  {disc_a}: {len(elements_a):,} elements")
+            print(f"  {disc_b}: {len(elements_b):,} elements")
+
+            if not elements_a:
+                error_msg = f"No elements found for discipline {disc_a}"
+                logger.error(error_msg)
+                self.report({'ERROR'}, error_msg)
+                return {"CANCELLED"}
+
+            if not elements_b:
+                error_msg = f"No elements found for discipline {disc_b}"
+                logger.error(error_msg)
+                self.report({'ERROR'}, error_msg)
+                return {"CANCELLED"}
+
+            # Find bbox intersections
+            print(f"\nAnalyzing bbox intersections...")
+            start_time = time.time()
+            candidates = []
+
+            for elem_a in elements_a:
+                for elem_b in elements_b:
+                    if prefilter.bboxes_intersect(elem_a.bbox, elem_b.bbox, tolerance=props.discipline_tolerance):
+                        candidates.append({
+                            'guid_a': elem_a.guid,
+                            'guid_b': elem_b.guid,
+                            'name_a': elem_a.ifc_class,  # Use IFC class as name (FederationElement doesn't have name)
+                            'name_b': elem_b.ifc_class,
+                            'ifc_class_a': elem_a.ifc_class,
+                            'ifc_class_b': elem_b.ifc_class,
+                            'bbox_center_a': elem_a.centroid,  # Store bbox center for spatial lookup
+                            'bbox_center_b': elem_b.centroid,
+                        })
+
+            analysis_time = time.time() - start_time
+
+            # Calculate statistics
+            total_combinations = len(elements_a) * len(elements_b)
+            reduction = 100 * (1 - len(candidates) / total_combinations) if total_combinations > 0 else 0
+
+            # Report results
+            logger.info("=" * 70)
+            logger.info("RESULTS:")
+            logger.info(f"Total combinations: {total_combinations:,}")
+            logger.info(f"Bbox candidates:    {len(candidates):,}")
+            logger.info(f"Reduction:          {reduction:.1f}%")
+            logger.info(f"Analysis time:      {analysis_time:.2f} seconds")
+            logger.info("=" * 70)
+
+            print(f"\n{'=' * 70}")
+            print("RESULTS:")
+            print(f"  Total combinations: {total_combinations:,}")
+            print(f"  Bbox candidates:    {len(candidates):,}")
+            print(f"  Reduction:          {reduction:.1f}%")
+            print(f"  Analysis time:      {analysis_time:.2f} seconds")
+            print(f"{'=' * 70}\n")
+
+            # Store candidates in scene properties
+            props.discipline_clash_candidates.clear()
+            for candidate in candidates:
+                new = props.discipline_clash_candidates.add()
+                new.guid_a = candidate['guid_a']
+                new.guid_b = candidate['guid_b']
+                new.name_a = candidate['name_a']
+                new.name_b = candidate['name_b']
+                new.ifc_class_a = candidate['ifc_class_a']
+                new.ifc_class_b = candidate['ifc_class_b']
+                new.bbox_center_a = candidate['bbox_center_a']
+                new.bbox_center_b = candidate['bbox_center_b']
+
+            props.discipline_clash_loaded = len(candidates) > 0
+            props.active_discipline_clash_index = 0
+
+            self.report({'INFO'},
+                f"Found {len(candidates):,} clash candidates "
+                f"({reduction:.1f}% reduction, {analysis_time:.1f}s)")
+
+            return {"FINISHED"}
+
+        except Exception as e:
+            error_msg = f"Clash detection failed: {str(e)}"
+            logger.error(error_msg)
+            logger.error("Exception traceback:", exc_info=True)
+            self.report({'ERROR'}, error_msg)
+            import traceback
+            traceback.print_exc()
+            return {"CANCELLED"}
+
+
+class BIM_OT_select_discipline_clash(bpy.types.Operator):
+    """Select and zoom to discipline clash elements"""
+    bl_idname = "bim.select_discipline_clash"
+    bl_label = "Select Discipline Clash"
+    bl_description = "Select and zoom to the clash elements in viewport"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def find_element_by_spatial_proximity(self, ifc_file, ifc_class, bbox_center, tolerance=1.0):
+        """
+        Find IFC element by spatial proximity to bbox center.
+
+        Args:
+            ifc_file: IFC file to search
+            ifc_class: IFC class name (e.g., "IfcWall")
+            bbox_center: Tuple (x, y, z) of bbox center coordinates
+            tolerance: Search radius in meters (default 1.0m)
+
+        Returns:
+            IFC element if found, None otherwise
+        """
+        import ifcopenshell.geom
+
+        # Get all elements of this IFC class
+        elements = ifc_file.by_type(ifc_class)
+        if not elements:
+            return None
+
+        settings = ifcopenshell.geom.settings()
+        settings.set(settings.DISABLE_OPENING_SUBTRACTIONS, True)  # Faster
+
+        target_x, target_y, target_z = bbox_center
+        closest_elem = None
+        closest_dist = float('inf')
+
+        # Find element with bbox center closest to target
+        for elem in elements:
+            try:
+                # Get element's bounding box
+                shape = ifcopenshell.geom.create_shape(settings, elem)
+                verts = shape.geometry.verts
+
+                # Calculate bbox from vertices
+                xs = [verts[i] for i in range(0, len(verts), 3)]
+                ys = [verts[i+1] for i in range(0, len(verts), 3)]
+                zs = [verts[i+2] for i in range(0, len(verts), 3)]
+
+                if not xs:
+                    continue
+
+                # Calculate bbox center
+                elem_center_x = (min(xs) + max(xs)) / 2
+                elem_center_y = (min(ys) + max(ys)) / 2
+                elem_center_z = (min(zs) + max(zs)) / 2
+
+                # Calculate distance to target
+                dist = ((elem_center_x - target_x)**2 +
+                       (elem_center_y - target_y)**2 +
+                       (elem_center_z - target_z)**2) ** 0.5
+
+                if dist < closest_dist and dist <= tolerance:
+                    closest_dist = dist
+                    closest_elem = elem
+
+            except Exception as e:
+                # Skip elements that fail geometry creation
+                continue
+
+        return closest_elem
+
+    def execute(self, context):
+        props = tool.Clash.get_clash_props()
+
+        if not props.discipline_clash_loaded:
+            self.report({'WARNING'}, "No discipline clash results loaded")
+            return {"CANCELLED"}
+
+        if not (0 <= props.active_discipline_clash_index < len(props.discipline_clash_candidates)):
+            self.report({'WARNING'}, "Invalid clash selection")
+            return {"CANCELLED"}
+
+        candidate = props.discipline_clash_candidates[props.active_discipline_clash_index]
+
+        # Get the merged IFC file
+        ifc_file = tool.Ifc.get()
+        if not ifc_file:
+            self.report({'ERROR'}, "No IFC file loaded")
+            return {"CANCELLED"}
+
+        # Try to find elements by GUID first (fast path)
+        elem_a = None
+        elem_b = None
+
+        try:
+            elem_a = ifc_file.by_guid(candidate.guid_a)
+            print(f"✓ Found Element A by GUID")
+        except RuntimeError:
+            print(f"Element A not found by GUID, using spatial lookup")
+
+        try:
+            elem_b = ifc_file.by_guid(candidate.guid_b)
+            print(f"✓ Found Element B by GUID")
+        except RuntimeError:
+            print(f"Element B not found by GUID, using spatial lookup")
+
+        # If GUID lookup failed, use spatial lookup (robust fallback)
+        if not elem_a:
+            elem_a = self.find_element_by_spatial_proximity(
+                ifc_file,
+                candidate.ifc_class_a,
+                candidate.bbox_center_a
+            )
+            if elem_a:
+                print(f"✓ Found Element A by spatial proximity")
+
+        if not elem_b:
+            elem_b = self.find_element_by_spatial_proximity(
+                ifc_file,
+                candidate.ifc_class_b,
+                candidate.bbox_center_b
+            )
+            if elem_b:
+                print(f"✓ Found Element B by spatial proximity")
+
+        if not elem_a and not elem_b:
+            self.report({'ERROR'},
+                f"Neither clash element found in loaded IFC. "
+                f"Elements may not be loaded or geometries may have changed.")
+            return {"CANCELLED"}
+
+        # Find corresponding Blender objects (only for found elements)
+        obj_a = tool.Ifc.get_object(elem_a) if elem_a else None
+        obj_b = tool.Ifc.get_object(elem_b) if elem_b else None
+
+        # Report which elements were found/not found
+        if not elem_a:
+            self.report({'WARNING'}, f"Element A ({candidate.name_a}) not in loaded IFC file")
+        elif not obj_a:
+            self.report({'WARNING'}, f"Element A ({candidate.name_a}) found but not loaded in viewport")
+
+        if not elem_b:
+            self.report({'WARNING'}, f"Element B ({candidate.name_b}) not in loaded IFC file")
+        elif not obj_b:
+            self.report({'WARNING'}, f"Element B ({candidate.name_b}) found but not loaded in viewport")
+
+        # Select objects
+        bpy.ops.object.select_all(action='DESELECT')
+        if obj_a:
+            obj_a.select_set(True)
+        if obj_b:
+            obj_b.select_set(True)
+
+        if obj_a:
+            context.view_layer.objects.active = obj_a
+        elif obj_b:
+            context.view_layer.objects.active = obj_b
+
+        # Zoom to selected
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        override = {'area': area, 'region': region}
+                        with context.temp_override(**override):
+                            bpy.ops.view3d.view_selected()
+                        break
+
+        self.report({'INFO'}, f"Selected clash: {candidate.name_a} vs {candidate.name_b}")
+        return {"FINISHED"}
+
+
+class BIM_OT_analyze_bbox_candidates(bpy.types.Operator):
+    """Analyze bbox intersection candidates (POC - no geometry loading)"""
+    bl_idname = "bim.analyze_bbox_candidates"
+    bl_label = "Analyze Bbox Candidates"
+    bl_description = "Test bbox prefiltering on federation database (ARC vs STR)"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        import time
+        from pathlib import Path
+
+        # Setup logging to ~/Documents/bonsai.log
+        log_path = Path.home() / "Documents" / "bonsai.log"
+        logger = logging.getLogger('BboxAnalysis')
+        logger.setLevel(logging.INFO)
+        logger.handlers.clear()
+
+        file_handler = logging.FileHandler(str(log_path), mode='a')
+        file_handler.setLevel(logging.INFO)
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+        logger.info("=" * 70)
+        logger.info("BBOX PREFILTERING POC - Terminal 1/2 Dataset")
+        logger.info("=" * 70)
+
+        # Load federation index
+        db_path = Path.home() / "federatedmodel.db"
+        if not db_path.exists():
+            error_msg = f"Database not found: {db_path}"
+            logger.error(error_msg)
+            self.report({'ERROR'}, error_msg)
+            return {"CANCELLED"}
+
+        logger.info(f"Database path: {db_path}")
+
+        print("\n" + "=" * 70)
+        print("BBOX PREFILTERING POC - Terminal 1/2 Dataset")
+        print("=" * 70)
+
+        try:
+            from bonsai.bim.module.federation.spatial_index import FederationIndex
+
+            # Build index
+            start_time = time.time()
+            index = FederationIndex(db_path)
+            index.build()
+            load_time = time.time() - start_time
+
+            logger.info(f"Loaded spatial index in {load_time:.2f} seconds")
+            logger.info(f"Total elements: {index.stats['total_elements']:,}")
+            logger.info(f"Disciplines: {', '.join(sorted(index.stats['disciplines']))}")
+
+            print(f"\n✓ Loaded spatial index in {load_time:.2f} seconds")
+            print(f"  Total elements: {index.stats['total_elements']:,}")
+            print(f"  Disciplines: {', '.join(sorted(index.stats['disciplines']))}")
+
+            # Query disciplines
+            logger.info("Querying disciplines...")
+            print("\nQuerying disciplines...")
+            arc_elements = index.query_by_discipline("ARC")
+            str_elements = index.query_by_discipline("STR")
+
+            logger.info(f"ARC elements: {len(arc_elements):,}")
+            logger.info(f"STR elements: {len(str_elements):,}")
+            print(f"  ARC elements: {len(arc_elements):,}")
+            print(f"  STR elements: {len(str_elements):,}")
+
+            # Find bbox intersections
+            logger.info("Analyzing bbox intersections...")
+            print("\nAnalyzing bbox intersections...")
+            start_time = time.time()
+            candidates = []
+
+            for arc in arc_elements:
+                for str_elem in str_elements:
+                    if arc.intersects_bbox(str_elem.bbox):
+                        candidates.append((arc.guid, str_elem.guid))
+
+            analysis_time = time.time() - start_time
+
+            # Calculate statistics
+            total_combinations = len(arc_elements) * len(str_elements)
+            if total_combinations > 0:
+                reduction = 100 * (1 - len(candidates) / total_combinations)
+            else:
+                reduction = 0
+
+            # Report results
+            logger.info("=" * 70)
+            logger.info("RESULTS:")
+            logger.info(f"Total combinations: {total_combinations:,}")
+            logger.info(f"Bbox candidates:    {len(candidates):,}")
+            logger.info(f"Reduction:          {reduction:.1f}%")
+            logger.info(f"Analysis time:      {analysis_time:.2f} seconds")
+            logger.info("=" * 70)
+
+            print(f"\n{'=' * 70}")
+            print("RESULTS:")
+            print(f"{'=' * 70}")
+            print(f"  Total combinations: {total_combinations:,}")
+            print(f"  Bbox candidates:    {len(candidates):,}")
+            print(f"  Reduction:          {reduction:.1f}%")
+            print(f"  Analysis time:      {analysis_time:.2f} seconds")
+            print(f"{'=' * 70}\n")
+
+            self.report({'INFO'},
+                f"Found {len(candidates):,} candidates from "
+                f"{total_combinations:,} combinations ({reduction:.1f}% reduction)")
+
+            return {"FINISHED"}
+
+        except Exception as e:
+            error_msg = f"Analysis failed: {str(e)}"
+            logger.error(error_msg)
+            logger.error("Exception traceback:", exc_info=True)
+            self.report({'ERROR'}, error_msg)
+            import traceback
+            traceback.print_exc()
+            return {"CANCELLED"}

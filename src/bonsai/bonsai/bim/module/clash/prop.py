@@ -145,6 +145,40 @@ class SmartClashGroup(PropertyGroup):
         global_ids: bpy.types.bpy_prop_collection_idprop[StrProperty]
 
 
+class DisciplineClashCandidate(PropertyGroup):
+    """Single clash candidate from discipline-based detection"""
+    guid_a: StringProperty(name="Element A GUID")
+    guid_b: StringProperty(name="Element B GUID")
+    name_a: StringProperty(name="Element A Name")
+    name_b: StringProperty(name="Element B Name")
+    ifc_class_a: StringProperty(name="Element A IFC Class")
+    ifc_class_b: StringProperty(name="Element B IFC Class")
+
+    # Bbox center coordinates for spatial lookup (when GUIDs don't match)
+    bbox_center_a: FloatVectorProperty(
+        name="Element A Bbox Center",
+        description="Bounding box center coordinates for spatial lookup",
+        size=3,
+        default=(0.0, 0.0, 0.0)
+    )
+    bbox_center_b: FloatVectorProperty(
+        name="Element B Bbox Center",
+        description="Bounding box center coordinates for spatial lookup",
+        size=3,
+        default=(0.0, 0.0, 0.0)
+    )
+
+    if TYPE_CHECKING:
+        guid_a: str
+        guid_b: str
+        name_a: str
+        name_b: str
+        ifc_class_a: str
+        ifc_class_b: str
+        bbox_center_a: Vector
+        bbox_center_b: Vector
+
+
 class BIMClashProperties(PropertyGroup):
     blender_clash_set_a: CollectionProperty(name="Blender Clash Set A", type=StrProperty)
     blender_clash_set_b: CollectionProperty(name="Blender Clash Set B", type=StrProperty)
@@ -211,4 +245,74 @@ class BIMClashProperties(PropertyGroup):
         description="Path to spatial index database",
         subtype='FILE_PATH',
         default=""
+    )
+
+    # Discipline-based clash detection
+    discipline_a: EnumProperty(
+        name="Discipline A",
+        description="Primary discipline for clash detection",
+        items=[
+            ('ARC', 'Architecture', 'Architectural elements'),
+            ('STR', 'Structure', 'Structural elements'),
+            ('MEP', 'MEP', 'Mechanical, Electrical, Plumbing'),
+            ('ACMV', 'ACMV', 'Air Conditioning & Mechanical Ventilation'),
+            ('ELEC', 'Electrical', 'Electrical systems'),
+            ('FP', 'Fire Protection', 'Fire protection systems'),
+            ('SP', 'Sanitary/Plumbing', 'Sanitary and plumbing'),
+            ('CW', 'Civil Works', 'Civil works'),
+        ],
+        default='ARC'
+    )
+    discipline_b: EnumProperty(
+        name="Discipline B",
+        description="Secondary discipline for clash detection",
+        items=[
+            ('ARC', 'Architecture', 'Architectural elements'),
+            ('STR', 'Structure', 'Structural elements'),
+            ('MEP', 'MEP', 'Mechanical, Electrical, Plumbing'),
+            ('ACMV', 'ACMV', 'Air Conditioning & Mechanical Ventilation'),
+            ('ELEC', 'Electrical', 'Electrical systems'),
+            ('FP', 'Fire Protection', 'Fire protection systems'),
+            ('SP', 'Sanitary/Plumbing', 'Sanitary and plumbing'),
+            ('CW', 'Civil Works', 'Civil works'),
+        ],
+        default='STR'
+    )
+    clash_preset: EnumProperty(
+        name="Clash Preset",
+        description="Common clash detection presets",
+        items=[
+            ('CUSTOM', 'Custom', 'Custom discipline selection'),
+            ('ARC_STR', 'Architecture vs Structure', 'Detect ARC-STR clashes'),
+            ('MEP_ARC', 'MEP vs Architecture', 'Detect MEP-ARC clashes'),
+            ('MEP_STR', 'MEP vs Structure', 'Detect MEP-STR clashes'),
+            ('ACMV_ARC', 'ACMV vs Architecture', 'Detect ACMV-ARC clashes'),
+            ('ELEC_ARC', 'Electrical vs Architecture', 'Detect ELEC-ARC clashes'),
+            ('ALL_MEP', 'All MEP vs Structure/Architecture', 'All MEP disciplines vs ARC+STR'),
+        ],
+        default='CUSTOM'
+    )
+    discipline_tolerance: FloatProperty(
+        name="Tolerance",
+        description="Clash tolerance in model units",
+        default=0.01,
+        min=0.0,
+        soft_max=1.0,
+        precision=3,
+        subtype='DISTANCE'
+    )
+
+    # Discipline clash results
+    discipline_clash_candidates: CollectionProperty(
+        name="Discipline Clash Candidates",
+        type=DisciplineClashCandidate
+    )
+    active_discipline_clash_index: IntProperty(
+        name="Active Discipline Clash Index",
+        default=0
+    )
+    discipline_clash_loaded: BoolProperty(
+        name="Discipline Clash Loaded",
+        description="Whether discipline clash results are loaded",
+        default=False
     )

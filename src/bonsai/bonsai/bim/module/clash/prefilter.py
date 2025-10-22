@@ -69,30 +69,127 @@ def get_candidate_pairs(
 ) -> List[Tuple[str, str]]:
     """
     Get element pairs whose bboxes intersect (candidates for geometry clash).
-    
+
     Args:
         set_a: List of IFC file paths for clash set A
         set_b: List of IFC file paths for clash set B
         spatial_index: FederationIndex instance
         tolerance: Clearance distance in model units
-        
+
     Returns:
         List of (guid_a, guid_b) pairs where bboxes intersect
     """
+    import logging
+
+    logger = logging.getLogger('BboxPrefilter')
+    logger.setLevel(logging.INFO)
+
+    # Setup file logging
+    log_path = Path.home() / "Documents" / "bonsai.log"
+    if not logger.handlers:
+        file_handler = logging.FileHandler(str(log_path), mode='a')
+        file_handler.setLevel(logging.INFO)
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+    logger.info("=" * 70)
+    logger.info("BBOX PREFILTERING - Clash Detection")
+    logger.info("=" * 70)
+
     if not spatial_index.is_loaded:
-        raise RuntimeError("Spatial index not loaded. Call build() first.")
-    
-    # Note: set_a and set_b contain FILE PATHS, not GUIDs
-    # We need to query all elements and do bbox intersection
-    # This is a simplified version - just return empty for now
-    # The actual filtering happens in IfcClash after geometry load
-    
-    print(f"DEBUG get_candidate_pairs: set_a has {len(set_a)} files")
-    print(f"DEBUG get_candidate_pairs: set_b has {len(set_b)} files")
-    
-    # For now, return empty - prefilter at file level not element level
-    # IfcClash will load all elements from these files
-    return []
+        error_msg = "Spatial index not loaded. Call build() first."
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    logger.info(f"Set A files: {len(set_a)}")
+    logger.info(f"Set B files: {len(set_b)}")
+
+    # Extract discipline codes from file paths
+    # Assumption: file paths contain discipline codes (e.g., "ARC", "STR", "MEP")
+    # For now, we'll use a simple heuristic: query all elements and do bbox tests
+
+    # Get all elements from spatial index
+    all_elements_a = []
+    all_elements_b = []
+
+    # Query by file paths - extract disciplines from filenames
+    for file_path in set_a:
+        # Try to extract discipline from filename (e.g., "Terminal_ARC.ifc" -> "ARC")
+        filename = Path(file_path).stem.upper()
+        for disc in ['ARC', 'STR', 'MEP', 'ACMV', 'ELEC', 'FP', 'SP', 'CW']:
+            if disc in filename:
+                logger.info(f"Set A: Querying discipline {disc} from {Path(file_path).name}")
+                elements = spatial_index.query_by_discipline(disc)
+                all_elements_a.extend(elements)
+                logger.info(f"  Found {len(elements)} elements")
+                break
+
+    for file_path in set_b:
+        filename = Path(file_path).stem.upper()
+        for disc in ['ARC', 'STR', 'MEP', 'ACMV', 'ELEC', 'FP', 'SP', 'CW']:
+            if disc in filename:
+                logger.info(f"Set B: Querying discipline {disc} from {Path(file_path).name}")
+                elements = spatial_index.query_by_discipline(disc)
+                all_elements_b.extend(elements)
+                logger.info(f"  Found {len(elements)} elements")
+                break
+
+    # If we couldn't extract disciplines, query all available disciplines
+    if not all_elements_a:
+        logger.warning("Could not extract disciplines from Set A files, querying all disciplines")
+        for disc in spatial_index.stats['disciplines']:
+            elements = spatial_index.query_by_discipline(disc)
+            all_elements_a.extend(elements)
+            logger.info(f"  Set A - {disc}: {len(elements)} elements")
+
+    if not all_elements_b:
+        logger.warning("Could not extract disciplines from Set B files, querying all disciplines")
+        for disc in spatial_index.stats['disciplines']:
+            elements = spatial_index.query_by_discipline(disc)
+            all_elements_b.extend(elements)
+            logger.info(f"  Set B - {disc}: {len(elements)} elements")
+
+    logger.info(f"Total Set A elements: {len(all_elements_a)}")
+    logger.info(f"Total Set B elements: {len(all_elements_b)}")
+
+    # Find bbox intersections
+    import time
+    start_time = time.time()
+
+    candidates = []
+    for elem_a in all_elements_a:
+        for elem_b in all_elements_b:
+            # Use bboxes_intersect helper with tolerance
+            if bboxes_intersect(elem_a.bbox, elem_b.bbox, tolerance=tolerance):
+                candidates.append((elem_a.guid, elem_b.guid))
+
+    analysis_time = time.time() - start_time
+
+    # Calculate statistics
+    total_combinations = len(all_elements_a) * len(all_elements_b)
+    if total_combinations > 0:
+        reduction = 100 * (1 - len(candidates) / total_combinations)
+    else:
+        reduction = 0
+
+    logger.info("=" * 70)
+    logger.info("PREFILTER RESULTS:")
+    logger.info(f"Total combinations: {total_combinations:,}")
+    logger.info(f"Bbox candidates:    {len(candidates):,}")
+    logger.info(f"Reduction:          {reduction:.1f}%")
+    logger.info(f"Analysis time:      {analysis_time:.2f} seconds")
+    logger.info("=" * 70)
+
+    print(f"\n{'=' * 70}")
+    print("BBOX PREFILTER RESULTS:")
+    print(f"  Total combinations: {total_combinations:,}")
+    print(f"  Bbox candidates:    {len(candidates):,}")
+    print(f"  Reduction:          {reduction:.1f}%")
+    print(f"  Analysis time:      {analysis_time:.2f} seconds")
+    print(f"{'=' * 70}\n")
+
+    return candidates
 
 def validate_spatial_index(database_path: Path) -> bool:
     """
