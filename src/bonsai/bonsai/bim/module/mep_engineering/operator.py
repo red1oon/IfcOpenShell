@@ -683,8 +683,128 @@ class ValidateConduitRoute(Operator):
         # TODO Phase 2B: Implement BCF export
         bcf_path = Path.home() / "terminal1_route_clashes.bcf"
         
-        self.report({'WARNING'}, 
+        self.report({'WARNING'},
                    "BCF export not yet implemented. "
                    "See console for clash summary.")
-        
+
         return str(bcf_path)
+
+
+class AutoPickRoutingEndpoints(Operator):
+    """Auto-select routing start/end points from federation database"""
+    bl_idname = "bim.auto_pick_routing_endpoints"
+    bl_label = "Auto-Pick from Federation DB"
+    bl_description = "Automatically select routing endpoints from electrical elements in federation database"
+    bl_options = {"REGISTER", "UNDO"}
+
+    discipline: bpy.props.StringProperty(
+        name="Discipline",
+        description="Discipline to query for endpoints",
+        default="ELEC"
+    )
+
+    def execute(self, context):
+        import sqlite3
+        from pathlib import Path
+
+        props = context.scene.BIMmepEngineeringProperties
+        fed_props = context.scene.BIMFederationProperties
+
+        # Check if federation DB is set
+        if not fed_props.federation_database_path:
+            self.report({'ERROR'}, "No federation database loaded. Load federation index first.")
+            return {"CANCELLED"}
+
+        db_path = Path(bpy.path.abspath(fed_props.federation_database_path))
+        if not db_path.exists():
+            self.report({'ERROR'}, f"Federation database not found: {db_path}")
+            return {"CANCELLED"}
+
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+
+            # Query elements from specified discipline
+            query = """
+                SELECT
+                    m.guid,
+                    m.ifc_class,
+                    r.min_x, r.max_x,
+                    r.min_y, r.max_y,
+                    r.min_z, r.max_z
+                FROM elements_meta m
+                JOIN elements_rtree r ON m.id = r.id
+                WHERE m.discipline = ?
+                ORDER BY m.ifc_class, m.guid
+                LIMIT 10
+            """
+
+            cursor.execute(query, (self.discipline,))
+            rows = cursor.fetchall()
+
+            if len(rows) < 2:
+                self.report({'WARNING'},
+                    f"Only {len(rows)} {self.discipline} elements found in federation DB. Need at least 2.")
+                conn.close()
+                return {"CANCELLED"}
+
+            # Calculate bbox centers for all elements
+            all_endpoints = []
+            for row in rows:
+                guid, ifc_class, min_x, max_x, min_y, max_y, min_z, max_z = row
+                center_x = (min_x + max_x) / 2
+                center_y = (min_y + max_y) / 2
+                center_z = (min_z + max_z) / 2
+                all_endpoints.append({
+                    'guid': guid,
+                    'class': ifc_class,
+                    'pos': (center_x, center_y, center_z)
+                })
+
+            # Find pair with MAXIMUM distance (most challenging route)
+            import math
+            max_distance = 0
+            best_pair = (all_endpoints[0], all_endpoints[1])
+
+            for i, ep1 in enumerate(all_endpoints):
+                for j, ep2 in enumerate(all_endpoints[i+1:], start=i+1):
+                    dx = ep2['pos'][0] - ep1['pos'][0]
+                    dy = ep2['pos'][1] - ep1['pos'][1]
+                    dz = ep2['pos'][2] - ep1['pos'][2]
+                    distance = math.sqrt(dx*dx + dy*dy + dz*dz)
+
+                    if distance > max_distance:
+                        max_distance = distance
+                        best_pair = (ep1, ep2)
+
+            endpoints = list(best_pair)
+
+            # Set routing endpoints
+            props.route_start_point = endpoints[0]['pos']
+            props.route_end_point = endpoints[1]['pos']
+
+            conn.close()
+
+            # Report success
+            print("\n" + "="*70)
+            print("AUTO-PICKED ROUTING ENDPOINTS FROM FEDERATION DATABASE")
+            print("="*70)
+            print(f"Distance: {max_distance:.2f}m (farthest pair)")
+            print(f"\nStart: {endpoints[0]['class']}")
+            print(f"  GUID: {endpoints[0]['guid']}")
+            print(f"  Position: {endpoints[0]['pos']}")
+            print(f"\nEnd: {endpoints[1]['class']}")
+            print(f"  GUID: {endpoints[1]['guid']}")
+            print(f"  Position: {endpoints[1]['pos']}")
+            print("="*70 + "\n")
+
+            self.report({'INFO'},
+                f"Auto-picked {max_distance:.1f}m route: {endpoints[0]['class']} → {endpoints[1]['class']}")
+
+            return {"FINISHED"}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to query federation DB: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {"CANCELLED"}

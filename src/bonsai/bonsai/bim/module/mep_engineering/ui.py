@@ -29,46 +29,53 @@ class BIM_PT_mep_engineering(Panel):
         
         box = layout.box()
         box.label(text="Conduit Routing", icon='CURVE_PATH')
-        
+
         # Start Point
         row = box.row(align=True)
         row.label(text="Start Point:")
         row.operator("bim.set_route_start_point", text="Set from Cursor", icon='CURSOR')
-        
+
         row = box.row()
         row.prop(props, "route_start_point", text="")
-        
+
         # End Point
         row = box.row(align=True)
         row.label(text="End Point:")
         row.operator("bim.set_route_end_point", text="Set from Cursor", icon='CURSOR')
-        
+
         row = box.row()
         row.prop(props, "route_end_point", text="")
-        
+
         # Settings
         box.separator()
         row = box.row()
         row.prop(props, "clearance_distance")
-        
+
         row = box.row()
         row.prop(props, "conduit_diameter")
-        
+
         row = box.row()
         row.prop(props, "target_disciplines")
-        
-        # Route Button
+
+        # Action buttons section
         box.separator()
-        row = box.row()
+
+        # Test Routing button (auto-pick from federation DB)
+        row = box.row(align=True)
+        row.enabled = fed_props.index_loaded
+        row.operator("bim.auto_pick_routing_endpoints", text="Test Routing", icon='PLAY')
+
+        # Route Conduit button
+        row = box.row(align=True)
         row.scale_y = 1.5
         row.enabled = fed_props.index_loaded
         row.operator("bim.route_mep_conduit", text="Route Conduit", icon='ANIM')
 
-        # Visualization buttons (embedded here, no separate section)
+        # Visualization buttons
         box.separator()
         row = box.row(align=True)
         row.enabled = fed_props.index_loaded
-        row.operator("bim.visualize_routing_obstacles", text="Visualize Conduit", icon='HIDE_OFF')
+        row.operator("bim.visualize_routing_obstacles", text="View Conduit", icon='HIDE_OFF')
         row.operator("bim.clear_routing_debug", text="Clear Conduit", icon='X')
 
         # ================================================================

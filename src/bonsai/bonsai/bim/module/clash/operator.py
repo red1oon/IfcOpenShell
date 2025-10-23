@@ -1282,6 +1282,12 @@ class BIM_OT_clear_discipline_clash_visualization(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
+        # Disable GPU visualization if enabled
+        from . import visualization
+        if visualization.is_enabled():
+            visualization.disable_visualization()
+            print("Disabled GPU overlay visualization")
+
         # Clear both possible collection names
         collection_names = ["Selected_Clash_Markers", "Discipline_Clash_Clusters"]
         cleared_collections = 0
@@ -1340,4 +1346,91 @@ class BIM_OT_clear_discipline_clash_visualization(bpy.types.Operator):
         else:
             self.report({'INFO'}, f"Cleared {cleared_objects} clash markers - returned to building view")
 
+        return {"FINISHED"}
+
+
+class BIM_OT_enable_clash_gpu_visualization(bpy.types.Operator):
+    """Enable GPU overlay clash visualization (Google Maps style)"""
+    bl_idname = "bim.enable_clash_gpu_visualization"
+    bl_label = "Enable GPU Visualization"
+    bl_description = "Show clash markers using GPU overlays with zoom-adaptive detail"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        from . import visualization
+
+        props = tool.Clash.get_clash_props()
+
+        if not props.discipline_clash_loaded or not props.discipline_clash_candidates:
+            self.report({'WARNING'}, "No clash candidates loaded")
+            return {"CANCELLED"}
+
+        # Calculate and cache offset if not already cached
+        if "MEP_cached_offset" not in context.scene:
+            print("\n📍 Calculating model offset for clash visualization...")
+
+            # Find first placed IFC object in scene as reference
+            offset_x, offset_y, offset_z = 0.0, 0.0, 0.0
+
+            for obj in context.scene.objects:
+                if not obj or obj.type != 'MESH':
+                    continue
+                if abs(obj.location.x) < 1.0 and abs(obj.location.y) < 1.0:
+                    continue
+                if not hasattr(obj, 'BIMObjectProperties'):
+                    continue
+                if not obj.BIMObjectProperties.ifc_definition_id:
+                    continue
+
+                # Found reference - use first clash bbox center as IFC reference
+                if props.discipline_clash_candidates:
+                    first_clash = props.discipline_clash_candidates[0]
+                    ifc_ref = first_clash.bbox_center_a
+
+                    offset_x = ifc_ref[0] - obj.location.x
+                    offset_y = ifc_ref[1] - obj.location.y
+                    offset_z = ifc_ref[2] - obj.location.z
+
+                    context.scene["MEP_cached_offset"] = (offset_x, offset_y, offset_z)
+                    print(f"   ✓ Cached offset: ({offset_x:.1f}, {offset_y:.1f}, {offset_z:.1f})")
+                    break
+
+        # Convert candidates to visualization format
+        clash_data = []
+        for candidate in props.discipline_clash_candidates:
+            clash_data.append({
+                'center_a': tuple(candidate.bbox_center_a),
+                'center_b': tuple(candidate.bbox_center_b),
+                'id': f"{candidate.guid_a}_{candidate.guid_b}",
+                'distance': 0.0  # Could calculate if needed
+            })
+
+        print(f"\n=== Enabling GPU Visualization ===")
+        print(f"Loading {len(clash_data)} clash markers...")
+
+        # Load markers and enable visualization
+        visualization.load_clash_markers(clash_data)
+        visualization.enable_visualization()
+
+        self.report({'INFO'}, f"GPU visualization enabled - {len(clash_data)} markers loaded")
+        return {"FINISHED"}
+
+
+class BIM_OT_disable_clash_gpu_visualization(bpy.types.Operator):
+    """Disable GPU overlay clash visualization"""
+    bl_idname = "bim.disable_clash_gpu_visualization"
+    bl_label = "Disable GPU Visualization"
+    bl_description = "Hide GPU overlay clash markers"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        from . import visualization
+
+        if not visualization.is_enabled():
+            self.report({'INFO'}, "GPU visualization already disabled")
+            return {"FINISHED"}
+
+        visualization.disable_visualization()
+
+        self.report({'INFO'}, "GPU visualization disabled")
         return {"FINISHED"}

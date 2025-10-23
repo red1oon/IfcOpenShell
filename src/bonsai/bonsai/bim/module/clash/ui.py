@@ -79,6 +79,11 @@ class BIM_PT_ifcclash(Panel):
             result_box = layout.box()
             result_box.label(text=f"{len(props.discipline_clash_candidates)} Clash Candidates Found", icon="ERROR")
 
+            # Filter hint
+            filter_row = result_box.row()
+            filter_row.scale_y = 0.8
+            filter_row.label(text="💡 Use filter box (🔍) to search: 'wall', 'door', 'ifcwall*', etc.", icon='INFO')
+
             # Header row
             header = result_box.row(align=True)
             header.label(text="#")
@@ -87,7 +92,7 @@ class BIM_PT_ifcclash(Panel):
             header.label(text="Element B")
             header.label(text="Type")
 
-            # Clash list
+            # Clash list (with built-in filter support)
             result_box.template_list(
                 "BIM_UL_discipline_clashes",
                 "",
@@ -108,16 +113,39 @@ class BIM_PT_ifcclash(Panel):
 
             # Action buttons
             row = result_box.row(align=True)
-            row.operator("bim.select_discipline_clash", text="Select & Zoom to Clash", icon="ZOOM_IN")
+            row.operator("bim.select_discipline_clash", text="View Clash", icon="ZOOM_IN")
 
-            # Visualize Selected button - enable only if clashes are selected
-            col = row.column()
-            col.enabled = selected_count > 0
-            col.operator("bim.visualize_selected_discipline_clashes",
-                        text=f"Visualize Selected ({selected_count})",
-                        icon="HIDE_OFF")
+            # OLD wireframe visualization - DISABLED (use GPU Overlays instead)
+            # col = row.column()
+            # col.enabled = selected_count > 0
+            # col.operator("bim.visualize_selected_discipline_clashes",
+            #             text=f"Visualize Selected ({selected_count})",
+            #             icon="HIDE_OFF")
 
             row.operator("bim.clear_discipline_clash_visualization", text="Clear", icon="X")
+
+            # GPU Visualization controls (separate row)
+            layout.separator()
+            gpu_box = layout.box()
+            gpu_box.label(text="GPU Overlay Visualization (All Clashes)", icon="SHADING_RENDERED")
+
+            # Import visualization module to check status
+            from . import visualization
+            is_viz_active = visualization.is_enabled()
+
+            row = gpu_box.row(align=True)
+            if is_viz_active:
+                row.operator("bim.disable_clash_gpu_visualization", text="Disable GPU Overlays", icon="HIDE_ON")
+                row.label(text="✓ Active", icon="CHECKMARK")
+            else:
+                row.operator("bim.enable_clash_gpu_visualization", text="Enable GPU Overlays", icon="HIDE_OFF")
+                row.label(text="", icon="BLANK1")
+
+            # Info about GPU visualization
+            info_col = gpu_box.column(align=True)
+            info_col.scale_y = 0.8
+            info_col.label(text="Zoom-adaptive markers (no scene objects)", icon="INFO")
+            info_col.label(text="Far: Clusters | Medium: Groups | Close: Individual")
 
             # Show selection limit warning
             if selected_count > 10:
