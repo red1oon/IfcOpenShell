@@ -124,28 +124,17 @@ class BIM_PT_ifcclash(Panel):
 
             row.operator("bim.clear_discipline_clash_visualization", text="Clear", icon="X")
 
-            # GPU Visualization controls (separate row)
+            # Clash Visualization (Gizmo-based - coming soon)
             layout.separator()
-            gpu_box = layout.box()
-            gpu_box.label(text="GPU Overlay Visualization (All Clashes)", icon="SHADING_RENDERED")
+            viz_box = layout.box()
+            viz_box.label(text="Interactive Clash Markers (Coming Soon)", icon="COMMUNITY")
 
-            # Import visualization module to check status
-            from . import visualization
-            is_viz_active = visualization.is_enabled()
-
-            row = gpu_box.row(align=True)
-            if is_viz_active:
-                row.operator("bim.disable_clash_gpu_visualization", text="Disable GPU Overlays", icon="HIDE_ON")
-                row.label(text="✓ Active", icon="CHECKMARK")
-            else:
-                row.operator("bim.enable_clash_gpu_visualization", text="Enable GPU Overlays", icon="HIDE_OFF")
-                row.label(text="", icon="BLANK1")
-
-            # Info about GPU visualization
-            info_col = gpu_box.column(align=True)
+            info_col = viz_box.column(align=True)
             info_col.scale_y = 0.8
-            info_col.label(text="Zoom-adaptive markers (no scene objects)", icon="INFO")
-            info_col.label(text="Far: Clusters | Medium: Groups | Close: Individual")
+            info_col.label(text="⏳ Implementing Blender gizmo system", icon="INFO")
+            info_col.label(text="• Click markers to jump to clashes")
+            info_col.label(text="• Color-coded by status (New/Active/Resolved)")
+            info_col.label(text="• Hover for clash details")
 
             # Show selection limit warning
             if selected_count > 10:

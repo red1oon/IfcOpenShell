@@ -761,11 +761,12 @@ class AutoPickRoutingEndpoints(Operator):
                     'pos': (center_x, center_y, center_z)
                 })
 
-            # Find pair with MAXIMUM distance (most challenging route)
+            # Find challenging pairs (randomized for variety)
             import math
-            max_distance = 0
-            best_pair = (all_endpoints[0], all_endpoints[1])
+            import random
 
+            # Calculate distances for all pairs
+            challenging_pairs = []
             for i, ep1 in enumerate(all_endpoints):
                 for j, ep2 in enumerate(all_endpoints[i+1:], start=i+1):
                     dx = ep2['pos'][0] - ep1['pos'][0]
@@ -773,11 +774,28 @@ class AutoPickRoutingEndpoints(Operator):
                     dz = ep2['pos'][2] - ep1['pos'][2]
                     distance = math.sqrt(dx*dx + dy*dy + dz*dz)
 
-                    if distance > max_distance:
-                        max_distance = distance
-                        best_pair = (ep1, ep2)
+                    # Only consider pairs with good distance (> 5m for meaningful routing)
+                    if distance > 5.0:
+                        challenging_pairs.append({
+                            'pair': (ep1, ep2),
+                            'distance': distance
+                        })
 
-            endpoints = list(best_pair)
+            if not challenging_pairs:
+                # Fallback: use any pair if no challenging ones found
+                endpoints = [all_endpoints[0], all_endpoints[1]]
+                max_distance = math.sqrt(
+                    sum((endpoints[1]['pos'][i] - endpoints[0]['pos'][i])**2 for i in range(3))
+                )
+            else:
+                # Sort by distance and pick randomly from top 50%
+                challenging_pairs.sort(key=lambda x: x['distance'], reverse=True)
+                top_half = challenging_pairs[:max(1, len(challenging_pairs)//2)]
+
+                # Randomly pick from top half for variety
+                selected = random.choice(top_half)
+                endpoints = list(selected['pair'])
+                max_distance = selected['distance']
 
             # Set routing endpoints
             props.route_start_point = endpoints[0]['pos']
@@ -787,19 +805,22 @@ class AutoPickRoutingEndpoints(Operator):
 
             # Report success
             print("\n" + "="*70)
-            print("AUTO-PICKED ROUTING ENDPOINTS FROM FEDERATION DATABASE")
+            print("AUTO-PICKED ROUTING ENDPOINTS (RANDOMIZED)")
             print("="*70)
-            print(f"Distance: {max_distance:.2f}m (farthest pair)")
+            if challenging_pairs:
+                print(f"Selected from {len(challenging_pairs)} challenging pairs (distance > 5m)")
+            print(f"Distance: {max_distance:.2f}m")
             print(f"\nStart: {endpoints[0]['class']}")
             print(f"  GUID: {endpoints[0]['guid']}")
             print(f"  Position: {endpoints[0]['pos']}")
             print(f"\nEnd: {endpoints[1]['class']}")
             print(f"  GUID: {endpoints[1]['guid']}")
             print(f"  Position: {endpoints[1]['pos']}")
+            print(f"\n💡 Click 'Test Routing' again for a different route")
             print("="*70 + "\n")
 
             self.report({'INFO'},
-                f"Auto-picked {max_distance:.1f}m route: {endpoints[0]['class']} → {endpoints[1]['class']}")
+                f"Auto-picked {max_distance:.1f}m route (click again for different route)")
 
             return {"FINISHED"}
 

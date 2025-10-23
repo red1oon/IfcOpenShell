@@ -1282,11 +1282,11 @@ class BIM_OT_clear_discipline_clash_visualization(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        # Disable GPU visualization if enabled
-        from . import visualization
-        if visualization.is_enabled():
-            visualization.disable_visualization()
-            print("Disabled GPU overlay visualization")
+        # GPU visualization disabled (replaced with gizmos)
+        # from . import visualization
+        # if visualization.is_enabled():
+        #     visualization.disable_visualization()
+        #     print("Disabled GPU overlay visualization")
 
         # Clear both possible collection names
         collection_names = ["Selected_Clash_Markers", "Discipline_Clash_Clusters"]
