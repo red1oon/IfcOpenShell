@@ -161,18 +161,25 @@ class DisciplineClashCandidate(PropertyGroup):
         default=False
     )
 
-    # Bbox center coordinates for spatial lookup (when GUIDs don't match)
-    bbox_center_a: FloatVectorProperty(
-        name="Element A Bbox Center",
-        description="Bounding box center coordinates for spatial lookup",
-        size=3,
-        default=(0.0, 0.0, 0.0)
+    # Clash metadata
+    distance: FloatProperty(
+        name="Clash Distance",
+        description="Overlap or clearance distance",
+        default=0.0,
+        subtype='DISTANCE'
     )
-    bbox_center_b: FloatVectorProperty(
-        name="Element B Bbox Center",
-        description="Bounding box center coordinates for spatial lookup",
-        size=3,
-        default=(0.0, 0.0, 0.0)
+
+    # Status tracking (persisted in SQLite database)
+    status: EnumProperty(
+        name="Status",
+        description="Clash review status",
+        items=[
+            ('NEW', 'New', 'Newly detected clash'),
+            ('ACTIVE', 'Active', 'Under review'),
+            ('REVIEWED', 'Reviewed', 'Reviewed, awaiting fix'),
+            ('RESOLVED', 'Resolved', 'Fixed/Approved'),
+        ],
+        default='NEW'
     )
 
     if TYPE_CHECKING:
@@ -182,8 +189,8 @@ class DisciplineClashCandidate(PropertyGroup):
         name_b: str
         ifc_class_a: str
         ifc_class_b: str
-        bbox_center_a: Vector
-        bbox_center_b: Vector
+        distance: float
+        status: Literal["NEW", "ACTIVE", "REVIEWED", "RESOLVED"]
 
 
 class BIMClashProperties(PropertyGroup):
@@ -322,4 +329,18 @@ class BIMClashProperties(PropertyGroup):
         name="Discipline Clash Loaded",
         description="Whether discipline clash results are loaded",
         default=False
+    )
+
+    # Gizmo visualization control
+    gizmo_visualization_enabled: BoolProperty(
+        name="Gizmo Visualization Enabled",
+        description="Whether clash gizmo markers are displayed in viewport",
+        default=False
+    )
+
+    # Gizmo navigation
+    current_clash_index: IntProperty(
+        name="Current Clash Index",
+        description="Currently viewed clash (for Previous/Next navigation)",
+        default=0
     )

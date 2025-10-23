@@ -124,17 +124,51 @@ class BIM_PT_ifcclash(Panel):
 
             row.operator("bim.clear_discipline_clash_visualization", text="Clear", icon="X")
 
-            # Clash Visualization (Gizmo-based - coming soon)
+            # Clash Visualization
             layout.separator()
             viz_box = layout.box()
-            viz_box.label(text="Interactive Clash Markers (Coming Soon)", icon="COMMUNITY")
+            viz_box.label(text="Clash Visualization", icon="OUTLINER_OB_POINTCLOUD")
 
+            # GPU Overlay Visualization
+            gpu_row = viz_box.row(align=True)
+            gpu_row.operator("bim.enable_clash_gpu_visualization",
+                           text="GPU Overlay",
+                           icon="RESTRICT_VIEW_OFF")
+            gpu_row.operator("bim.disable_clash_gpu_visualization",
+                           text="",
+                           icon="X")
+
+            # Gizmo Visualization (Interactive 3D Markers) - Now with lazy loading!
+            gizmo_row = viz_box.row(align=True)
+            gizmo_row.operator("bim.enable_clash_gizmo_visualization",
+                             text="Interactive Gizmos",
+                             icon="PIVOT_INDIVIDUAL")
+            gizmo_row.operator("bim.disable_clash_gizmo_visualization",
+                             text="",
+                             icon="X")
+
+            # Info about gizmo features
             info_col = viz_box.column(align=True)
-            info_col.scale_y = 0.8
-            info_col.label(text="⏳ Implementing Blender gizmo system", icon="INFO")
-            info_col.label(text="• Click markers to jump to clashes")
-            info_col.label(text="• Color-coded by status (New/Active/Resolved)")
-            info_col.label(text="• Hover for clash details")
+            info_col.scale_y = 0.7
+            info_col.label(text="💡 Gizmo features:", icon='INFO')
+            info_col.label(text="  • Left-click to jump to clash")
+            info_col.label(text="  • Right-click for context menu")
+            info_col.label(text="  • Color-coded: Red=New, Orange=Active, Yellow=Reviewed, Green=Resolved")
+
+            # Lazy Geometry Loading - Load only selected clash elements
+            viz_box.separator()
+            geom_row = viz_box.row()
+            geom_row.scale_y = 1.3
+            geom_op = geom_row.operator("bim.load_clash_geometry",
+                                      text="🔍 Load Clash Geometry (Lazy)",
+                                      icon="IMPORT")
+            geom_op.clash_index = props.active_discipline_clash_index
+
+            # Info about lazy loading
+            lazy_info = viz_box.column(align=True)
+            lazy_info.scale_y = 0.6
+            lazy_info.label(text="💡 Loads only 2 elements from source IFCs")
+            lazy_info.label(text="   Previous geometry auto-cleared")
 
             # Show selection limit warning
             if selected_count > 10:

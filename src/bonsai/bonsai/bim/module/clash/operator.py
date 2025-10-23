@@ -778,8 +778,7 @@ class BIM_OT_clash_by_discipline(bpy.types.Operator):
                             'name_b': elem_b.ifc_class,
                             'ifc_class_a': elem_a.ifc_class,
                             'ifc_class_b': elem_b.ifc_class,
-                            'bbox_center_a': elem_a.centroid,  # Store bbox center for spatial lookup
-                            'bbox_center_b': elem_b.centroid,
+                            # Note: bbox_center not stored - queried from federation DB when needed
                         })
 
             analysis_time = time.time() - start_time
@@ -822,11 +821,13 @@ class BIM_OT_clash_by_discipline(bpy.types.Operator):
                 new.name_b = candidate['name_b']
                 new.ifc_class_a = candidate['ifc_class_a']
                 new.ifc_class_b = candidate['ifc_class_b']
-                new.bbox_center_a = candidate['bbox_center_a']
-                new.bbox_center_b = candidate['bbox_center_b']
+                # bbox_center queried from federation DB when needed (lazy loading)
 
             props.discipline_clash_loaded = len(candidates) > 0
             props.active_discipline_clash_index = 0
+
+            # Sync bbox_database_path for visualization operators
+            props.bbox_database_path = str(db_path)
 
             self.report({'INFO'},
                 f"Found {len(candidates):,} clash candidates "
@@ -949,23 +950,33 @@ class BIM_OT_select_discipline_clash(bpy.types.Operator):
             print(f"Element B not found by GUID, using spatial lookup")
 
         # If GUID lookup failed, use spatial lookup (robust fallback)
-        if not elem_a:
-            elem_a = self.find_element_by_spatial_proximity(
-                ifc_file,
-                candidate.ifc_class_a,
-                candidate.bbox_center_a
+        if not elem_a or not elem_b:
+            # Query federation DB for bbox centers (lazy loading)
+            from . import gizmo
+            db_path = props.bbox_database_path
+            center_a, center_b = gizmo.get_clash_bbox_centers(
+                candidate.guid_a,
+                candidate.guid_b,
+                db_path
             )
-            if elem_a:
-                print(f"✓ Found Element A by spatial proximity")
 
-        if not elem_b:
-            elem_b = self.find_element_by_spatial_proximity(
-                ifc_file,
-                candidate.ifc_class_b,
-                candidate.bbox_center_b
-            )
-            if elem_b:
-                print(f"✓ Found Element B by spatial proximity")
+            if not elem_a and center_a:
+                elem_a = self.find_element_by_spatial_proximity(
+                    ifc_file,
+                    candidate.ifc_class_a,
+                    center_a
+                )
+                if elem_a:
+                    print(f"✓ Found Element A by spatial proximity")
+
+            if not elem_b and center_b:
+                elem_b = self.find_element_by_spatial_proximity(
+                    ifc_file,
+                    candidate.ifc_class_b,
+                    center_b
+                )
+                if elem_b:
+                    print(f"✓ Found Element B by spatial proximity")
 
         if not elem_a and not elem_b:
             self.report({'ERROR'},
@@ -1176,11 +1187,25 @@ class BIM_OT_visualize_selected_discipline_clashes(bpy.types.Operator):
         print(f"\n=== Visualizing {len(selected_clashes)} Selected Clashes ===")
         print(f"Collection: {collection_name}")
 
+        # Import gizmo module for DB query helper
+        from . import gizmo
+
+        # Get federation DB path
+        db_path = props.bbox_database_path
+
         # Create individual markers for each selected clash
         created_objects = []
         for idx, candidate in enumerate(selected_clashes):
-            center_a = candidate.bbox_center_a
-            center_b = candidate.bbox_center_b
+            # Query federation DB for bbox centers (lazy loading)
+            center_a, center_b = gizmo.get_clash_bbox_centers(
+                candidate.guid_a,
+                candidate.guid_b,
+                db_path
+            )
+
+            if not center_a or not center_b:
+                print(f"  ⚠️  Skipping clash {idx+1}: bbox not found in federation DB")
+                continue
 
             # Calculate midpoint between elements
             midpoint = (
@@ -1382,28 +1407,50 @@ class BIM_OT_enable_clash_gpu_visualization(bpy.types.Operator):
                 if not obj.BIMObjectProperties.ifc_definition_id:
                     continue
 
-                # Found reference - use first clash bbox center as IFC reference
+                # Found reference - query DB for first clash bbox center as IFC reference
                 if props.discipline_clash_candidates:
+                    from . import gizmo
                     first_clash = props.discipline_clash_candidates[0]
-                    ifc_ref = first_clash.bbox_center_a
+                    db_path = props.bbox_database_path
+                    ifc_ref = gizmo.get_element_bbox_center(first_clash.guid_a, db_path)
 
-                    offset_x = ifc_ref[0] - obj.location.x
-                    offset_y = ifc_ref[1] - obj.location.y
-                    offset_z = ifc_ref[2] - obj.location.z
+                    if ifc_ref:
+                        offset_x = ifc_ref[0] - obj.location.x
+                        offset_y = ifc_ref[1] - obj.location.y
+                        offset_z = ifc_ref[2] - obj.location.z
 
-                    context.scene["MEP_cached_offset"] = (offset_x, offset_y, offset_z)
-                    print(f"   ✓ Cached offset: ({offset_x:.1f}, {offset_y:.1f}, {offset_z:.1f})")
+                        context.scene["MEP_cached_offset"] = (offset_x, offset_y, offset_z)
+                        print(f"   ✓ Cached offset: ({offset_x:.1f}, {offset_y:.1f}, {offset_z:.1f})")
                     break
 
-        # Convert candidates to visualization format
+        # Convert candidates to visualization format (query DB for coords)
+        from . import gizmo
+        from pathlib import Path
+
+        db_path = props.bbox_database_path
+
+        # Validate DB path before querying
+        if not db_path or not Path(db_path).exists():
+            self.report({'ERROR'}, f"Federation database not found: {db_path}")
+            print(f"\n⚠️  Federation database not found or not set")
+            print(f"   Current path: {db_path}")
+            print(f"   Set path in MEP Engineering > Federation Database Path")
+            return {"CANCELLED"}
+
         clash_data = []
         for candidate in props.discipline_clash_candidates:
-            clash_data.append({
-                'center_a': tuple(candidate.bbox_center_a),
-                'center_b': tuple(candidate.bbox_center_b),
-                'id': f"{candidate.guid_a}_{candidate.guid_b}",
-                'distance': 0.0  # Could calculate if needed
-            })
+            center_a, center_b = gizmo.get_clash_bbox_centers(
+                candidate.guid_a,
+                candidate.guid_b,
+                db_path
+            )
+            if center_a and center_b:
+                clash_data.append({
+                    'center_a': tuple(center_a),
+                    'center_b': tuple(center_b),
+                    'id': f"{candidate.guid_a}_{candidate.guid_b}",
+                    'distance': 0.0  # Could calculate if needed
+                })
 
         print(f"\n=== Enabling GPU Visualization ===")
         print(f"Loading {len(clash_data)} clash markers...")
@@ -1434,3 +1481,300 @@ class BIM_OT_disable_clash_gpu_visualization(bpy.types.Operator):
 
         self.report({'INFO'}, "GPU visualization disabled")
         return {"FINISHED"}
+
+
+class BIM_OT_enable_clash_gizmo_visualization(bpy.types.Operator):
+    """Enable Blender gizmo-based clash visualization (clickable spheres)"""
+    bl_idname = "bim.enable_clash_gizmo_visualization"
+    bl_label = "Enable Gizmo Visualization"
+    bl_description = "Show clash markers as interactive gizmos (clickable, colored spheres)"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        from . import gizmo
+
+        props = tool.Clash.get_clash_props()
+
+        if not props.discipline_clash_loaded or not props.discipline_clash_candidates:
+            self.report({'WARNING'}, "No clash candidates loaded")
+            return {"CANCELLED"}
+
+        # Check if any clashes are selected for visualization
+        selected_count = sum(1 for c in props.discipline_clash_candidates if c.selected)
+        if selected_count == 0:
+            self.report({'WARNING'}, "No clashes selected. Select clashes from the list first.")
+            return {"CANCELLED"}
+
+        # Calculate and cache offset if not already cached
+        if "MEP_cached_offset" not in context.scene:
+            print("\n📍 Calculating model offset for clash gizmo visualization...")
+
+            # Find first placed IFC object in scene as reference
+            offset_x, offset_y, offset_z = 0.0, 0.0, 0.0
+
+            for obj in context.scene.objects:
+                if not obj or obj.type != 'MESH':
+                    continue
+                if abs(obj.location.x) < 1.0 and abs(obj.location.y) < 1.0:
+                    continue
+                if not hasattr(obj, 'BIMObjectProperties'):
+                    continue
+                if not obj.BIMObjectProperties.ifc_definition_id:
+                    continue
+
+                # Found reference - query DB for first clash bbox center as IFC reference
+                if props.discipline_clash_candidates:
+                    from . import gizmo
+                    first_clash = props.discipline_clash_candidates[0]
+                    db_path = props.bbox_database_path
+                    ifc_ref = gizmo.get_element_bbox_center(first_clash.guid_a, db_path)
+
+                    if ifc_ref:
+                        offset_x = ifc_ref[0] - obj.location.x
+                        offset_y = ifc_ref[1] - obj.location.y
+                        offset_z = ifc_ref[2] - obj.location.z
+
+                        context.scene["MEP_cached_offset"] = (offset_x, offset_y, offset_z)
+                        print(f"   ✓ Cached offset: ({offset_x:.1f}, {offset_y:.1f}, {offset_z:.1f})")
+                    break
+
+        print(f"\n=== Enabling Gizmo Visualization ===")
+        print(f"Loading {selected_count} selected clash gizmos (out of {len(props.discipline_clash_candidates)} total)...")
+
+        # Enable gizmo visualization flag (makes poll() return True)
+        props.gizmo_visualization_enabled = True
+
+        # Enable gizmo visualization
+        gizmo.enable_clash_gizmos(context)
+
+        self.report({'INFO'}, f"Gizmo visualization enabled - {selected_count} markers")
+        return {"FINISHED"}
+
+
+class BIM_OT_disable_clash_gizmo_visualization(bpy.types.Operator):
+    """Disable gizmo-based clash visualization"""
+    bl_idname = "bim.disable_clash_gizmo_visualization"
+    bl_label = "Disable Gizmo Visualization"
+    bl_description = "Hide gizmo clash markers"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        from . import gizmo
+
+        props = tool.Clash.get_clash_props()
+
+        if not gizmo.is_gizmo_group_active():
+            self.report({'INFO'}, "Gizmo visualization already disabled")
+            return {"FINISHED"}
+
+        # Disable gizmo visualization flag (makes poll() return False)
+        props.gizmo_visualization_enabled = False
+
+        gizmo.disable_clash_gizmos()
+
+        self.report({'INFO'}, "Gizmo visualization disabled")
+        return {"FINISHED"}
+
+
+class BIM_OT_load_clash_geometry(bpy.types.Operator):
+    """Load geometry for selected clash elements on-demand"""
+    bl_idname = "bim.load_clash_geometry"
+    bl_label = "Load Clash Geometry"
+    bl_description = "Load only the two elements involved in the selected clash (lazy loading from discipline IFCs)"
+    bl_options = {"REGISTER", "UNDO"}
+
+    clash_index: bpy.props.IntProperty()
+
+    @classmethod
+    def poll(cls, context):
+        props = tool.Clash.get_clash_props()
+        return props.discipline_clash_loaded and props.discipline_clash_candidates
+
+    def execute(self, context):
+        import ifcopenshell
+        import ifcopenshell.geom
+        from mathutils import Matrix, Vector
+        from pathlib import Path
+        import time
+
+        props = tool.Clash.get_clash_props()
+
+        # Get selected clash
+        if self.clash_index >= 0:
+            clash_idx = self.clash_index
+        else:
+            clash_idx = props.active_discipline_clash_index
+
+        if clash_idx >= len(props.discipline_clash_candidates):
+            self.report({'ERROR'}, "Invalid clash index")
+            return {"CANCELLED"}
+
+        candidate = props.discipline_clash_candidates[clash_idx]
+
+        print(f"\n{'='*70}")
+        print(f"LOADING CLASH GEOMETRY (Lazy Loading)")
+        print(f"{'='*70}")
+        print(f"Clash {clash_idx + 1}: {candidate.ifc_class_a} vs {candidate.ifc_class_b}")
+        print(f"GUID A: {candidate.guid_a}")
+        print(f"GUID B: {candidate.guid_b}")
+
+        # Query federation DB for source IFC file paths
+        db_path = props.bbox_database_path
+        if not db_path or not Path(db_path).exists():
+            self.report({'ERROR'}, "Federation database not found. Run clash detection first.")
+            return {"CANCELLED"}
+
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Get source file paths for both elements
+        cursor.execute("SELECT filepath FROM elements_meta WHERE guid = ?", (candidate.guid_a,))
+        row_a = cursor.fetchone()
+        cursor.execute("SELECT filepath FROM elements_meta WHERE guid = ?", (candidate.guid_b,))
+        row_b = cursor.fetchone()
+        conn.close()
+
+        if not row_a or not row_b:
+            self.report({'ERROR'}, "Source IFC files not found in database")
+            return {"CANCELLED"}
+
+        ifc_path_a = row_a[0]
+        ifc_path_b = row_b[0]
+
+        print(f"\nSource IFC A: {Path(ifc_path_a).name}")
+        print(f"Source IFC B: {Path(ifc_path_b).name}")
+
+        # Create or get inspection collection
+        collection_name = "Clash_Inspection"
+        if collection_name in bpy.data.collections:
+            collection = bpy.data.collections[collection_name]
+            # Clear existing objects
+            for obj in collection.objects:
+                bpy.data.objects.remove(obj, do_unlink=True)
+            print(f"\n✓ Cleared previous inspection geometry")
+        else:
+            collection = bpy.data.collections.new(collection_name)
+            context.scene.collection.children.link(collection)
+            print(f"\n✓ Created {collection_name} collection")
+
+        # Get model offset for coordinate conversion
+        offset = Vector((0, 0, 0))
+        if "MEP_cached_offset" in context.scene:
+            offset = Vector(context.scene["MEP_cached_offset"])
+            print(f"✓ Using cached offset: ({offset.x:.1f}, {offset.y:.1f}, {offset.z:.1f})")
+
+        # Load Element A
+        start_time = time.time()
+        obj_a = self.load_single_element(
+            ifc_path_a,
+            candidate.guid_a,
+            f"Clash_{clash_idx+1}_A_{candidate.ifc_class_a}",
+            collection,
+            offset
+        )
+
+        # Load Element B
+        obj_b = self.load_single_element(
+            ifc_path_b,
+            candidate.guid_b,
+            f"Clash_{clash_idx+1}_B_{candidate.ifc_class_b}",
+            collection,
+            offset
+        )
+
+        load_time = time.time() - start_time
+
+        if not obj_a or not obj_b:
+            self.report({'ERROR'}, "Failed to load clash elements")
+            return {"CANCELLED"}
+
+        print(f"\n✓ Loaded 2 elements in {load_time:.2f}s")
+        print(f"  Element A: {obj_a.name}")
+        print(f"  Element B: {obj_b.name}")
+
+        # Focus viewport on loaded elements
+        for obj in collection.objects:
+            obj.select_set(True)
+
+        # Frame selected in viewport
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        override = {'area': area, 'region': region}
+                        with context.temp_override(**override):
+                            bpy.ops.view3d.view_selected()
+                        break
+
+        print(f"✓ Focused viewport on clash elements")
+        print(f"{'='*70}\n")
+
+        self.report({'INFO'}, f"Loaded clash geometry ({load_time:.1f}s)")
+        return {"FINISHED"}
+
+    def load_single_element(self, ifc_path, guid, obj_name, collection, offset):
+        """Load a single IFC element by GUID and create Blender object"""
+        import ifcopenshell
+        import ifcopenshell.geom
+        import numpy as np
+
+        try:
+            # Open IFC file (lightweight, doesn't process geometry yet)
+            ifc_file = ifcopenshell.open(ifc_path)
+
+            # Get element by GUID
+            element = ifc_file.by_guid(guid)
+            if not element:
+                print(f"  ⚠️  Element not found: {guid}")
+                return None
+
+            # Generate geometry using IfcOpenShell (use world coords for simplicity)
+            settings = ifcopenshell.geom.settings()
+            settings.set(settings.USE_WORLD_COORDS, True)
+
+            shape = ifcopenshell.geom.create_shape(settings, element)
+            if not shape:
+                print(f"  ⚠️  Failed to generate geometry for {guid}")
+                return None
+
+            # Get geometry data (in IFC world coordinates)
+            verts = shape.geometry.verts
+            faces = shape.geometry.faces
+
+            # Convert vertices to Blender format and apply offset
+            # IFC world coords → Blender scene coords: vertex - offset
+            vertices = []
+            for i in range(0, len(verts), 3):
+                # Apply offset to convert IFC world → Blender scene
+                blender_x = verts[i] - offset.x
+                blender_y = verts[i+1] - offset.y
+                blender_z = verts[i+2] - offset.z
+                vertices.append([blender_x, blender_y, blender_z])
+
+            faces_list = [[faces[i], faces[i+1], faces[i+2]] for i in range(0, len(faces), 3)]
+
+            # Create mesh with transformed vertices
+            mesh = bpy.data.meshes.new(obj_name)
+            mesh.from_pydata(vertices, [], faces_list)
+            mesh.update()
+
+            # Create object at origin (vertices already in Blender scene coords)
+            obj = bpy.data.objects.new(obj_name, mesh)
+            collection.objects.link(obj)
+            obj.location = (0, 0, 0)  # Vertices already transformed
+
+            # Store IFC metadata
+            obj["ifc_guid"] = guid
+            obj["ifc_class"] = element.is_a()
+            obj["ifc_source"] = str(ifc_path)
+
+            print(f"  ✓ Loaded: {element.is_a()} (GUID: {guid[:8]}...)")
+
+            return obj
+
+        except Exception as e:
+            print(f"  ⚠️  Error loading {guid}: {e}")
+            import traceback
+            traceback.print_exc()
+            return None

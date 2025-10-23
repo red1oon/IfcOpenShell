@@ -1,0 +1,454 @@
+"""
+Blender gizmo-based interactive clash markers
+
+Replaces GPU overlays with native Blender gizmos - clickable, colored spheres
+that appear at clash locations. Right-click to change status, left-click to jump.
+"""
+
+import bpy
+from bpy.types import Gizmo, GizmoGroup
+from mathutils import Vector
+from typing import List, Dict, Optional, Tuple
+from . import database as db
+import sqlite3
+from pathlib import Path
+
+
+# ============================================================================
+# FEDERATION DATABASE QUERIES (Lazy loading from federation_index.db)
+# ============================================================================
+
+def get_element_bbox_center(guid: str, db_path: str) -> Optional[Vector]:
+    """Query federation database for element bbox center coordinates
+
+    Args:
+        guid: Element GUID to lookup
+        db_path: Path to federation_index.db
+
+    Returns:
+        Vector with (x, y, z) IFC world coordinates, or None if not found
+    """
+    if not db_path or not Path(db_path).exists():
+        # Don't spam - caller should check path before calling
+        return None
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Query bbox from elements_rtree (joined with elements_meta for GUID lookup)
+        cursor.execute("""
+            SELECT r.min_x, r.min_y, r.min_z, r.max_x, r.max_y, r.max_z
+            FROM elements_meta m
+            JOIN elements_rtree r ON m.id = r.id
+            WHERE m.guid = ?
+        """, (guid,))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return None
+
+        # Calculate bbox center from min/max
+        min_x, min_y, min_z, max_x, max_y, max_z = row
+        center = Vector((
+            (min_x + max_x) / 2,
+            (min_y + max_y) / 2,
+            (min_z + max_z) / 2
+        ))
+
+        return center
+
+    except sqlite3.Error as e:
+        print(f"  ⚠️  DB query error for GUID {guid}: {e}")
+        return None
+
+
+def get_clash_bbox_centers(guid_a: str, guid_b: str, db_path: str) -> Tuple[Optional[Vector], Optional[Vector]]:
+    """Query federation database for both elements in a clash
+
+    Args:
+        guid_a: First element GUID
+        guid_b: Second element GUID
+        db_path: Path to federation_index.db
+
+    Returns:
+        Tuple of (center_a, center_b), either may be None if not found
+    """
+    center_a = get_element_bbox_center(guid_a, db_path)
+    center_b = get_element_bbox_center(guid_b, db_path)
+    return (center_a, center_b)
+
+
+# ============================================================================
+# COORDINATE CONVERSION (reused from visualization.py)
+# ============================================================================
+
+def get_model_offset() -> Vector:
+    """Get model offset to convert IFC coords to Blender coords
+
+    Uses cached offset from MEP routing if available, otherwise falls back
+    to Bonsai georeference properties.
+    """
+    # Try MEP cached offset first (most reliable)
+    cached = bpy.context.scene.get("MEP_cached_offset")
+    if cached:
+        # Removed spam log
+        return Vector(cached)
+
+    # Fallback to georeference properties
+    try:
+        props = bpy.context.scene.BIMGeoreferenceProperties
+        offset = Vector((
+            props.model_offset_x or 0.0,
+            props.model_offset_y or 0.0,
+            props.model_offset_z or 0.0
+        ))
+        # Removed spam log
+        return offset
+    except:
+        # No offset available - assume zero
+        print(f"  ⚠️  Gizmo: No offset available, using zero")
+        return Vector((0, 0, 0))
+
+
+def ifc_to_blender_coords(ifc_coords: tuple) -> Vector:
+    """Convert IFC world coordinates to Blender scene coordinates"""
+    offset = get_model_offset()
+    return Vector((
+        ifc_coords[0] - offset.x,
+        ifc_coords[1] - offset.y,
+        ifc_coords[2] - offset.z
+    ))
+
+
+# ============================================================================
+# STATUS COLOR MAPPING
+# ============================================================================
+
+STATUS_COLORS = {
+    'NEW': (1.0, 0.0, 0.0),       # Red - requires attention
+    'ACTIVE': (1.0, 0.5, 0.0),    # Orange - being reviewed
+    'REVIEWED': (1.0, 1.0, 0.0),  # Yellow - reviewed, awaiting fix
+    'RESOLVED': (0.0, 1.0, 0.0),  # Green - fixed/approved
+}
+
+def get_clash_color(status: str) -> tuple:
+    """Get RGB color for clash status"""
+    return STATUS_COLORS.get(status, (1.0, 0.0, 0.0))  # Default red
+
+
+# ============================================================================
+# SIMPLE SPHERE GEOMETRY (3 orthogonal discs for 3D appearance)
+# ============================================================================
+
+# Create a simple sphere using 3 circles on XY, YZ, XZ planes
+# Each circle has 12 segments
+import math
+
+def generate_circle_tris(num_segments=12, axis='z'):
+    """Generate triangle vertices for a filled circle"""
+    verts = []
+    for i in range(num_segments):
+        angle1 = (i / num_segments) * math.pi * 2
+        angle2 = ((i + 1) / num_segments) * math.pi * 2
+
+        x1 = math.cos(angle1)
+        y1 = math.sin(angle1)
+        x2 = math.cos(angle2)
+        y2 = math.sin(angle2)
+
+        # Create triangle from center to edge
+        if axis == 'z':  # XY plane
+            verts.extend([(0, 0, 0), (x1, y1, 0), (x2, y2, 0)])
+        elif axis == 'y':  # XZ plane
+            verts.extend([(0, 0, 0), (x1, 0, y1), (x2, 0, y2)])
+        else:  # YZ plane
+            verts.extend([(0, 0, 0), (0, x1, y1), (0, x2, y2)])
+
+    return verts
+
+# Lazy-loaded sphere geometry (only generated when first needed)
+_SPHERE_SIMPLE_CACHE = None
+
+def get_sphere_geometry():
+    """Get sphere geometry (lazy loaded on first use)"""
+    global _SPHERE_SIMPLE_CACHE
+    if _SPHERE_SIMPLE_CACHE is None:
+        _SPHERE_SIMPLE_CACHE = (
+            *generate_circle_tris(12, 'z'),  # XY plane
+            *generate_circle_tris(12, 'y'),  # XZ plane
+            *generate_circle_tris(12, 'x'),  # YZ plane
+        )
+    return _SPHERE_SIMPLE_CACHE
+
+
+# ============================================================================
+# CLASH MARKER GIZMO (Individual Sphere)
+# ============================================================================
+
+class ClashMarkerGizmo(Gizmo):
+    """Single clash marker - colored sphere in 3D space"""
+
+    bl_idname = "VIEW3D_GT_clash_marker"
+
+    # Custom properties for this gizmo instance
+    clash_id: str = None
+    clash_index: int = -1
+    guid_a: str = None
+    guid_b: str = None
+    status: str = "NEW"
+
+    def setup(self):
+        """Initialize gizmo (called once when created)"""
+        # Use simple 3-circle sphere shape (lightweight, lazy loaded)
+        if not hasattr(self, "custom_shape"):
+            self.custom_shape = self.new_custom_shape('TRIS', get_sphere_geometry())
+
+    def draw(self, context):
+        """Draw the gizmo (called every frame)"""
+        # Set color based on status
+        color = get_clash_color(self.status)
+        self.color = color
+        self.color_highlight = (1.0, 1.0, 1.0)  # White when hovered
+        self.alpha = 0.8
+        self.alpha_highlight = 1.0
+
+        # Draw sphere at matrix_basis position
+        # (matrix_basis is set by GizmoGroup.refresh)
+
+    def invoke(self, context, event):
+        """Handle user interaction with gizmo"""
+        if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
+            # Left-click: Jump to clash
+            self.jump_to_clash(context)
+            return {'RUNNING_MODAL'}
+
+        elif event.type == 'RIGHTMOUSE' and event.value == 'PRESS':
+            # Right-click: Show context menu (TODO: implement menu)
+            # For now, just print
+            print(f"Right-clicked clash {self.clash_index}: {self.guid_a} ↔ {self.guid_b}")
+            print(f"Current status: {self.status}")
+            # TODO: Open context menu to change status
+            return {'RUNNING_MODAL'}
+
+        return {'PASS_THROUGH'}
+
+    def jump_to_clash(self, context):
+        """Jump viewport to this clash (reuse existing operator)"""
+        props = context.scene.BIMClashProperties
+
+        # Set current clash index
+        if self.clash_index >= 0 and self.clash_index < len(props.discipline_clash_candidates):
+            props.current_clash_index = self.clash_index
+
+            # Call existing select operator
+            bpy.ops.bim.select_discipline_clash(clash_index=self.clash_index)
+
+            print(f"✓ Jumped to clash {self.clash_index + 1}")
+
+    def test_select(self, context, location):
+        """Enable hover detection"""
+        # Return distance from mouse to gizmo (for hit testing)
+        # Blender handles this automatically for standard shapes
+        return 0
+
+
+# ============================================================================
+# CLASH MARKER GIZMO GROUP (Manager)
+# ============================================================================
+
+class ClashMarkerGizmoGroup(GizmoGroup):
+    """Manages all clash marker gizmos in viewport"""
+
+    bl_idname = "VIEW3D_GGT_clash_markers"
+    bl_label = "Clash Markers"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'WINDOW'
+    bl_options = {'PERSISTENT', '3D', 'DEPTH_3D'}
+
+    @classmethod
+    def poll(cls, context):
+        """Only show in 3D viewport when gizmo visualization is enabled"""
+        if context.area.type != 'VIEW_3D':
+            return False
+
+        # Only activate gizmos when explicitly enabled by user
+        props = context.scene.BIMClashProperties
+        return props.gizmo_visualization_enabled
+
+    def setup(self, context):
+        """Initialize gizmo group (called once)"""
+        print("🎯 Clash marker gizmo group setup")
+        # Gizmos will be created in refresh()
+
+    def refresh(self, context):
+        """Update gizmos from clash data (called when data changes)"""
+        props = context.scene.BIMClashProperties
+
+        # Clear existing gizmos
+        self.gizmos.clear()
+
+        # Check if we have clash data
+        if not props.discipline_clash_candidates:
+            print("  ⚠️  No clash candidates to visualize")
+            return
+
+        # Filter to only selected clashes (user must select which ones to visualize)
+        selected_candidates = [
+            (i, candidate) for i, candidate in enumerate(props.discipline_clash_candidates)
+            if candidate.selected
+        ]
+
+        if not selected_candidates:
+            print("  ⚠️  No clashes selected for visualization")
+            return
+
+        print(f"  🔄 Creating gizmos for {len(selected_candidates)} selected clashes (out of {len(props.discipline_clash_candidates)} total)")
+
+        # Get federation DB path
+        db_path = props.bbox_database_path
+        if not db_path:
+            print("  ⚠️  No federation database path set - cannot query bbox coords")
+            return
+
+        # Create one gizmo per selected clash
+        for i, candidate in selected_candidates:
+            # Query federation DB for bbox centers (lazy loading)
+            center_a, center_b = get_clash_bbox_centers(
+                candidate.guid_a,
+                candidate.guid_b,
+                db_path
+            )
+
+            if not center_a or not center_b:
+                print(f"  ⚠️  Skipping clash {i}: bbox not found in DB")
+                continue
+
+            # Convert to Blender coords
+            blender_a = ifc_to_blender_coords(center_a)
+            blender_b = ifc_to_blender_coords(center_b)
+            midpoint = (blender_a + blender_b) / 2
+
+            # Get clash ID and status from database
+            clash_id = db.get_clash_id(candidate.guid_a, candidate.guid_b)
+            db_status = db.get_clash_status(candidate.guid_a, candidate.guid_b)
+
+            if db_status:
+                status = db_status['status']
+            else:
+                # New clash - default to NEW
+                status = 'NEW'
+                # Insert into database
+                db.set_clash_status(
+                    candidate.guid_a,
+                    candidate.guid_b,
+                    status='NEW',
+                    distance=candidate.distance,
+                    ifc_class_a=candidate.ifc_class_a,
+                    ifc_class_b=candidate.ifc_class_b
+                )
+
+            # Create gizmo
+            gz = self.gizmos.new(ClashMarkerGizmo.bl_idname)
+
+            # Set gizmo position (world space)
+            from mathutils import Matrix
+            gz.matrix_basis = Matrix.Translation(midpoint)
+
+            # Set gizmo scale (real-world size: 0.5m diameter sphere)
+            gz.scale_basis = 0.5
+
+            # Store clash data in gizmo
+            gz.clash_id = clash_id
+            gz.clash_index = i
+            gz.guid_a = candidate.guid_a
+            gz.guid_b = candidate.guid_b
+            gz.status = status
+
+            # Enable interaction
+            gz.use_draw_modal = True
+            gz.use_event_handle_all = True
+
+        print(f"  ✓ Created {len(self.gizmos)} clash marker gizmos from {len(selected_candidates)} selected clashes")
+
+
+# ============================================================================
+# GIZMO GROUP MANAGEMENT
+# ============================================================================
+
+_gizmo_group_registered = False
+
+def enable_clash_gizmos(context):
+    """Enable clash marker gizmos in viewport"""
+    global _gizmo_group_registered
+
+    if _gizmo_group_registered:
+        print("  ⚠️  Gizmos already enabled")
+        # Just refresh to update positions
+        refresh_clash_gizmos(context)
+        return
+
+    # Gizmo groups are automatically enabled when registered
+    # Just trigger a refresh to create gizmos
+    _gizmo_group_registered = True
+    refresh_clash_gizmos(context)
+
+    print("✓ Clash marker gizmos enabled")
+
+    # Force viewport redraw
+    for area in context.screen.areas:
+        if area.type == 'VIEW_3D':
+            area.tag_redraw()
+
+
+def disable_clash_gizmos():
+    """Disable clash marker gizmos"""
+    global _gizmo_group_registered
+
+    if not _gizmo_group_registered:
+        return
+
+    # Clear gizmos by triggering refresh with no data
+    # (GizmoGroup.refresh will clear gizmos if no candidates)
+    _gizmo_group_registered = False
+
+    print("✓ Clash marker gizmos disabled")
+
+    # Force viewport redraw
+    for area in bpy.context.screen.areas:
+        if area.type == 'VIEW_3D':
+            area.tag_redraw()
+
+
+def refresh_clash_gizmos(context):
+    """Refresh all gizmo positions and colors"""
+    # Trigger gizmo group refresh
+    # Blender automatically calls GizmoGroup.refresh() when we tag for update
+
+    for area in context.screen.areas:
+        if area.type == 'VIEW_3D':
+            for region in area.regions:
+                if region.type == 'WINDOW':
+                    region.tag_redraw()
+
+    print("  🔄 Gizmo refresh triggered")
+
+
+def is_gizmo_group_active() -> bool:
+    """Check if gizmo visualization is currently enabled"""
+    return _gizmo_group_registered
+
+
+def get_marker_count() -> int:
+    """Get number of active markers"""
+    props = bpy.context.scene.BIMClashProperties
+    return len(props.discipline_clash_candidates)
+
+
+def highlight_current_clash(clash_index: int):
+    """Highlight specific clash marker (for Previous/Next navigation)"""
+    # TODO: Implement by changing color or scale of current marker
+    # For now, just trigger refresh
+    refresh_clash_gizmos(bpy.context)

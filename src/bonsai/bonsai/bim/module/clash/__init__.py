@@ -17,7 +17,7 @@
 # along with Bonsai.  If not, see <http://www.gnu.org/licenses/>.
 
 import bpy
-from . import ui, prop, operator
+from . import ui, prop, operator, gizmo  # Re-enabled with lazy loading
 
 classes = (
     operator.AddClashSet,
@@ -30,6 +30,9 @@ classes = (
     operator.BIM_OT_clear_discipline_clash_visualization,
     operator.BIM_OT_enable_clash_gpu_visualization,
     operator.BIM_OT_disable_clash_gpu_visualization,
+    operator.BIM_OT_enable_clash_gizmo_visualization,
+    operator.BIM_OT_disable_clash_gizmo_visualization,
+    operator.BIM_OT_load_clash_geometry,
     operator.ExecuteIfcClash,
     operator.ExportClashSets,
     operator.ImportClashSets,
@@ -55,6 +58,8 @@ classes = (
     ui.BIM_UL_clash_sets,
     ui.BIM_UL_discipline_clashes,
     ui.BIM_UL_smart_groups,
+    gizmo.ClashMarkerGizmo,
+    gizmo.ClashMarkerGizmoGroup,
 )
 
 
