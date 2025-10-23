@@ -244,12 +244,35 @@ class BIM_PT_ifcclash(Panel):
             info_col.label(text="  • Color-coded by discipline")
             info_col.label(text="  • ACMV=Cyan, FP=Red, ELEC=Yellow")
 
-        # Semantic Proxies (Level 1) - Future
+        # Semantic Proxies (Level 1) - Basic Templates
         elif props.lod_visualization_mode == 'SEMANTIC_PROXY':
-            info_row = lod_box.row()
-            info_row.label(text="Phase 3: Procedural proxy generation", icon='INFO')
-            info_row = lod_box.row()
-            info_row.label(text="Coming soon...")
+            row = lod_box.row(align=True)
+            if props.bbox_visualization_enabled:  # Reuse flag for any visualization mode
+                row.operator("bim.disable_semantic_proxy_visualization",
+                           text="Disable Semantic Proxies",
+                           icon='HIDE_ON')
+            else:
+                row.operator("bim.enable_semantic_proxy_visualization",
+                           text="Enable Semantic Proxies",
+                           icon='MESH_CUBE')
+
+            # Element limit (for testing)
+            row = lod_box.row()
+            row.prop(props, "bbox_element_limit", text="Element Limit")
+            if props.bbox_element_limit == 0:
+                hint_row = lod_box.row()
+                hint_row.scale_y = 0.6
+                hint_row.label(text="💡 0 = All elements (database-driven)", icon='INFO')
+
+            # Info
+            info_col = lod_box.column(align=True)
+            info_col.scale_y = 0.7
+            info_col.label(text="💡 Semantic Proxies:", icon='INFO')
+            info_col.label(text="  • Basic procedural shapes from templates")
+            info_col.label(text="  • Cylinders for round ducts/pipes")
+            info_col.label(text="  • Boxes for rectangular ducts/trays")
+            info_col.label(text="  • Database-driven (no IFC files)")
+            info_col.label(text="  • Memory: ~100-200MB per 1000 elements")
 
         # Full IFC Geometry (Level 2) - Load from database
         elif props.lod_visualization_mode == 'FULL_GEOMETRY':
@@ -275,9 +298,10 @@ class BIM_PT_ifcclash(Panel):
             info_col = lod_box.column(align=True)
             info_col.scale_y = 0.7
             info_col.label(text="💡 Full Geometry:", icon='INFO')
-            info_col.label(text="  • Loads actual IFC geometry from database")
+            info_col.label(text="  • Detailed procedural shapes with flanges/dampers")
+            info_col.label(text="  • Higher poly count, smoother geometry")
+            info_col.label(text="  • Database-driven (no IFC files)")
             info_col.label(text="  • Independent of clash detection")
-            info_col.label(text="  • Creates Blender objects (visible in Outliner)")
             info_col.label(text="  • Memory: ~300-500MB per 1000 elements")
 
         # ================================================================

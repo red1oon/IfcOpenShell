@@ -1852,14 +1852,16 @@ class BIM_OT_disable_bbox_visualization(bpy.types.Operator):
             return {'CANCELLED'}
 
 
-class BIM_OT_enable_full_geometry_visualization(bpy.types.Operator):
-    """Enable full IFC geometry loading from federation database"""
-    bl_idname = "bim.enable_full_geometry_visualization"
-    bl_label = "Enable Full Geometry"
-    bl_description = "Load actual IFC geometry for federation elements (creates Blender objects)"
+class BIM_OT_enable_semantic_proxy_visualization(bpy.types.Operator):
+    """Enable semantic proxy geometry (basic templates)"""
+    bl_idname = "bim.enable_semantic_proxy_visualization"
+    bl_label = "Enable Semantic Proxies"
+    bl_description = "Generate basic procedural geometry from semantic metadata"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
+        from . import semantic_visualization
+
         props = tool.Clash.get_clash_props()
         fed_props = context.scene.BIMFederationProperties
 
@@ -1877,57 +1879,88 @@ class BIM_OT_enable_full_geometry_visualization(bpy.types.Operator):
         # Get element limit
         limit = props.bbox_element_limit if props.bbox_element_limit > 0 else None
 
-        # Load elements from database
-        conn = sqlite3.connect(str(db_path))
-        cursor = conn.cursor()
+        # Enable semantic visualization with basic detail level
+        self.report({'INFO'}, f"Generating semantic proxies from database...")
+        success, message = semantic_visualization.enable_semantic_visualization(
+            str(db_path),
+            detail_level='basic',
+            limit=limit
+        )
 
-        query = """
-            SELECT m.guid, m.ifc_class, m.discipline, m.filepath
-            FROM elements_meta m
-        """
-        if limit:
-            query += f" LIMIT {limit}"
-
-        cursor.execute(query)
-        elements = cursor.fetchall()
-        conn.close()
-
-        if not elements:
-            self.report({'ERROR'}, "No elements found in database")
+        if success:
+            props.bbox_visualization_enabled = True
+            props.lod_visualization_mode = 'SEMANTIC_PROXY'
+            self.report({'INFO'}, message)
+            return {'FINISHED'}
+        else:
+            self.report({'ERROR'}, message)
             return {'CANCELLED'}
 
-        self.report({'INFO'}, f"Loading {len(elements)} elements... (this may take time)")
 
-        # Get cached offset
-        offset = Vector((0, 0, 0))
-        if "MEP_cached_offset" in context.scene:
-            offset = Vector(context.scene["MEP_cached_offset"])
+class BIM_OT_disable_semantic_proxy_visualization(bpy.types.Operator):
+    """Disable semantic proxy visualization"""
+    bl_idname = "bim.disable_semantic_proxy_visualization"
+    bl_label = "Disable Semantic Proxies"
+    bl_description = "Remove semantic proxy objects from scene"
+    bl_options = {'REGISTER', 'UNDO'}
 
-        # Create collection
-        collection_name = "Federation_FullGeometry"
-        if collection_name in bpy.data.collections:
-            collection = bpy.data.collections[collection_name]
-            # Clear existing objects
-            for obj in list(collection.objects):
-                bpy.data.objects.remove(obj, do_unlink=True)
-        else:
-            collection = bpy.data.collections.new(collection_name)
-            context.scene.collection.children.link(collection)
+    def execute(self, context):
+        from . import semantic_visualization
 
-        # Load geometry (simplified - load only first few for testing)
-        # Full implementation would need proper batching and progress reporting
-        loaded_count = 0
-        for guid, ifc_class, discipline, filepath in elements[:min(10, len(elements))]:  # Limit to 10 for now
-            # This is a placeholder - would use the existing lazy loading logic
-            # For now, just report what would be loaded
-            print(f"  Would load: {ifc_class} ({guid[:8]}...) from {Path(filepath).name}")
-            loaded_count += 1
+        props = tool.Clash.get_clash_props()
 
-        props.bbox_visualization_enabled = True
-        props.lod_visualization_mode = 'FULL_GEOMETRY'
+        success, message = semantic_visualization.disable_semantic_visualization()
 
-        self.report({'WARNING'}, f"Full Geometry: Placeholder loaded {loaded_count} elements (implementation pending)")
+        props.bbox_visualization_enabled = False
+        props.lod_visualization_mode = 'NONE'
+
+        self.report({'INFO'}, message)
         return {'FINISHED'}
+
+
+class BIM_OT_enable_full_geometry_visualization(bpy.types.Operator):
+    """Enable full geometry (detailed templates with flanges, dampers, etc.)"""
+    bl_idname = "bim.enable_full_geometry_visualization"
+    bl_label = "Enable Full Geometry"
+    bl_description = "Generate detailed procedural geometry from semantic metadata"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        from . import semantic_visualization
+
+        props = tool.Clash.get_clash_props()
+        fed_props = context.scene.BIMFederationProperties
+
+        # Validate database
+        db_path = fed_props.federation_database_path
+        if not db_path:
+            self.report({'ERROR'}, "Please load Federation Database in Multi-Model Federation panel")
+            return {'CANCELLED'}
+
+        db_path = Path(bpy.path.abspath(db_path))
+        if not db_path.exists():
+            self.report({'ERROR'}, f"Federation database not found: {db_path}")
+            return {'CANCELLED'}
+
+        # Get element limit
+        limit = props.bbox_element_limit if props.bbox_element_limit > 0 else None
+
+        # Enable semantic visualization with detailed level
+        self.report({'INFO'}, f"Generating full geometry from database...")
+        success, message = semantic_visualization.enable_semantic_visualization(
+            str(db_path),
+            detail_level='detailed',
+            limit=limit
+        )
+
+        if success:
+            props.bbox_visualization_enabled = True
+            props.lod_visualization_mode = 'FULL_GEOMETRY'
+            self.report({'INFO'}, message)
+            return {'FINISHED'}
+        else:
+            self.report({'ERROR'}, message)
+            return {'CANCELLED'}
 
 
 class BIM_OT_disable_full_geometry_visualization(bpy.types.Operator):
@@ -1938,18 +1971,14 @@ class BIM_OT_disable_full_geometry_visualization(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
+        from . import semantic_visualization
+
         props = tool.Clash.get_clash_props()
 
-        # Remove collection and objects
-        collection_name = "Federation_FullGeometry"
-        if collection_name in bpy.data.collections:
-            collection = bpy.data.collections[collection_name]
-            for obj in list(collection.objects):
-                bpy.data.objects.remove(obj, do_unlink=True)
-            bpy.data.collections.remove(collection)
+        success, message = semantic_visualization.disable_semantic_visualization()
 
         props.bbox_visualization_enabled = False
         props.lod_visualization_mode = 'NONE'
 
-        self.report({'INFO'}, "Full geometry visualization disabled")
+        self.report({'INFO'}, message)
         return {'FINISHED'}
