@@ -12,6 +12,44 @@ from typing import List, Dict, Optional, Tuple
 from . import database as db
 import sqlite3
 from pathlib import Path
+import logging
+from datetime import datetime
+
+# ============================================================================
+# LOGGING SETUP
+# ============================================================================
+
+def setup_gizmo_logging():
+    """Setup dual logging to bonsai.log and ERROR.log"""
+    logger = logging.getLogger('bonsai.clash.gizmo')
+    logger.setLevel(logging.DEBUG)
+
+    # Prevent duplicate handlers
+    if logger.handlers:
+        return logger
+
+    # Handler 1: bonsai.log (all messages)
+    bonsai_log = Path.home() / "Documents/bonsai/bonsai.log"
+    bonsai_log.parent.mkdir(parents=True, exist_ok=True)
+
+    file_handler = logging.FileHandler(bonsai_log)
+    file_handler.setLevel(logging.INFO)
+    file_formatter = logging.Formatter('%(asctime)s [%(name)s] %(levelname)s: %(message)s')
+    file_handler.setFormatter(file_formatter)
+    logger.addHandler(file_handler)
+
+    # Handler 2: ERROR.log (errors only)
+    error_log = Path.home() / "Documents/bonsai/ERROR.log"
+
+    error_handler = logging.FileHandler(error_log)
+    error_handler.setLevel(logging.ERROR)
+    error_formatter = logging.Formatter('%(asctime)s [%(name)s] ERROR: %(message)s\n%(pathname)s:%(lineno)d\n')
+    error_handler.setFormatter(error_formatter)
+    logger.addHandler(error_handler)
+
+    return logger
+
+logger = setup_gizmo_logging()
 
 
 # ============================================================================
@@ -29,7 +67,7 @@ def get_element_bbox_center(guid: str, db_path: str) -> Optional[Vector]:
         Vector with (x, y, z) IFC world coordinates, or None if not found
     """
     if not db_path or not Path(db_path).exists():
-        # Don't spam - caller should check path before calling
+        logger.warning(f"Federation DB not found: {db_path}")
         return None
 
     try:
@@ -48,6 +86,7 @@ def get_element_bbox_center(guid: str, db_path: str) -> Optional[Vector]:
         conn.close()
 
         if not row:
+            logger.debug(f"Element not found in federation DB: {guid}")
             return None
 
         # Calculate bbox center from min/max
@@ -58,9 +97,11 @@ def get_element_bbox_center(guid: str, db_path: str) -> Optional[Vector]:
             (min_z + max_z) / 2
         ))
 
+        logger.debug(f"Queried bbox for {guid}: {center}")
         return center
 
     except sqlite3.Error as e:
+        logger.error(f"DB query error for GUID {guid}: {e}")
         print(f"  ⚠️  DB query error for GUID {guid}: {e}")
         return None
 
@@ -85,16 +126,21 @@ def get_clash_bbox_centers(guid_a: str, guid_b: str, db_path: str) -> Tuple[Opti
 # COORDINATE CONVERSION (reused from visualization.py)
 # ============================================================================
 
+# Global flag to prevent spam warnings about missing offset
+_offset_warning_shown = False
+
 def get_model_offset() -> Vector:
     """Get model offset to convert IFC coords to Blender coords
 
     Uses cached offset from MEP routing if available, otherwise falls back
     to Bonsai georeference properties.
     """
+    global _offset_warning_shown
+
     # Try MEP cached offset first (most reliable)
     cached = bpy.context.scene.get("MEP_cached_offset")
     if cached:
-        # Removed spam log
+        logger.debug(f"Using cached MEP offset: {cached}")
         return Vector(cached)
 
     # Fallback to georeference properties
@@ -105,12 +151,20 @@ def get_model_offset() -> Vector:
             props.model_offset_y or 0.0,
             props.model_offset_z or 0.0
         ))
-        # Removed spam log
-        return offset
-    except:
-        # No offset available - assume zero
-        print(f"  ⚠️  Gizmo: No offset available, using zero")
-        return Vector((0, 0, 0))
+        # Check if offset is actually set (not all zeros)
+        if offset.length > 0.01:
+            logger.info(f"Using georeference offset: {offset}")
+            return offset
+    except Exception as e:
+        logger.debug(f"BIMGeoreferenceProperties not available: {e}")
+
+    # No offset available - warn once and assume zero
+    if not _offset_warning_shown:
+        logger.warning("No offset available - using IFC world coordinates (gizmos may be positioned incorrectly)")
+        print(f"  ⚠️  Gizmo: No offset available, using IFC world coordinates")
+        _offset_warning_shown = True
+
+    return Vector((0, 0, 0))
 
 
 def ifc_to_blender_coords(ifc_coords: tuple) -> Vector:
@@ -292,6 +346,7 @@ class ClashMarkerGizmoGroup(GizmoGroup):
 
         # Check if we have clash data
         if not props.discipline_clash_candidates:
+            logger.info("No clash candidates to visualize")
             print("  ⚠️  No clash candidates to visualize")
             return
 
@@ -302,9 +357,11 @@ class ClashMarkerGizmoGroup(GizmoGroup):
         ]
 
         if not selected_candidates:
+            logger.info("No clashes selected for visualization")
             print("  ⚠️  No clashes selected for visualization")
             return
 
+        logger.info(f"Creating gizmos for {len(selected_candidates)} selected clashes (out of {len(props.discipline_clash_candidates)} total)")
         print(f"  🔄 Creating gizmos for {len(selected_candidates)} selected clashes (out of {len(props.discipline_clash_candidates)} total)")
 
         # Get federation DB path

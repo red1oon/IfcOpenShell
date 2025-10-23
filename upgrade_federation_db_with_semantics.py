@@ -193,7 +193,11 @@ def upgrade_database(db_path: str):
 
 
 if __name__ == '__main__':
-    db_path = '/home/red1/Documents/bonsai/federation_index.db'
+    # Use command-line argument or default to federatedmodel_merged.db
+    if len(sys.argv) > 1:
+        db_path = sys.argv[1]
+    else:
+        db_path = '/home/red1/Documents/bonsai/DatabaseFiles/federatedmodel_merged.db'
 
     if not Path(db_path).exists():
         print(f"❌ Database not found: {db_path}")

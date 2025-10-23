@@ -157,7 +157,8 @@ def query_semantic_elements(db_path: str, limit: Optional[int] = None) -> List[D
             'guid': guid,
             'ifc_class': ifc_class,
             'discipline': discipline,
-            'profile_type': profile_type,  # Inferred
+            'semantic_type': semantic_type,  # From database (slab, beam, equipment, etc.)
+            'profile_type': profile_type,  # Inferred (CIRCULAR, RECTANGULAR)
             'width': width,
             'height': height,
             'radius': radius,  # Calculated
@@ -192,6 +193,7 @@ def create_element_object(element: Dict, offset: Vector, detail_level: str = 'ba
     # Generate geometry using shape templates
     bm = shape_templates.create_shape_from_semantics(
         element['ifc_class'],
+        element['semantic_type'],
         element['profile_type'],
         dimensions,
         detail_level=detail_level

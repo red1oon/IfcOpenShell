@@ -342,6 +342,7 @@ def create_tee_detailed(radius: float, segments: int = 16) -> bmesh.types.BMesh:
 
 def create_shape_from_semantics(
     ifc_class: str,
+    semantic_type: str,
     profile_type: str,
     dimensions: Dict[str, float],
     detail_level: str = 'basic'
@@ -350,7 +351,8 @@ def create_shape_from_semantics(
     Create procedural geometry based on semantic metadata.
 
     Args:
-        ifc_class: IFC class name (e.g., 'IfcDuct', 'IfcPipeSegment')
+        ifc_class: IFC class name (e.g., 'IfcDuct', 'IfcPipeSegment', 'IfcSlab')
+        semantic_type: Semantic element type (e.g., 'duct', 'pipe', 'slab', 'beam', 'equipment')
         profile_type: Profile type (e.g., 'CIRCULAR', 'RECTANGULAR')
         dimensions: Dict with 'width', 'height', 'radius', 'length' (in Blender Units / meters)
         detail_level: 'basic' (Semantic Proxies) or 'detailed' (Full Geometry)
@@ -420,7 +422,78 @@ def create_shape_from_semantics(
 
         return create_box_basic(width, height, length)
 
-    # Unsupported class - return None
+    # ARCHITECTURAL/STRUCTURAL ELEMENTS (by semantic_type)
+    # Check semantic_type if IFC class-based matching didn't work
+    if semantic_type:
+        semantic_lower = semantic_type.lower()
+
+        # SLABS - thin horizontal elements
+        if semantic_lower == 'slab':
+            width = dimensions.get('width', 1.0)   # Default 1m
+            height = dimensions.get('height', 0.15)  # Default 0.15m (150mm thick)
+            length = dimensions['length']
+            return create_box_basic(width, height, length)
+
+        # BEAMS - elongated structural members
+        elif semantic_lower == 'beam':
+            width = dimensions.get('width', 0.3)   # Default 0.3m
+            height = dimensions.get('height', 0.5)  # Default 0.5m
+            length = dimensions['length']
+            return create_box_basic(width, height, length)
+
+        # WALLS - vertical elements
+        elif semantic_lower == 'wall':
+            width = dimensions.get('width', 0.2)   # Default 0.2m (200mm thick)
+            height = dimensions.get('height', 3.0)  # Default 3m tall
+            length = dimensions['length']
+            return create_box_basic(width, height, length)
+
+        # COLUMNS - vertical supports
+        elif semantic_lower == 'column':
+            if profile_type == 'CIRCULAR':
+                radius = dimensions.get('radius', 0.15)  # Default 0.3m diameter
+                length = dimensions['length']
+                return create_cylinder_basic(radius, length, segments=12)
+            else:
+                width = dimensions.get('width', 0.3)   # Default 0.3m
+                height = dimensions.get('height', 0.3)  # Default 0.3m
+                length = dimensions['length']
+                return create_box_basic(width, height, length)
+
+        # EQUIPMENT - generic MEP equipment (boxes)
+        elif semantic_lower == 'equipment':
+            width = dimensions.get('width', 0.5)   # Default 0.5m
+            height = dimensions.get('height', 0.5)  # Default 0.5m
+            length = dimensions['length']
+            return create_box_basic(width, height, length)
+
+        # WINDOWS - thin flat openings
+        elif semantic_lower == 'window':
+            width = dimensions.get('width', 1.2)   # Default 1.2m wide
+            height = dimensions.get('height', 1.5)  # Default 1.5m tall
+            length = dimensions.get('length', 0.1)  # Default 0.1m (100mm thick)
+            return create_box_basic(width, height, length)
+
+        # DOORS - thin flat openings
+        elif semantic_lower == 'door':
+            width = dimensions.get('width', 0.9)   # Default 0.9m wide
+            height = dimensions.get('height', 2.1)  # Default 2.1m tall
+            length = dimensions.get('length', 0.1)  # Default 0.1m (100mm thick)
+            return create_box_basic(width, height, length)
+
+        # DUCT/PIPE/CONDUIT - MEP elements by semantic type
+        elif semantic_lower in ['duct', 'pipe', 'conduit']:
+            if profile_type == 'CIRCULAR':
+                radius = dimensions.get('radius', 0.1)  # Default 0.2m diameter
+                length = dimensions['length']
+                return create_cylinder_basic(radius, length, segments=12)
+            else:
+                width = dimensions.get('width', 0.3)
+                height = dimensions.get('height', 0.3)
+                length = dimensions['length']
+                return create_box_basic(width, height, length)
+
+    # Unsupported class/type - return None
     return None
 
 
