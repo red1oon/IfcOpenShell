@@ -1,0 +1,312 @@
+"""
+BBox Wireframe Visualization for Federation Elements
+Phase 2: BBox Semantic Geometry System
+
+Renders federation elements as colored wireframe bounding boxes using GPU batch drawing.
+Enables instant loading of 44K+ elements with <10MB memory usage.
+"""
+
+import bpy
+import gpu
+import sqlite3
+from gpu_extras.batch import batch_for_shader
+from mathutils import Vector, Matrix
+from pathlib import Path
+from typing import List, Tuple, Optional, Dict
+
+# Discipline colors (from federation module)
+DISCIPLINE_COLORS = {
+    'ACMV': (0.0, 0.75, 1.0, 1.0),      # Cyan/Blue
+    'FP': (1.0, 0.0, 0.0, 1.0),          # Red
+    'ELEC': (1.0, 1.0, 0.0, 1.0),        # Yellow
+    'CW': (0.0, 1.0, 1.0, 1.0),          # Cyan
+    'SP': (1.0, 0.5, 0.0, 1.0),          # Orange
+    'ARC': (0.5, 0.5, 0.5, 0.7),         # Gray
+    'ARCHITECTURE': (0.5, 0.5, 0.5, 0.7),
+    'STR': (0.6, 0.4, 0.2, 1.0),         # Brown
+    'STRUCTURE': (0.6, 0.4, 0.2, 1.0),
+    'DEFAULT': (0.7, 0.7, 0.7, 0.5),     # Light gray
+}
+
+# Global state for visualization
+_bbox_batches = {}
+_draw_handler = None
+_is_enabled = False
+
+
+def create_bbox_edges(bbox: Tuple[float, float, float, float, float, float]) -> List[Vector]:
+    """
+    Create the 12 edges of a bounding box as line segments.
+
+    Args:
+        bbox: (min_x, min_y, min_z, max_x, max_y, max_z)
+
+    Returns:
+        List of 24 vertices (12 edges * 2 vertices each)
+    """
+    min_x, min_y, min_z, max_x, max_y, max_z = bbox
+
+    # 8 corners of the bbox
+    corners = [
+        Vector((min_x, min_y, min_z)),  # 0: bottom-front-left
+        Vector((max_x, min_y, min_z)),  # 1: bottom-front-right
+        Vector((max_x, max_y, min_z)),  # 2: bottom-back-right
+        Vector((min_x, max_y, min_z)),  # 3: bottom-back-left
+        Vector((min_x, min_y, max_z)),  # 4: top-front-left
+        Vector((max_x, min_y, max_z)),  # 5: top-front-right
+        Vector((max_x, max_y, max_z)),  # 6: top-back-right
+        Vector((min_x, max_y, max_z)),  # 7: top-back-left
+    ]
+
+    # 12 edges (each edge = 2 vertices)
+    edges = [
+        # Bottom face (4 edges)
+        (corners[0], corners[1]),
+        (corners[1], corners[2]),
+        (corners[2], corners[3]),
+        (corners[3], corners[0]),
+        # Top face (4 edges)
+        (corners[4], corners[5]),
+        (corners[5], corners[6]),
+        (corners[6], corners[7]),
+        (corners[7], corners[4]),
+        # Vertical edges (4 edges)
+        (corners[0], corners[4]),
+        (corners[1], corners[5]),
+        (corners[2], corners[6]),
+        (corners[3], corners[7]),
+    ]
+
+    # Flatten to list of vertices
+    vertices = []
+    for edge in edges:
+        vertices.extend(edge)
+
+    return vertices
+
+
+def get_model_offset() -> Vector:
+    """
+    Get coordinate offset to convert IFC world coords to Blender scene coords.
+    Uses cached MEP offset from scene properties.
+    """
+    # Try MEP cached offset first
+    cached = bpy.context.scene.get("MEP_cached_offset")
+    if cached:
+        return Vector(cached)
+
+    # Fallback: assume zero offset (IFC world coords = Blender coords)
+    return Vector((0, 0, 0))
+
+
+def load_federation_bboxes(db_path: str, limit: Optional[int] = None) -> Dict[str, List[Tuple]]:
+    """
+    Load bounding boxes from federation database, grouped by discipline.
+
+    Args:
+        db_path: Path to federation database
+        limit: Optional limit on number of elements (for testing)
+
+    Returns:
+        Dict mapping discipline to list of (bbox, guid) tuples
+    """
+    if not Path(db_path).exists():
+        print(f"Federation database not found: {db_path}")
+        return {}
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # Query bboxes with discipline
+    query = """
+        SELECT m.discipline, r.min_x, r.min_y, r.min_z, r.max_x, r.max_y, r.max_z, m.guid
+        FROM elements_meta m
+        JOIN elements_rtree r ON m.id = r.id
+    """
+    if limit:
+        query += f" LIMIT {limit}"
+
+    cursor.execute(query)
+    rows = cursor.fetchall()
+    conn.close()
+
+    # Group by discipline
+    discipline_bboxes = {}
+    for row in rows:
+        discipline = row[0]
+        bbox = tuple(row[1:7])  # min_x, min_y, min_z, max_x, max_y, max_z
+        guid = row[7]
+
+        if discipline not in discipline_bboxes:
+            discipline_bboxes[discipline] = []
+
+        discipline_bboxes[discipline].append((bbox, guid))
+
+    return discipline_bboxes
+
+
+def create_discipline_batches(discipline_bboxes: Dict[str, List[Tuple]], offset: Vector) -> Dict[str, gpu.types.GPUBatch]:
+    """
+    Create GPU batches for each discipline's bounding boxes.
+
+    Args:
+        discipline_bboxes: Dict mapping discipline to list of (bbox, guid) tuples
+        offset: Coordinate offset to apply
+
+    Returns:
+        Dict mapping discipline to GPU batch
+    """
+    batches = {}
+    shader = gpu.shader.from_builtin('UNIFORM_COLOR')
+
+    for discipline, bbox_list in discipline_bboxes.items():
+        if not bbox_list:
+            continue
+
+        # Collect all vertices for this discipline
+        all_vertices = []
+        for bbox, guid in bbox_list:
+            # Apply offset to convert IFC → Blender coords
+            offset_bbox = (
+                bbox[0] - offset.x, bbox[1] - offset.y, bbox[2] - offset.z,
+                bbox[3] - offset.x, bbox[4] - offset.y, bbox[5] - offset.z
+            )
+            edges = create_bbox_edges(offset_bbox)
+            all_vertices.extend(edges)
+
+        if all_vertices:
+            # Create batch for this discipline
+            batch = batch_for_shader(shader, 'LINES', {"pos": all_vertices})
+            batches[discipline] = batch
+            print(f"  Created batch for {discipline}: {len(bbox_list):,} elements, {len(all_vertices)} vertices")
+
+    return batches
+
+
+def draw_bboxes():
+    """Draw callback function for viewport rendering"""
+    global _bbox_batches, _is_enabled
+
+    if not _is_enabled or not _bbox_batches:
+        return
+
+    # Enable blending for transparent colors
+    gpu.state.blend_set('ALPHA')
+    gpu.state.line_width_set(1.0)
+
+    shader = gpu.shader.from_builtin('UNIFORM_COLOR')
+
+    # Draw each discipline's batch with its color
+    for discipline, batch in _bbox_batches.items():
+        color = DISCIPLINE_COLORS.get(discipline, DISCIPLINE_COLORS['DEFAULT'])
+        shader.bind()
+        shader.uniform_float("color", color)
+        batch.draw(shader)
+
+    # Restore state
+    gpu.state.blend_set('NONE')
+
+
+def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tuple[bool, str]:
+    """
+    Enable bounding box visualization in viewport.
+
+    Args:
+        db_path: Path to federation database
+        limit: Optional limit for testing (None = all elements)
+
+    Returns:
+        (success: bool, message: str)
+    """
+    global _bbox_batches, _draw_handler, _is_enabled
+
+    # Disable first if already enabled
+    if _is_enabled:
+        disable_bbox_visualization()
+
+    print(f"\n{'='*70}")
+    print(f"ENABLING BBOX VISUALIZATION")
+    print(f"{'='*70}")
+    print(f"Database: {db_path}")
+    if limit:
+        print(f"Limit: {limit} elements (testing mode)")
+
+    # Load bboxes from database
+    print(f"\nLoading bounding boxes from federation database...")
+    discipline_bboxes = load_federation_bboxes(db_path, limit)
+
+    if not discipline_bboxes:
+        return False, "No bounding boxes loaded from database"
+
+    total_elements = sum(len(bboxes) for bboxes in discipline_bboxes.values())
+    print(f"Loaded {total_elements:,} elements across {len(discipline_bboxes)} disciplines")
+
+    # Get coordinate offset
+    offset = get_model_offset()
+    print(f"Using coordinate offset: ({offset.x:.1f}, {offset.y:.1f}, {offset.z:.1f})")
+
+    # Create GPU batches
+    print(f"\nCreating GPU batches...")
+    _bbox_batches = create_discipline_batches(discipline_bboxes, offset)
+
+    if not _bbox_batches:
+        return False, "Failed to create GPU batches"
+
+    # Register draw handler
+    _draw_handler = bpy.types.SpaceView3D.draw_handler_add(
+        draw_bboxes, (), 'WINDOW', 'POST_VIEW'
+    )
+    _is_enabled = True
+
+    # Force viewport redraw
+    for window in bpy.context.window_manager.windows:
+        for area in window.screen.areas:
+            if area.type == 'VIEW_3D':
+                area.tag_redraw()
+
+    print(f"\n{'='*70}")
+    print(f"✅ BBOX VISUALIZATION ENABLED")
+    print(f"{'='*70}")
+    print(f"Elements rendered: {total_elements:,}")
+    print(f"Disciplines: {', '.join(_bbox_batches.keys())}")
+    print(f"GPU batches: {len(_bbox_batches)}")
+    print(f"{'='*70}\n")
+
+    return True, f"Rendering {total_elements:,} elements as wireframe bboxes"
+
+
+def disable_bbox_visualization() -> Tuple[bool, str]:
+    """
+    Disable bounding box visualization.
+
+    Returns:
+        (success: bool, message: str)
+    """
+    global _bbox_batches, _draw_handler, _is_enabled
+
+    if not _is_enabled:
+        return True, "BBox visualization not enabled"
+
+    # Remove draw handler
+    if _draw_handler:
+        bpy.types.SpaceView3D.draw_handler_remove(_draw_handler, 'WINDOW')
+        _draw_handler = None
+
+    # Clear batches
+    _bbox_batches.clear()
+    _is_enabled = False
+
+    # Force viewport redraw
+    for window in bpy.context.window_manager.windows:
+        for area in window.screen.areas:
+            if area.type == 'VIEW_3D':
+                area.tag_redraw()
+
+    print("BBox visualization disabled")
+    return True, "BBox visualization disabled"
+
+
+def is_bbox_visualization_enabled() -> bool:
+    """Check if BBox visualization is currently enabled"""
+    global _is_enabled
+    return _is_enabled

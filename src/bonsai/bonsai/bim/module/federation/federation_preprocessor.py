@@ -437,10 +437,66 @@ def create_federation_database(db_path, elements_data):
         )
     """)
 
-    print(f"  Schema created")
+    # Semantic metadata table (Phase 1: BBox Semantic Geometry)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS element_semantics (
+            id INTEGER PRIMARY KEY,
+            guid TEXT UNIQUE NOT NULL,
+            semantic_type TEXT NOT NULL,
+            subtype TEXT,
+            material_id INTEGER,
+            dominant_axis TEXT,
+            profile_width REAL,
+            profile_height REAL,
+            wall_thickness REAL,
+            has_opening BOOLEAN DEFAULT 0,
+            connects_to TEXT,
+            flow_direction TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (guid) REFERENCES elements_meta(guid)
+        )
+    """)
 
-    # Insert elements
-    print(f"  Inserting {len(elements_data)} elements...")
+    cursor.execute("CREATE INDEX idx_semantic_type ON element_semantics(semantic_type)")
+    cursor.execute("CREATE INDEX idx_subtype ON element_semantics(subtype)")
+    cursor.execute("CREATE INDEX idx_material_id ON element_semantics(material_id)")
+
+    # Material library table (Phase 1: BBox Semantic Geometry)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS material_library (
+            id INTEGER PRIMARY KEY,
+            name TEXT UNIQUE NOT NULL,
+            category TEXT,
+            generation_rules TEXT,
+            base_color TEXT,
+            metallic REAL DEFAULT 0.0,
+            roughness REAL DEFAULT 0.5,
+            transparency REAL DEFAULT 0.0,
+            emissive REAL DEFAULT 0.0,
+            texture_path TEXT,
+            normal_map_path TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # Pre-populate material library with common materials
+    from bonsai.bim.module.federation.semantic_utils import MATERIAL_LIBRARY_DATA
+    for material in MATERIAL_LIBRARY_DATA:
+        cursor.execute("""
+            INSERT INTO material_library
+            (id, name, category, generation_rules, base_color, metallic, roughness, transparency, emissive)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (material['id'], material['name'], material['category'], material['generation_rules'],
+              material['base_color'], material['metallic'], material['roughness'],
+              material['transparency'], material['emissive']))
+
+    print(f"  Schema created (with semantic metadata + {len(MATERIAL_LIBRARY_DATA)} materials)")
+
+    # Insert elements (with semantic metadata extraction)
+    print(f"  Inserting {len(elements_data)} elements (with semantic metadata)...")
+
+    from bonsai.bim.module.federation.semantic_utils import extract_semantic_metadata
 
     for i, elem in enumerate(elements_data):
         # Insert metadata
@@ -457,6 +513,29 @@ def create_federation_database(db_path, elements_data):
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (elem_id, elem['min_x'], elem['max_x'],
               elem['min_y'], elem['max_y'], elem['min_z'], elem['max_z']))
+
+        # Extract and insert semantic metadata (Phase 1: BBox Semantic Geometry)
+        bbox = (elem['min_x'], elem['min_y'], elem['min_z'],
+                elem['max_x'], elem['max_y'], elem['max_z'])
+        semantic_data = extract_semantic_metadata(
+            elem['guid'],
+            elem['ifc_class'],
+            elem['discipline'],
+            bbox
+        )
+
+        cursor.execute("""
+            INSERT INTO element_semantics
+            (id, guid, semantic_type, subtype, material_id, dominant_axis,
+             profile_width, profile_height, wall_thickness, has_opening,
+             connects_to, flow_direction)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (elem_id, semantic_data['guid'], semantic_data['semantic_type'],
+              semantic_data['subtype'], semantic_data['material_id'],
+              semantic_data['dominant_axis'], semantic_data['profile_width'],
+              semantic_data['profile_height'], semantic_data['wall_thickness'],
+              semantic_data['has_opening'], semantic_data['connects_to'],
+              semantic_data['flow_direction']))
 
         if (i + 1) % 5000 == 0:
             print(f"    {i + 1}/{len(elements_data)}...")

@@ -344,3 +344,36 @@ class BIMClashProperties(PropertyGroup):
         description="Currently viewed clash (for Previous/Next navigation)",
         default=0
     )
+
+    # BBox Semantic Geometry - LOD Visualization Control (Phase 2)
+    lod_visualization_mode: EnumProperty(
+        name="LOD Mode",
+        description="Level of Detail visualization mode",
+        items=[
+            ('NONE', 'None', 'No federation visualization', 'HIDE_ON', 0),
+            ('BBOX_WIREFRAME', 'BBox Wireframe', 'Colored wireframe bounding boxes (instant, <10MB)', 'SHADING_BBOX', 1),
+            ('SEMANTIC_PROXY', 'Semantic Proxies', 'Procedural geometry (fast, ~200MB)', 'MESH_CUBE', 2),
+            ('FULL_GEOMETRY', 'Full IFC Geometry', 'Complete IFC geometry (slow, ~16GB)', 'MESH_ICOSPHERE', 3),
+        ],
+        default='NONE'
+    )
+
+    bbox_visualization_enabled: BoolProperty(
+        name="BBox Visualization Active",
+        description="Whether BBox wireframe visualization is currently active in viewport",
+        default=False
+    )
+
+    bbox_element_limit: IntProperty(
+        name="Element Limit",
+        description="Limit number of elements to render (0 = all). Useful for testing",
+        default=0,
+        min=0,
+        soft_max=50000
+    )
+
+    show_lod_stats: BoolProperty(
+        name="Show Stats Overlay",
+        description="Display LOD statistics in viewport (element count, memory, FPS)",
+        default=True
+    )

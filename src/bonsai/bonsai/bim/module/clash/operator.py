@@ -1778,3 +1778,67 @@ class BIM_OT_load_clash_geometry(bpy.types.Operator):
             import traceback
             traceback.print_exc()
             return None
+
+
+# ============================================================================
+# BBox Semantic Geometry - Phase 2: Visualization Operators
+# ============================================================================
+
+
+class BIM_OT_enable_bbox_visualization(bpy.types.Operator):
+    """Enable BBox wireframe visualization for federation elements"""
+    bl_idname = "bim.enable_bbox_visualization"
+    bl_label = "Enable BBox Visualization"
+    bl_description = "Render federation elements as colored wireframe bounding boxes (instant loading, <10MB)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        from . import bbox_visualization
+
+        props = tool.Clash.get_clash_props()
+
+        # Validate database path
+        db_path = props.bbox_database_path
+        if not db_path or not Path(db_path).exists():
+            self.report({'ERROR'}, f"Federation database not found: {db_path}")
+            return {'CANCELLED'}
+
+        # Get element limit (0 = all elements)
+        limit = props.bbox_element_limit if props.bbox_element_limit > 0 else None
+
+        # Enable visualization
+        success, message = bbox_visualization.enable_bbox_visualization(db_path, limit)
+
+        if success:
+            props.bbox_visualization_enabled = True
+            props.lod_visualization_mode = 'BBOX_WIREFRAME'
+            self.report({'INFO'}, message)
+            return {'FINISHED'}
+        else:
+            self.report({'ERROR'}, message)
+            return {'CANCELLED'}
+
+
+class BIM_OT_disable_bbox_visualization(bpy.types.Operator):
+    """Disable BBox wireframe visualization"""
+    bl_idname = "bim.disable_bbox_visualization"
+    bl_label = "Disable BBox Visualization"
+    bl_description = "Remove BBox wireframe rendering from viewport"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        from . import bbox_visualization
+
+        props = tool.Clash.get_clash_props()
+
+        # Disable visualization
+        success, message = bbox_visualization.disable_bbox_visualization()
+
+        if success:
+            props.bbox_visualization_enabled = False
+            props.lod_visualization_mode = 'NONE'
+            self.report({'INFO'}, message)
+            return {'FINISHED'}
+        else:
+            self.report({'ERROR'}, message)
+            return {'CANCELLED'}

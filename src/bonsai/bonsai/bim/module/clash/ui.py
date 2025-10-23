@@ -191,6 +191,66 @@ class BIM_PT_ifcclash(Panel):
                 col.label(text=f"  Class: {candidate.ifc_class_b}")
 
         # ================================================================
+        # FEDERATION LOD VISUALIZATION (BBox Semantic Geometry - Phase 2)
+        # ================================================================
+        layout.separator()
+        lod_box = layout.box()
+        lod_box.label(text="Federation LOD Visualization", icon="SHADING_BBOX")
+
+        # Database path
+        row = lod_box.row()
+        row.prop(props, "bbox_database_path", text="Database")
+
+        # LOD mode selector
+        row = lod_box.row()
+        row.prop(props, "lod_visualization_mode", text="")
+
+        # BBox Wireframe controls (Level 0)
+        if props.lod_visualization_mode == 'BBOX_WIREFRAME':
+            row = lod_box.row(align=True)
+            if props.bbox_visualization_enabled:
+                row.operator("bim.disable_bbox_visualization",
+                           text="Disable BBox View",
+                           icon='HIDE_ON')
+            else:
+                row.operator("bim.enable_bbox_visualization",
+                           text="Enable BBox View",
+                           icon='HIDE_OFF')
+
+            # Element limit (for testing)
+            row = lod_box.row()
+            row.prop(props, "bbox_element_limit")
+            if props.bbox_element_limit == 0:
+                hint_row = lod_box.row()
+                hint_row.scale_y = 0.6
+                hint_row.label(text="💡 0 = All elements (44K+)", icon='INFO')
+
+            # Stats toggle
+            row = lod_box.row()
+            row.prop(props, "show_lod_stats")
+
+            # Info
+            info_col = lod_box.column(align=True)
+            info_col.scale_y = 0.7
+            info_col.label(text="💡 BBox Wireframe:", icon='INFO')
+            info_col.label(text="  • Instant loading (<3 seconds)")
+            info_col.label(text="  • <10 MB memory usage")
+            info_col.label(text="  • Color-coded by discipline")
+            info_col.label(text="  • ACMV=Cyan, FP=Red, ELEC=Yellow")
+
+        # Semantic Proxies (Level 1) - Future
+        elif props.lod_visualization_mode == 'SEMANTIC_PROXY':
+            info_row = lod_box.row()
+            info_row.label(text="Phase 3: Procedural proxy generation", icon='INFO')
+            info_row = lod_box.row()
+            info_row.label(text="Coming soon...")
+
+        # Full IFC Geometry (Level 2) - Existing
+        elif props.lod_visualization_mode == 'FULL_GEOMETRY':
+            info_row = lod_box.row()
+            info_row.label(text="Use lazy loading above or load full IFC", icon='INFO')
+
+        # ================================================================
         # TRADITIONAL CLASH SETS (File-based)
         # ================================================================
         layout.separator()

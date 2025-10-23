@@ -1,0 +1,349 @@
+"""
+Semantic Utilities for BBox-First Federation Architecture
+----------------------------------------------------------
+Provides IFC class to semantic type mapping, profile dimension extraction,
+and material assignment for procedural proxy generation.
+
+Part of Phase 1: BBox Semantic Geometry System
+"""
+
+import json
+from typing import Dict, Optional, Tuple, Any
+
+
+# IFC Class to Semantic Type Mapping
+# Maps 27+ IFC classes to 8 semantic types for procedural generation
+SEMANTIC_TYPE_MAPPING = {
+    # Architecture
+    'IfcDoor': 'door',
+    'IfcDoorStandardCase': 'door',
+    'IfcWindow': 'window',
+    'IfcWindowStandardCase': 'window',
+    'IfcWall': 'wall',
+    'IfcWallStandardCase': 'wall',
+    'IfcSlab': 'slab',
+    'IfcRoof': 'slab',
+    'IfcCurtainWall': 'wall',
+
+    # Structure
+    'IfcBeam': 'beam',
+    'IfcBeamStandardCase': 'beam',
+    'IfcColumn': 'column',
+    'IfcColumnStandardCase': 'column',
+    'IfcMember': 'beam',  # Treat members as beams
+    'IfcPlate': 'slab',
+
+    # MEP - ACMV
+    'IfcDuctSegment': 'duct',
+    'IfcDuctFitting': 'duct',
+    'IfcAirTerminal': 'equipment',
+    'IfcUnitaryEquipment': 'equipment',
+
+    # MEP - Fire Protection
+    'IfcPipeSegment': 'pipe',
+    'IfcPipeFitting': 'pipe',
+    'IfcFireSuppressionTerminal': 'equipment',
+
+    # MEP - Plumbing
+    'IfcSanitaryTerminal': 'equipment',
+    'IfcFlowTerminal': 'equipment',
+
+    # MEP - Electrical
+    'IfcCableSegment': 'conduit',
+    'IfcCableCarrierSegment': 'conduit',
+    'IfcCableCarrierFitting': 'conduit',
+    'IfcElectricDistributionBoard': 'equipment',
+    'IfcLightFixture': 'equipment',
+
+    # Proxy/Generic elements
+    'IfcBuildingElementProxy': 'equipment',
+    'IfcElementAssembly': 'equipment',
+
+    # Default fallback
+    'DEFAULT': 'equipment'
+}
+
+
+# Material Library Mapping (semantic_type + discipline → material_id)
+MATERIAL_MAPPING = {
+    ('door', 'ARCHITECTURE'): 1,  # DOOR_WOOD
+    ('window', 'ARCHITECTURE'): 2,  # WINDOW_GLASS
+    ('wall', 'ARCHITECTURE'): 7,  # WALL_GENERIC
+    ('slab', 'STRUCTURE'): 3,  # CONCRETE_SLAB
+    ('beam', 'STRUCTURE'): 4,  # STEEL_BEAM
+    ('column', 'STRUCTURE'): 4,  # STEEL_BEAM
+    ('duct', 'ACMV'): 5,  # DUCT_ACMV
+    ('pipe', 'FP'): 6,  # PIPE_FP (Red)
+    ('pipe', 'PLUMBING'): 8,  # PIPE_PLUMBING (Blue)
+    ('conduit', 'ELEC'): 9,  # CONDUIT_ELEC (Yellow)
+    ('equipment', None): 10,  # GENERIC_EQUIPMENT
+}
+
+
+def get_semantic_type(ifc_class: str) -> str:
+    """
+    Map IFC class name to semantic type.
+
+    Args:
+        ifc_class: IFC class name (e.g., 'IfcDoor', 'IfcDuctSegment')
+
+    Returns:
+        Semantic type: door/window/beam/column/slab/duct/pipe/conduit/equipment
+    """
+    return SEMANTIC_TYPE_MAPPING.get(ifc_class, SEMANTIC_TYPE_MAPPING['DEFAULT'])
+
+
+def determine_dominant_axis(bbox: Tuple[float, float, float, float, float, float]) -> Optional[str]:
+    """
+    Determine dominant axis for linear elements (beams, columns, ducts, pipes, conduits).
+
+    Args:
+        bbox: Bounding box (min_x, min_y, min_z, max_x, max_y, max_z)
+
+    Returns:
+        'X', 'Y', 'Z', or None if no clear dominant axis
+    """
+    min_x, min_y, min_z, max_x, max_y, max_z = bbox
+
+    dim_x = max_x - min_x
+    dim_y = max_y - min_y
+    dim_z = max_z - min_z
+
+    # Dominant axis must be 2x longer than others
+    if dim_z > max(dim_x, dim_y) * 2:
+        return 'Z'
+    elif dim_x > max(dim_y, dim_z) * 2:
+        return 'X'
+    elif dim_y > max(dim_x, dim_z) * 2:
+        return 'Y'
+
+    return None
+
+
+def extract_profile_dimensions(bbox: Tuple[float, float, float, float, float, float],
+                                semantic_type: str,
+                                dominant_axis: Optional[str]) -> Tuple[Optional[float], Optional[float]]:
+    """
+    Extract profile width and height from bounding box.
+
+    For MEP elements (duct, pipe, conduit), this is the cross-section dimensions.
+    For beams/columns, this is the profile dimensions.
+
+    Args:
+        bbox: Bounding box (min_x, min_y, min_z, max_x, max_y, max_z)
+        semantic_type: Semantic type from get_semantic_type()
+        dominant_axis: Dominant axis from determine_dominant_axis()
+
+    Returns:
+        Tuple of (profile_width, profile_height) in mm, or (None, None)
+    """
+    min_x, min_y, min_z, max_x, max_y, max_z = bbox
+
+    dim_x = max_x - min_x
+    dim_y = max_y - min_y
+    dim_z = max_z - min_z
+
+    dimensions = [dim_x, dim_y, dim_z]
+
+    if semantic_type in ['duct', 'pipe', 'conduit', 'beam', 'column']:
+        # For linear elements, cross-section is the 2 smallest dimensions
+        sorted_dims = sorted(dimensions)
+
+        if semantic_type == 'pipe' or semantic_type == 'conduit':
+            # Circular profile: diameter = smallest dimension
+            profile_width = sorted_dims[0]
+            profile_height = sorted_dims[0]  # Same as width for circular
+        else:
+            # Rectangular profile: width x height
+            profile_width = sorted_dims[0]
+            profile_height = sorted_dims[1]
+
+        return (profile_width, profile_height)
+
+    # For other types, use bbox dimensions as-is
+    return (dim_x, dim_y)
+
+
+def get_material_id(semantic_type: str, discipline: str) -> int:
+    """
+    Get material library ID for semantic type and discipline.
+
+    Args:
+        semantic_type: Semantic type (door, window, duct, etc.)
+        discipline: Discipline (ARCHITECTURE, STRUCTURE, ACMV, FP, PLUMBING, ELEC, etc.)
+
+    Returns:
+        Material ID (1-10), defaults to 10 (generic equipment)
+    """
+    # Try exact match first
+    key = (semantic_type, discipline)
+    if key in MATERIAL_MAPPING:
+        return MATERIAL_MAPPING[key]
+
+    # Try with None discipline (generic)
+    key = (semantic_type, None)
+    if key in MATERIAL_MAPPING:
+        return MATERIAL_MAPPING[key]
+
+    # Default: generic equipment
+    return 10
+
+
+def extract_semantic_metadata(guid: str,
+                               ifc_class: str,
+                               discipline: str,
+                               bbox: Tuple[float, float, float, float, float, float]) -> Dict[str, Any]:
+    """
+    Extract complete semantic metadata for an element.
+
+    This is the main function called during federation preprocessing.
+
+    Args:
+        guid: Element GUID
+        ifc_class: IFC class name
+        discipline: Discipline (ARCHITECTURE, STRUCTURE, ACMV, FP, etc.)
+        bbox: Bounding box (min_x, min_y, min_z, max_x, max_y, max_z)
+
+    Returns:
+        Dictionary with semantic metadata for database insertion
+    """
+    semantic_type = get_semantic_type(ifc_class)
+    dominant_axis = determine_dominant_axis(bbox)
+    profile_width, profile_height = extract_profile_dimensions(bbox, semantic_type, dominant_axis)
+    material_id = get_material_id(semantic_type, discipline)
+
+    # Determine subtype (basic heuristic, can be enhanced)
+    subtype = None
+    if semantic_type == 'duct':
+        subtype = 'rectangular' if profile_width != profile_height else 'square'
+    elif semantic_type == 'pipe' or semantic_type == 'conduit':
+        subtype = 'circular'
+
+    return {
+        'guid': guid,
+        'semantic_type': semantic_type,
+        'subtype': subtype,
+        'material_id': material_id,
+        'dominant_axis': dominant_axis,
+        'profile_width': profile_width,
+        'profile_height': profile_height,
+        'wall_thickness': None,  # Can be enhanced later
+        'has_opening': False,  # Can be enhanced later
+        'connects_to': None,  # Can be enhanced later
+        'flow_direction': None,  # Can be enhanced later
+    }
+
+
+# Pre-defined material library data (will be inserted into database)
+MATERIAL_LIBRARY_DATA = [
+    {
+        'id': 1,
+        'name': 'DOOR_WOOD',
+        'category': 'architecture',
+        'generation_rules': json.dumps({"type": "rectangle_with_handle", "handle_height": 1000}),
+        'base_color': '#8B4513',
+        'metallic': 0.0,
+        'roughness': 0.8,
+        'transparency': 0.0,
+        'emissive': 0.0
+    },
+    {
+        'id': 2,
+        'name': 'WINDOW_GLASS',
+        'category': 'architecture',
+        'generation_rules': json.dumps({"type": "glazing_with_frame", "frame_width": 50}),
+        'base_color': '#87CEEB',
+        'metallic': 0.0,
+        'roughness': 0.1,
+        'transparency': 0.7,
+        'emissive': 0.0
+    },
+    {
+        'id': 3,
+        'name': 'CONCRETE_SLAB',
+        'category': 'structure',
+        'generation_rules': json.dumps({"type": "flat_plane"}),
+        'base_color': '#808080',
+        'metallic': 0.0,
+        'roughness': 0.9,
+        'transparency': 0.0,
+        'emissive': 0.0
+    },
+    {
+        'id': 4,
+        'name': 'STEEL_BEAM',
+        'category': 'structure',
+        'generation_rules': json.dumps({"type": "i_beam_extrusion"}),
+        'base_color': '#C0C0C0',
+        'metallic': 0.8,
+        'roughness': 0.3,
+        'transparency': 0.0,
+        'emissive': 0.0
+    },
+    {
+        'id': 5,
+        'name': 'DUCT_ACMV',
+        'category': 'mep',
+        'generation_rules': json.dumps({"type": "rectangular_extrusion"}),
+        'base_color': '#00BFFF',
+        'metallic': 0.5,
+        'roughness': 0.4,
+        'transparency': 0.0,
+        'emissive': 0.0
+    },
+    {
+        'id': 6,
+        'name': 'PIPE_FP',
+        'category': 'mep',
+        'generation_rules': json.dumps({"type": "circular_extrusion", "add_flow_arrow": True}),
+        'base_color': '#FF0000',
+        'metallic': 0.6,
+        'roughness': 0.3,
+        'transparency': 0.0,
+        'emissive': 0.0
+    },
+    {
+        'id': 7,
+        'name': 'WALL_GENERIC',
+        'category': 'architecture',
+        'generation_rules': json.dumps({"type": "vertical_plane"}),
+        'base_color': '#F5F5DC',
+        'metallic': 0.0,
+        'roughness': 0.8,
+        'transparency': 0.0,
+        'emissive': 0.0
+    },
+    {
+        'id': 8,
+        'name': 'PIPE_PLUMBING',
+        'category': 'mep',
+        'generation_rules': json.dumps({"type": "circular_extrusion"}),
+        'base_color': '#0000FF',
+        'metallic': 0.6,
+        'roughness': 0.3,
+        'transparency': 0.0,
+        'emissive': 0.0
+    },
+    {
+        'id': 9,
+        'name': 'CONDUIT_ELEC',
+        'category': 'mep',
+        'generation_rules': json.dumps({"type": "circular_extrusion"}),
+        'base_color': '#FFFF00',
+        'metallic': 0.4,
+        'roughness': 0.4,
+        'transparency': 0.0,
+        'emissive': 0.0
+    },
+    {
+        'id': 10,
+        'name': 'GENERIC_EQUIPMENT',
+        'category': 'equipment',
+        'generation_rules': json.dumps({"type": "box"}),
+        'base_color': '#A9A9A9',
+        'metallic': 0.2,
+        'roughness': 0.6,
+        'transparency': 0.0,
+        'emissive': 0.0
+    },
+]
