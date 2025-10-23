@@ -93,9 +93,9 @@ for guid, ifc_class, discipline, min_x, min_y, min_z, max_x, max_y, max_z in ele
     # Shapeliness checks
     issues = []
 
-    # Check 1: Degenerate dimensions (too small)
-    if any(d < 1.0 for d in [width, height, length]):
-        issues.append(f"Degenerate dimension (<1mm): W={width:.1f}, H={height:.1f}, L={length:.1f}")
+    # Check 1: Degenerate dimensions (too small) - Database uses METERS
+    if any(d < 0.001 for d in [width, height, length]):  # < 1mm
+        issues.append(f"Degenerate dimension (<1mm): W={width:.3f}m, H={height:.3f}m, L={length:.3f}m")
 
     # Check 2: Extreme aspect ratios (too thin/flat)
     if cross_section_1 > 0 and element_length / cross_section_1 > 10000:
@@ -105,13 +105,13 @@ for guid, ifc_class, discipline, min_x, min_y, min_z, max_x, max_y, max_z in ele
     if cross_section_1 > 0 and cross_section_2 / cross_section_1 > 100:
         issues.append(f"Flat cross-section: {cross_section_2/cross_section_1:.0f}:1")
 
-    # Check 4: Typical duct/pipe size ranges
-    if 'Duct' in ifc_class or 'Pipe' in ifc_class:
-        typical_min = 50   # 50mm minimum diameter/width
-        typical_max = 2000 # 2000mm maximum diameter/width
+    # Check 4: Typical duct/pipe size ranges - Database uses METERS
+    if 'Duct' in ifc_class or 'Pipe' in ifc_class or 'Flow' in ifc_class:
+        typical_min = 0.05   # 0.05m = 50mm minimum diameter/width
+        typical_max = 2.0    # 2.0m = 2000mm maximum diameter/width
 
         if cross_section_1 < typical_min or cross_section_1 > typical_max:
-            issues.append(f"Atypical cross-section size: {cross_section_1:.0f}mm")
+            issues.append(f"Atypical cross-section size: {cross_section_1:.3f}m ({cross_section_1*1000:.0f}mm)")
 
     if issues:
         shape_issues.append((guid[:8], ifc_class, issues))
@@ -268,10 +268,10 @@ cursor.execute("""
 
 discipline_stats = cursor.fetchall()
 
-print(f"✅ Discipline statistics:")
+print(f"✅ Discipline statistics (dimensions in meters):")
 for discipline, count, avg_w, avg_h, avg_l in discipline_stats:
     print(f"  • {discipline}: {count:,} elements")
-    print(f"    Avg dimensions: {avg_w:.0f} x {avg_h:.0f} x {avg_l:.0f} mm")
+    print(f"    Avg dimensions: {avg_w:.2f} x {avg_h:.2f} x {avg_l:.2f} m ({avg_w*1000:.0f} x {avg_h*1000:.0f} x {avg_l*1000:.0f} mm)")
 
 # Test 7: Memory & Performance Estimation
 print(f"\n[Test 7] Rendering Performance Estimation")

@@ -41,8 +41,8 @@ def create_cylinder_basic(radius: float, length: float, segments: int = 12) -> b
     Create basic cylinder mesh (for round ducts, pipes).
 
     Args:
-        radius: Cylinder radius (mm)
-        length: Cylinder length along Z-axis (mm)
+        radius: Cylinder radius (Blender Units / meters)
+        length: Cylinder length along Z-axis (Blender Units / meters)
         segments: Number of circular segments (lower = faster)
 
     Returns:
@@ -85,9 +85,9 @@ def create_box_basic(width: float, height: float, length: float) -> bmesh.types.
     Create basic box mesh (for rectangular ducts, cable trays).
 
     Args:
-        width: Box width (X-axis, mm)
-        height: Box height (Y-axis, mm)
-        length: Box length (Z-axis, mm)
+        width: Box width (X-axis, Blender Units / meters)
+        height: Box height (Y-axis, Blender Units / meters)
+        length: Box length (Z-axis, Blender Units / meters)
 
     Returns:
         BMesh with box geometry
@@ -352,7 +352,7 @@ def create_shape_from_semantics(
     Args:
         ifc_class: IFC class name (e.g., 'IfcDuct', 'IfcPipeSegment')
         profile_type: Profile type (e.g., 'CIRCULAR', 'RECTANGULAR')
-        dimensions: Dict with 'width', 'height', 'radius', 'length' (in mm)
+        dimensions: Dict with 'width', 'height', 'radius', 'length' (in Blender Units / meters)
         detail_level: 'basic' (Semantic Proxies) or 'detailed' (Full Geometry)
 
     Returns:
@@ -360,12 +360,12 @@ def create_shape_from_semantics(
     """
     # Default length if not specified
     if 'length' not in dimensions or dimensions['length'] is None:
-        dimensions['length'] = 1000.0  # Default 1 meter
+        dimensions['length'] = 1.0  # Default 1 meter
 
     # DUCTS
     if 'Duct' in ifc_class:
         if profile_type == 'CIRCULAR':
-            radius = dimensions.get('radius', 150.0)  # Default 300mm diameter
+            radius = dimensions.get('radius', 0.15)  # Default 0.3m (300mm) diameter
             length = dimensions['length']
 
             if detail_level == 'detailed':
@@ -374,8 +374,8 @@ def create_shape_from_semantics(
                 return create_cylinder_basic(radius, length, segments=12)
 
         elif profile_type == 'RECTANGULAR':
-            width = dimensions.get('width', 600.0)
-            height = dimensions.get('height', 400.0)
+            width = dimensions.get('width', 0.6)  # Default 0.6m (600mm)
+            height = dimensions.get('height', 0.4)  # Default 0.4m (400mm)
             length = dimensions['length']
 
             if detail_level == 'detailed':
@@ -387,7 +387,7 @@ def create_shape_from_semantics(
     elif 'Pipe' in ifc_class:
         if 'Fitting' in ifc_class:
             # Pipe fittings (elbows, tees, etc.)
-            radius = dimensions.get('radius', 50.0)  # Default 100mm diameter
+            radius = dimensions.get('radius', 0.05)  # Default 0.1m (100mm) diameter
 
             if detail_level == 'detailed':
                 return create_tee_detailed(radius, segments=16)
@@ -396,7 +396,7 @@ def create_shape_from_semantics(
 
         else:
             # Straight pipe segments
-            radius = dimensions.get('radius', 50.0)
+            radius = dimensions.get('radius', 0.05)  # Default 0.1m (100mm) diameter
             length = dimensions['length']
 
             if detail_level == 'detailed':
@@ -406,7 +406,7 @@ def create_shape_from_semantics(
 
     # CABLES
     elif 'Cable' in ifc_class:
-        radius = dimensions.get('radius', 10.0)  # Small cables
+        radius = dimensions.get('radius', 0.01)  # Default 0.02m (20mm) diameter
         length = dimensions['length']
 
         # Cables are always simple cylinders
@@ -414,8 +414,8 @@ def create_shape_from_semantics(
 
     # CABLE TRAYS / CONDUITS
     elif 'Tray' in ifc_class or 'Conduit' in ifc_class:
-        width = dimensions.get('width', 200.0)
-        height = dimensions.get('height', 100.0)
+        width = dimensions.get('width', 0.2)  # Default 0.2m (200mm)
+        height = dimensions.get('height', 0.1)  # Default 0.1m (100mm)
         length = dimensions['length']
 
         return create_box_basic(width, height, length)
