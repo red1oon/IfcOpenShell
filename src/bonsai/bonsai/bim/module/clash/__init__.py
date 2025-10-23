@@ -27,7 +27,6 @@ classes = (
     operator.BIM_OT_select_discipline_clash,
     operator.BIM_OT_visualize_selected_discipline_clashes,
     operator.BIM_OT_deselect_all_clashes,
-    operator.BIM_OT_toggle_all_clash_selections,
     operator.BIM_OT_clear_discipline_clash_visualization,
     operator.BIM_OT_enable_clash_gpu_visualization,
     operator.BIM_OT_disable_clash_gpu_visualization,
