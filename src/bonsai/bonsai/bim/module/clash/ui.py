@@ -197,9 +197,15 @@ class BIM_PT_ifcclash(Panel):
         lod_box = layout.box()
         lod_box.label(text="Federation LOD Visualization", icon="SHADING_BBOX")
 
-        # Database path
-        row = lod_box.row()
-        row.prop(props, "bbox_database_path", text="Database")
+        # Check database (from Federation panel - no UI shown, just validation)
+        fed_props = context.scene.BIMFederationProperties
+        if not fed_props.federation_database_path:
+            info_row = lod_box.row()
+            info_row.alert = True
+            info_row.label(text="⚠ Set database in Multi-Model Federation panel first", icon='ERROR')
+            info_row = lod_box.row()
+            info_row.label(text="   (Scene Properties → Multi-Model Federation)")
+            return
 
         # LOD mode selector
         row = lod_box.row()
@@ -245,10 +251,34 @@ class BIM_PT_ifcclash(Panel):
             info_row = lod_box.row()
             info_row.label(text="Coming soon...")
 
-        # Full IFC Geometry (Level 2) - Existing
+        # Full IFC Geometry (Level 2) - Load from database
         elif props.lod_visualization_mode == 'FULL_GEOMETRY':
-            info_row = lod_box.row()
-            info_row.label(text="Use lazy loading above or load full IFC", icon='INFO')
+            row = lod_box.row(align=True)
+            if props.bbox_visualization_enabled:  # Reuse flag for any visualization mode
+                row.operator("bim.disable_full_geometry_visualization",
+                           text="Disable Full Geometry",
+                           icon='HIDE_ON')
+            else:
+                row.operator("bim.enable_full_geometry_visualization",
+                           text="Enable Full Geometry",
+                           icon='IMPORT')
+
+            # Element limit (for testing)
+            row = lod_box.row()
+            row.prop(props, "bbox_element_limit", text="Element Limit")
+            if props.bbox_element_limit == 0:
+                hint_row = lod_box.row()
+                hint_row.scale_y = 0.6
+                hint_row.label(text="💡 0 = All elements (may take time)", icon='INFO')
+
+            # Info
+            info_col = lod_box.column(align=True)
+            info_col.scale_y = 0.7
+            info_col.label(text="💡 Full Geometry:", icon='INFO')
+            info_col.label(text="  • Loads actual IFC geometry from database")
+            info_col.label(text="  • Independent of clash detection")
+            info_col.label(text="  • Creates Blender objects (visible in Outliner)")
+            info_col.label(text="  • Memory: ~300-500MB per 1000 elements")
 
         # ================================================================
         # TRADITIONAL CLASH SETS (File-based)

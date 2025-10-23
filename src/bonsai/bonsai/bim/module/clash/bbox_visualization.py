@@ -85,15 +85,49 @@ def create_bbox_edges(bbox: Tuple[float, float, float, float, float, float]) -> 
     return vertices
 
 
-def get_model_offset() -> Vector:
+def get_model_offset(db_path: str = None) -> Vector:
     """
     Get coordinate offset to convert IFC world coords to Blender scene coords.
-    Uses cached MEP offset from scene properties.
+
+    Priority:
+    1. Cached MEP offset from scene properties
+    2. Calculate from database element bounds (center of all elements)
+    3. Fallback to zero offset
     """
     # Try MEP cached offset first
     cached = bpy.context.scene.get("MEP_cached_offset")
     if cached:
         return Vector(cached)
+
+    # If database path provided, calculate offset from element bounds
+    if db_path and Path(db_path).exists():
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT MIN(min_x), MIN(min_y), MIN(min_z),
+                       MAX(max_x), MAX(max_y), MAX(max_z)
+                FROM elements_rtree
+            """)
+            bounds = cursor.fetchone()
+            conn.close()
+
+            if bounds and all(b is not None for b in bounds):
+                # Calculate center of all elements
+                center_x = (bounds[0] + bounds[3]) / 2
+                center_y = (bounds[1] + bounds[4]) / 2
+                center_z = (bounds[2] + bounds[5]) / 2
+
+                # Offset to bring elements to origin
+                offset = Vector((center_x, center_y, center_z))
+                print(f"  Calculated offset from database: ({offset.x:.1f}, {offset.y:.1f}, {offset.z:.1f})")
+
+                # Cache it for future use
+                bpy.context.scene["MEP_cached_offset"] = (offset.x, offset.y, offset.z)
+
+                return offset
+        except Exception as e:
+            print(f"  Warning: Could not calculate offset from database: {e}")
 
     # Fallback: assume zero offset (IFC world coords = Blender coords)
     return Vector((0, 0, 0))
@@ -241,8 +275,8 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
     total_elements = sum(len(bboxes) for bboxes in discipline_bboxes.values())
     print(f"Loaded {total_elements:,} elements across {len(discipline_bboxes)} disciplines")
 
-    # Get coordinate offset
-    offset = get_model_offset()
+    # Get coordinate offset (auto-calculate from database if not cached)
+    offset = get_model_offset(db_path)
     print(f"Using coordinate offset: ({offset.x:.1f}, {offset.y:.1f}, {offset.z:.1f})")
 
     # Create GPU batches
@@ -258,10 +292,23 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
     )
     _is_enabled = True
 
-    # Force viewport redraw
+    # Frame viewport to show elements (now at origin after offset)
+    print(f"\nFraming viewport to show elements...")
     for window in bpy.context.window_manager.windows:
         for area in window.screen.areas:
             if area.type == 'VIEW_3D':
+                # Set viewport to frame a reasonable volume around origin
+                # Elements are now centered at origin after offset
+                for space in area.spaces:
+                    if space.type == 'VIEW_3D':
+                        # Set view distance to see all elements (~200m span typical)
+                        space.region_3d.view_distance = 300.0
+                        space.region_3d.view_location = (0.0, 0.0, 0.0)
+
+                        # Optional: Set to top view for better initial orientation
+                        # Uncomment if you want automatic top view:
+                        # space.region_3d.view_rotation = Quaternion((1.0, 0.0, 0.0, 0.0))
+
                 area.tag_redraw()
 
     print(f"\n{'='*70}")
@@ -270,6 +317,7 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
     print(f"Elements rendered: {total_elements:,}")
     print(f"Disciplines: {', '.join(_bbox_batches.keys())}")
     print(f"GPU batches: {len(_bbox_batches)}")
+    print(f"Viewport: Framed to origin (elements offset-corrected)")
     print(f"{'='*70}\n")
 
     return True, f"Rendering {total_elements:,} elements as wireframe bboxes"

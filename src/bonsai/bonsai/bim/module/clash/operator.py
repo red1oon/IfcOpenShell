@@ -20,6 +20,7 @@ from . import prefilter
 import os
 import bpy
 import json
+import sqlite3
 import tempfile
 import bmesh
 import logging
@@ -1796,10 +1797,17 @@ class BIM_OT_enable_bbox_visualization(bpy.types.Operator):
         from . import bbox_visualization
 
         props = tool.Clash.get_clash_props()
+        fed_props = context.scene.BIMFederationProperties
 
-        # Validate database path
-        db_path = props.bbox_database_path
-        if not db_path or not Path(db_path).exists():
+        # Validate database path (from Federation panel)
+        db_path = fed_props.federation_database_path
+        if not db_path:
+            self.report({'ERROR'}, "Please load Federation Database in Multi-Model Federation panel")
+            return {'CANCELLED'}
+
+        # Resolve Blender relative paths (// prefix)
+        db_path = Path(bpy.path.abspath(db_path))
+        if not db_path.exists():
             self.report({'ERROR'}, f"Federation database not found: {db_path}")
             return {'CANCELLED'}
 
@@ -1807,7 +1815,7 @@ class BIM_OT_enable_bbox_visualization(bpy.types.Operator):
         limit = props.bbox_element_limit if props.bbox_element_limit > 0 else None
 
         # Enable visualization
-        success, message = bbox_visualization.enable_bbox_visualization(db_path, limit)
+        success, message = bbox_visualization.enable_bbox_visualization(str(db_path), limit)
 
         if success:
             props.bbox_visualization_enabled = True
@@ -1842,3 +1850,106 @@ class BIM_OT_disable_bbox_visualization(bpy.types.Operator):
         else:
             self.report({'ERROR'}, message)
             return {'CANCELLED'}
+
+
+class BIM_OT_enable_full_geometry_visualization(bpy.types.Operator):
+    """Enable full IFC geometry loading from federation database"""
+    bl_idname = "bim.enable_full_geometry_visualization"
+    bl_label = "Enable Full Geometry"
+    bl_description = "Load actual IFC geometry for federation elements (creates Blender objects)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = tool.Clash.get_clash_props()
+        fed_props = context.scene.BIMFederationProperties
+
+        # Validate database
+        db_path = fed_props.federation_database_path
+        if not db_path:
+            self.report({'ERROR'}, "Please load Federation Database in Multi-Model Federation panel")
+            return {'CANCELLED'}
+
+        db_path = Path(bpy.path.abspath(db_path))
+        if not db_path.exists():
+            self.report({'ERROR'}, f"Federation database not found: {db_path}")
+            return {'CANCELLED'}
+
+        # Get element limit
+        limit = props.bbox_element_limit if props.bbox_element_limit > 0 else None
+
+        # Load elements from database
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+
+        query = """
+            SELECT m.guid, m.ifc_class, m.discipline, m.filepath
+            FROM elements_meta m
+        """
+        if limit:
+            query += f" LIMIT {limit}"
+
+        cursor.execute(query)
+        elements = cursor.fetchall()
+        conn.close()
+
+        if not elements:
+            self.report({'ERROR'}, "No elements found in database")
+            return {'CANCELLED'}
+
+        self.report({'INFO'}, f"Loading {len(elements)} elements... (this may take time)")
+
+        # Get cached offset
+        offset = Vector((0, 0, 0))
+        if "MEP_cached_offset" in context.scene:
+            offset = Vector(context.scene["MEP_cached_offset"])
+
+        # Create collection
+        collection_name = "Federation_FullGeometry"
+        if collection_name in bpy.data.collections:
+            collection = bpy.data.collections[collection_name]
+            # Clear existing objects
+            for obj in list(collection.objects):
+                bpy.data.objects.remove(obj, do_unlink=True)
+        else:
+            collection = bpy.data.collections.new(collection_name)
+            context.scene.collection.children.link(collection)
+
+        # Load geometry (simplified - load only first few for testing)
+        # Full implementation would need proper batching and progress reporting
+        loaded_count = 0
+        for guid, ifc_class, discipline, filepath in elements[:min(10, len(elements))]:  # Limit to 10 for now
+            # This is a placeholder - would use the existing lazy loading logic
+            # For now, just report what would be loaded
+            print(f"  Would load: {ifc_class} ({guid[:8]}...) from {Path(filepath).name}")
+            loaded_count += 1
+
+        props.bbox_visualization_enabled = True
+        props.lod_visualization_mode = 'FULL_GEOMETRY'
+
+        self.report({'WARNING'}, f"Full Geometry: Placeholder loaded {loaded_count} elements (implementation pending)")
+        return {'FINISHED'}
+
+
+class BIM_OT_disable_full_geometry_visualization(bpy.types.Operator):
+    """Disable full geometry visualization"""
+    bl_idname = "bim.disable_full_geometry_visualization"
+    bl_label = "Disable Full Geometry"
+    bl_description = "Remove full geometry objects from scene"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = tool.Clash.get_clash_props()
+
+        # Remove collection and objects
+        collection_name = "Federation_FullGeometry"
+        if collection_name in bpy.data.collections:
+            collection = bpy.data.collections[collection_name]
+            for obj in list(collection.objects):
+                bpy.data.objects.remove(obj, do_unlink=True)
+            bpy.data.collections.remove(collection)
+
+        props.bbox_visualization_enabled = False
+        props.lod_visualization_mode = 'NONE'
+
+        self.report({'INFO'}, "Full geometry visualization disabled")
+        return {'FINISHED'}

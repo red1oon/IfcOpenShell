@@ -35,6 +35,8 @@ classes = (
     operator.BIM_OT_load_clash_geometry,
     operator.BIM_OT_enable_bbox_visualization,
     operator.BIM_OT_disable_bbox_visualization,
+    operator.BIM_OT_enable_full_geometry_visualization,
+    operator.BIM_OT_disable_full_geometry_visualization,
     operator.ExecuteIfcClash,
     operator.ExportClashSets,
     operator.ImportClashSets,
