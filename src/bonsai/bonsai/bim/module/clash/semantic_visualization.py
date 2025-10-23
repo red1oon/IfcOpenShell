@@ -75,7 +75,7 @@ def query_semantic_elements(db_path: str, limit: Optional[int] = None) -> List[D
             'guid': str,
             'ifc_class': str,
             'discipline': str,
-            'profile_type': str,
+            'profile_type': str,  # Inferred from bbox aspect ratio
             'width': float, 'height': float, 'radius': float, 'length': float,
             'bbox': (min_x, min_y, min_z, max_x, max_y, max_z),
             'bbox_center': (x, y, z)
@@ -89,22 +89,21 @@ def query_semantic_elements(db_path: str, limit: Optional[int] = None) -> List[D
     cursor = conn.cursor()
 
     # Query elements with semantic metadata + bbox
+    # NOTE: Actual schema has semantic_type, profile_width, profile_height (not profile_type, width, height)
     query = """
         SELECT
             m.guid,
             m.ifc_class,
             m.discipline,
-            s.profile_type,
-            s.width,
-            s.height,
-            s.radius,
-            s.length,
+            s.semantic_type,
+            s.profile_width,
+            s.profile_height,
             r.min_x, r.min_y, r.min_z,
             r.max_x, r.max_y, r.max_z
         FROM elements_meta m
         JOIN elements_rtree r ON m.id = r.id
-        LEFT JOIN element_semantics s ON m.id = s.element_id
-        WHERE s.profile_type IS NOT NULL
+        LEFT JOIN element_semantics s ON m.guid = s.guid
+        WHERE s.semantic_type IS NOT NULL
     """
 
     if limit:
@@ -119,8 +118,8 @@ def query_semantic_elements(db_path: str, limit: Optional[int] = None) -> List[D
     # Parse results
     elements = []
     for row in rows:
-        guid, ifc_class, discipline, profile_type, width, height, radius, length = row[:8]
-        bbox = tuple(row[8:14])
+        guid, ifc_class, discipline, semantic_type, profile_width, profile_height = row[:6]
+        bbox = tuple(row[6:12])
 
         # Calculate bbox center
         bbox_center = (
@@ -129,22 +128,39 @@ def query_semantic_elements(db_path: str, limit: Optional[int] = None) -> List[D
             (bbox[2] + bbox[5]) / 2
         )
 
-        # Calculate length from bbox if not in semantics
-        if length is None or length == 0:
-            # Use bbox diagonal as approximate length
-            dx = bbox[3] - bbox[0]
-            dy = bbox[4] - bbox[1]
-            dz = bbox[5] - bbox[2]
-            length = max(dx, dy, dz)  # Longest dimension
+        # Calculate bbox dimensions
+        bbox_width = bbox[3] - bbox[0]
+        bbox_height = bbox[4] - bbox[1]
+        bbox_length = bbox[5] - bbox[2]
+        length = max(bbox_width, bbox_height, bbox_length)  # Longest dimension
+
+        # Infer profile type from bbox aspect ratio (circular vs rectangular)
+        # Use cross-section dimensions (2 smallest)
+        dims = sorted([bbox_width, bbox_height, bbox_length])
+        cross_dim1, cross_dim2 = dims[0], dims[1]
+
+        if cross_dim1 > 0:
+            aspect_ratio = cross_dim2 / cross_dim1
+            # If aspect ratio close to 1:1, likely circular
+            profile_type = 'CIRCULAR' if 0.8 <= aspect_ratio <= 1.2 else 'RECTANGULAR'
+        else:
+            profile_type = 'RECTANGULAR'  # Default fallback
+
+        # Use profile dimensions from semantics if available, else from bbox
+        width = profile_width if profile_width else cross_dim2
+        height = profile_height if profile_height else cross_dim1
+
+        # Calculate radius for circular profiles (average of width and height / 2)
+        radius = (width + height) / 4 if profile_type == 'CIRCULAR' else None
 
         elements.append({
             'guid': guid,
             'ifc_class': ifc_class,
             'discipline': discipline,
-            'profile_type': profile_type,
+            'profile_type': profile_type,  # Inferred
             'width': width,
             'height': height,
-            'radius': radius,
+            'radius': radius,  # Calculated
             'length': length,
             'bbox': bbox,
             'bbox_center': bbox_center
