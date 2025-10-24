@@ -343,17 +343,32 @@ def disable_semantic_visualization() -> Tuple[bool, str]:
 
     print(f"Disabling semantic visualization ({_detail_level})...")
 
+    # Collect all objects to remove (for batch removal)
+    objects_to_remove = []
+    collections_to_remove = []
+
     # Remove collections
     for collection_name in ["Federation_Basic", "Federation_Detailed"]:
         if collection_name in bpy.data.collections:
             collection = bpy.data.collections[collection_name]
 
-            # Remove objects
-            for obj in list(collection.objects):
-                bpy.data.objects.remove(obj, do_unlink=True)
+            # Unlink collection from scene first (fast operation)
+            if collection.name in bpy.context.scene.collection.children:
+                bpy.context.scene.collection.children.unlink(collection)
 
-            # Remove collection
-            bpy.data.collections.remove(collection)
+            # Collect objects for batch removal
+            objects_to_remove.extend(list(collection.objects))
+            collections_to_remove.append(collection)
+
+    # Batch remove all objects (much faster than one-by-one)
+    if objects_to_remove:
+        print(f"  Removing {len(objects_to_remove):,} objects...")
+        bpy.data.batch_remove(objects_to_remove)
+        print(f"  ✓ Objects removed")
+
+    # Remove collections
+    for collection in collections_to_remove:
+        bpy.data.collections.remove(collection)
 
     _semantic_objects.clear()
     _is_enabled = False

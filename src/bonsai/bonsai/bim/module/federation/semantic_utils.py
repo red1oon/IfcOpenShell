@@ -90,6 +90,57 @@ MATERIAL_MAPPING = {
 }
 
 
+def get_material_properties(ifc_class: str, discipline: str) -> Dict[str, Any]:
+    """
+    Get industry-standard material properties for an element.
+
+    Uses SEMANTIC_MATERIAL_RULES for specific (IFC class, discipline) combinations,
+    falls back to DISCIPLINE_MATERIAL_DEFAULTS for discipline-level defaults.
+
+    Args:
+        ifc_class: IFC class name (e.g., 'IfcPipeSegment', 'IfcDuctSegment')
+        discipline: Discipline (e.g., 'FP', 'ACMV', 'ELEC', 'STRUCTURE')
+
+    Returns:
+        Dictionary with material properties:
+        - material: Material type (steel, pvc, concrete, etc.)
+        - base_color: RGBA tuple for Blender (0-1 range)
+        - display_color: Hex color for UI/exports
+        - finish: Finish type (painted, galvanized, insulated, etc.)
+        - roughness: PBR roughness (0-1)
+        - metallic: PBR metallic (0-1)
+        - transparency: Optional transparency (0-1)
+        - display_name: Human-readable name
+        - assembly_details: Optional construction details dict
+        - has_insulation: Boolean flag for insulation
+
+    Example:
+        >>> get_material_properties('IfcPipeSegment', 'FP')
+        {
+            'material': 'steel',
+            'base_color': (0.8, 0.1, 0.1, 1.0),
+            'display_color': '#CC0000',
+            'finish': 'painted',
+            'roughness': 0.4,
+            'metallic': 0.8,
+            'has_insulation': False,
+            'display_name': 'FP Steel Pipe (Painted)',
+            'assembly_details': {'wall_schedule': 'Schedule 40', 'coating': 'red_enamel'}
+        }
+    """
+    # Try exact (IFC class, discipline) match first
+    key = (ifc_class, discipline)
+    if key in SEMANTIC_MATERIAL_RULES:
+        return SEMANTIC_MATERIAL_RULES[key].copy()
+
+    # Fall back to discipline default
+    if discipline in DISCIPLINE_MATERIAL_DEFAULTS:
+        return DISCIPLINE_MATERIAL_DEFAULTS[discipline].copy()
+
+    # Final fallback: generic default
+    return DISCIPLINE_MATERIAL_DEFAULTS['DEFAULT'].copy()
+
+
 def get_semantic_type(ifc_class: str) -> str:
     """
     Map IFC class name to semantic type.
@@ -357,3 +408,297 @@ MATERIAL_LIBRARY_DATA = [
         'emissive': 0.0
     },
 ]
+
+
+# Industry-Standard Material Inference Rules
+# Maps (IFC class, discipline) → complete material specification
+# Provides "finished engineering look" with professional appearance
+SEMANTIC_MATERIAL_RULES = {
+    # MEP - Fire Protection Pipes (Red steel, painted)
+    ('IfcPipeSegment', 'FP'): {
+        'material': 'steel',
+        'base_color': (0.8, 0.1, 0.1, 1.0),  # Red (international FP standard)
+        'display_color': '#CC0000',
+        'finish': 'painted',
+        'roughness': 0.4,
+        'metallic': 0.8,
+        'has_insulation': False,
+        'display_name': 'FP Steel Pipe (Painted)',
+        'assembly_details': {'wall_schedule': 'Schedule 40', 'coating': 'red_enamel'}
+    },
+    ('IfcPipeFitting', 'FP'): {
+        'material': 'steel',
+        'base_color': (0.8, 0.1, 0.1, 1.0),
+        'display_color': '#CC0000',
+        'finish': 'painted',
+        'roughness': 0.4,
+        'metallic': 0.8,
+        'has_insulation': False,
+        'display_name': 'FP Steel Fitting (Painted)',
+        'assembly_details': {'type': 'threaded', 'coating': 'red_enamel'}
+    },
+
+    # MEP - ACMV Pipes (Blue steel, insulated)
+    ('IfcPipeSegment', 'ACMV'): {
+        'material': 'steel',
+        'base_color': (0.2, 0.5, 0.8, 1.0),  # Blue (chilled water)
+        'display_color': '#3385CC',
+        'finish': 'insulated',
+        'roughness': 0.6,  # Insulation texture
+        'metallic': 0.2,   # Insulation visible, not steel
+        'has_insulation': True,
+        'display_name': 'ACMV Chilled Water Pipe (Insulated)',
+        'assembly_details': {'insulation_thickness': 25, 'insulation_type': 'armaflex'}
+    },
+    ('IfcPipeFitting', 'ACMV'): {
+        'material': 'steel',
+        'base_color': (0.2, 0.5, 0.8, 1.0),
+        'display_color': '#3385CC',
+        'finish': 'insulated',
+        'roughness': 0.6,
+        'metallic': 0.2,
+        'has_insulation': True,
+        'display_name': 'ACMV Chilled Water Fitting (Insulated)',
+        'assembly_details': {'insulation_thickness': 25, 'insulation_type': 'armaflex'}
+    },
+
+    # MEP - Plumbing/Sanitary Pipes (Gray PVC)
+    ('IfcPipeSegment', 'SP'): {
+        'material': 'pvc',
+        'base_color': (0.5, 0.5, 0.5, 1.0),  # Gray PVC
+        'display_color': '#808080',
+        'finish': 'smooth_plastic',
+        'roughness': 0.3,
+        'metallic': 0.0,
+        'has_insulation': False,
+        'display_name': 'Sanitary PVC Pipe',
+        'assembly_details': {'material_type': 'upvc', 'joint': 'solvent_weld'}
+    },
+    ('IfcPipeFitting', 'SP'): {
+        'material': 'pvc',
+        'base_color': (0.5, 0.5, 0.5, 1.0),
+        'display_color': '#808080',
+        'finish': 'smooth_plastic',
+        'roughness': 0.3,
+        'metallic': 0.0,
+        'has_insulation': False,
+        'display_name': 'Sanitary PVC Fitting',
+        'assembly_details': {'material_type': 'upvc', 'joint': 'solvent_weld'}
+    },
+
+    # MEP - ACMV Ducts (Galvanized steel, silver/gray)
+    ('IfcDuctSegment', 'ACMV'): {
+        'material': 'galvanized_steel',
+        'base_color': (0.7, 0.7, 0.75, 1.0),  # Silver/gray metallic
+        'display_color': '#B0B0C0',
+        'finish': 'galvanized',
+        'roughness': 0.5,
+        'metallic': 0.9,
+        'has_insulation': True,  # External insulation common
+        'display_name': 'ACMV Galvanized Duct',
+        'assembly_details': {'gauge': 'G24', 'insulation_thickness': 25}
+    },
+    ('IfcDuctFitting', 'ACMV'): {
+        'material': 'galvanized_steel',
+        'base_color': (0.7, 0.7, 0.75, 1.0),
+        'display_color': '#B0B0C0',
+        'finish': 'galvanized',
+        'roughness': 0.5,
+        'metallic': 0.9,
+        'has_insulation': True,
+        'display_name': 'ACMV Galvanized Fitting',
+        'assembly_details': {'gauge': 'G24', 'type': 'welded_seam'}
+    },
+
+    # MEP - Electrical Conduit (Orange PVC or steel)
+    ('IfcCableCarrierSegment', 'ELEC'): {
+        'material': 'pvc',
+        'base_color': (1.0, 0.6, 0.0, 1.0),  # Orange (electrical warning color)
+        'display_color': '#FF9900',
+        'finish': 'smooth_plastic',
+        'roughness': 0.3,
+        'metallic': 0.0,
+        'has_insulation': False,
+        'display_name': 'Electrical PVC Conduit',
+        'assembly_details': {'material_type': 'pvc_heavy_duty', 'ip_rating': 'IP65'}
+    },
+    ('IfcCableSegment', 'ELEC'): {
+        'material': 'copper',
+        'base_color': (0.9, 0.5, 0.2, 1.0),  # Copper color
+        'display_color': '#E68A00',
+        'finish': 'bare_metal',
+        'roughness': 0.2,
+        'metallic': 0.95,
+        'has_insulation': True,  # Cable insulation
+        'display_name': 'Electrical Cable',
+        'assembly_details': {'conductor': 'copper', 'insulation': 'xlpe'}
+    },
+
+    # Structure - Steel Beams (Gray steel, painted/bare)
+    ('IfcBeam', 'STRUCTURE'): {
+        'material': 'steel',
+        'base_color': (0.6, 0.6, 0.65, 1.0),  # Gray steel
+        'display_color': '#999999',
+        'finish': 'painted',
+        'roughness': 0.4,
+        'metallic': 0.8,
+        'has_insulation': False,
+        'display_name': 'Structural Steel Beam',
+        'assembly_details': {'profile': 'i_beam', 'coating': 'intumescent'}
+    },
+    ('IfcColumn', 'STRUCTURE'): {
+        'material': 'steel',
+        'base_color': (0.6, 0.6, 0.65, 1.0),
+        'display_color': '#999999',
+        'finish': 'painted',
+        'roughness': 0.4,
+        'metallic': 0.8,
+        'has_insulation': False,
+        'display_name': 'Structural Steel Column',
+        'assembly_details': {'profile': 'h_column', 'coating': 'intumescent'}
+    },
+
+    # Structure - Concrete Elements (Gray concrete, rough)
+    ('IfcSlab', 'STRUCTURE'): {
+        'material': 'concrete',
+        'base_color': (0.5, 0.5, 0.5, 1.0),  # Medium gray
+        'display_color': '#808080',
+        'finish': 'concrete',
+        'roughness': 0.9,
+        'metallic': 0.0,
+        'has_insulation': False,
+        'display_name': 'Concrete Slab',
+        'assembly_details': {'grade': 'C30', 'finish': 'smooth_trowel'}
+    },
+
+    # Architecture - Walls (Beige/white plaster)
+    ('IfcWall', 'ARCHITECTURE'): {
+        'material': 'plaster',
+        'base_color': (0.95, 0.95, 0.9, 1.0),  # Off-white
+        'display_color': '#F5F5E6',
+        'finish': 'painted',
+        'roughness': 0.8,
+        'metallic': 0.0,
+        'has_insulation': False,
+        'display_name': 'Interior Wall (Painted)',
+        'assembly_details': {'finish': 'emulsion_paint', 'substrate': 'gypsum_board'}
+    },
+
+    # Architecture - Doors (Wood finish, brown)
+    ('IfcDoor', 'ARCHITECTURE'): {
+        'material': 'wood',
+        'base_color': (0.55, 0.35, 0.2, 1.0),  # Medium brown wood
+        'display_color': '#8B5A32',
+        'finish': 'varnished',
+        'roughness': 0.6,
+        'metallic': 0.0,
+        'has_insulation': False,
+        'display_name': 'Timber Door (Varnished)',
+        'assembly_details': {'material': 'solid_core', 'hardware': 'lever_handle'}
+    },
+
+    # Architecture - Windows (Clear glass with aluminum frame)
+    ('IfcWindow', 'ARCHITECTURE'): {
+        'material': 'glass',
+        'base_color': (0.8, 0.9, 1.0, 0.3),  # Light blue, transparent
+        'display_color': '#CCEEFF',
+        'finish': 'glazed',
+        'roughness': 0.05,
+        'metallic': 0.0,
+        'has_insulation': False,
+        'transparency': 0.7,
+        'display_name': 'Aluminum Window (Glazed)',
+        'assembly_details': {'glazing': 'double_glazed', 'frame': 'aluminum'}
+    },
+
+    # MEP - Equipment (Generic gray/beige equipment)
+    ('IfcUnitaryEquipment', 'ACMV'): {
+        'material': 'sheet_metal',
+        'base_color': (0.85, 0.85, 0.8, 1.0),  # Light gray/beige
+        'display_color': '#D9D9CC',
+        'finish': 'powder_coated',
+        'roughness': 0.5,
+        'metallic': 0.3,
+        'has_insulation': True,
+        'display_name': 'ACMV Equipment (AHU/FCU)',
+        'assembly_details': {'casing': 'powder_coated_steel', 'insulation': 'internal'}
+    },
+    ('IfcAirTerminal', 'ACMV'): {
+        'material': 'aluminum',
+        'base_color': (0.9, 0.9, 0.9, 1.0),  # Light silver
+        'display_color': '#E6E6E6',
+        'finish': 'anodized',
+        'roughness': 0.3,
+        'metallic': 0.7,
+        'has_insulation': False,
+        'display_name': 'Air Terminal (Diffuser/Grille)',
+        'assembly_details': {'material': 'anodized_aluminum', 'type': 'swirl_diffuser'}
+    },
+}
+
+# Discipline fallback defaults (when specific IFC class not in rules)
+DISCIPLINE_MATERIAL_DEFAULTS = {
+    'FP': {
+        'material': 'steel',
+        'base_color': (0.8, 0.1, 0.1, 1.0),
+        'display_color': '#CC0000',
+        'finish': 'painted',
+        'roughness': 0.4,
+        'metallic': 0.8,
+        'display_name': 'FP Element'
+    },
+    'ACMV': {
+        'material': 'galvanized_steel',
+        'base_color': (0.7, 0.7, 0.75, 1.0),
+        'display_color': '#B0B0C0',
+        'finish': 'galvanized',
+        'roughness': 0.5,
+        'metallic': 0.9,
+        'display_name': 'ACMV Element'
+    },
+    'ELEC': {
+        'material': 'pvc',
+        'base_color': (1.0, 0.6, 0.0, 1.0),
+        'display_color': '#FF9900',
+        'finish': 'smooth_plastic',
+        'roughness': 0.3,
+        'metallic': 0.0,
+        'display_name': 'Electrical Element'
+    },
+    'SP': {
+        'material': 'pvc',
+        'base_color': (0.5, 0.5, 0.5, 1.0),
+        'display_color': '#808080',
+        'finish': 'smooth_plastic',
+        'roughness': 0.3,
+        'metallic': 0.0,
+        'display_name': 'Sanitary Element'
+    },
+    'STRUCTURE': {
+        'material': 'steel',
+        'base_color': (0.6, 0.6, 0.65, 1.0),
+        'display_color': '#999999',
+        'finish': 'painted',
+        'roughness': 0.4,
+        'metallic': 0.8,
+        'display_name': 'Structural Element'
+    },
+    'ARCHITECTURE': {
+        'material': 'plaster',
+        'base_color': (0.95, 0.95, 0.9, 1.0),
+        'display_color': '#F5F5E6',
+        'finish': 'painted',
+        'roughness': 0.8,
+        'metallic': 0.0,
+        'display_name': 'Architectural Element'
+    },
+    'DEFAULT': {
+        'material': 'generic',
+        'base_color': (0.7, 0.7, 0.7, 1.0),
+        'display_color': '#B3B3B3',
+        'finish': 'matte',
+        'roughness': 0.6,
+        'metallic': 0.2,
+        'display_name': 'Generic Element'
+    },
+}

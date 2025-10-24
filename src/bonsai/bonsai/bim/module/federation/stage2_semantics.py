@@ -195,8 +195,8 @@ def create_semantic_shapes(db_conn: sqlite3.Connection,
         obj["federation_stage"] = 2
         obj["federation_guid"] = guid
 
-        # Step 6: Assign material (inferred from discipline)
-        mat = get_or_create_discipline_material(discipline, semantic_type)
+        # Step 6: Assign material (industry-standard inference)
+        mat = get_or_create_discipline_material(discipline, semantic_type, ifc_class)
         if obj.data.materials:
             obj.data.materials[0] = mat
         else:
@@ -231,35 +231,85 @@ def create_semantic_shapes(db_conn: sqlite3.Connection,
 
 
 def get_or_create_discipline_material(discipline: str,
-                                      semantic_type: str) -> bpy.types.Material:
+                                      semantic_type: str,
+                                      ifc_class: str = None) -> bpy.types.Material:
     """
-    Get or create material for discipline.
+    Get or create material with industry-standard appearance.
 
-    Uses shape_templates.create_material_for_discipline() which applies
-    DISCIPLINE_COLORS. Materials are reused efficiently (only 10 unique
-    materials for all 44K objects).
+    Uses semantic_utils.get_material_properties() to apply professional
+    material properties (steel, PVC, concrete, etc.) with correct PBR values.
+
+    Creates unique materials per (IFC class, discipline) combination for
+    accurate representation (e.g., FP pipes are red steel, ACMV pipes are
+    blue insulated steel).
 
     Args:
         discipline: Discipline name (e.g., "ACMV", "FP", "ELEC")
-        semantic_type: Semantic type (for future material customization)
+        semantic_type: Semantic type (e.g., "pipe", "duct", "beam")
+        ifc_class: IFC class name (e.g., "IfcPipeSegment") - optional
 
     Returns:
-        Blender material with discipline color
+        Blender material with industry-standard appearance
 
     Performance:
-        - Only ~10 materials created (one per discipline)
-        - Reused for all elements of same discipline
-        - Saves memory and improves performance
+        - ~30-40 materials created (one per IFC class + discipline combo)
+        - Reused for all elements of same type
+        - Provides "finished engineering look"
     """
-    mat_name = f"Federation_{discipline}"
+    # Create unique material name per (IFC class, discipline)
+    if ifc_class:
+        mat_name = f"Federation_{ifc_class}_{discipline}"
+    else:
+        mat_name = f"Federation_{discipline}"
 
     # Reuse existing material if available
     if mat_name in bpy.data.materials:
         return bpy.data.materials[mat_name]
 
-    # Create material using shape_templates helper
-    # This applies DISCIPLINE_COLORS and sets up basic PBR
-    mat = shape_templates.create_material_for_discipline(discipline)
+    # Get industry-standard material properties
+    if ifc_class:
+        mat_props = semantic_utils.get_material_properties(ifc_class, discipline)
+    else:
+        # Fallback: use discipline default
+        mat_props = semantic_utils.DISCIPLINE_MATERIAL_DEFAULTS.get(
+            discipline,
+            semantic_utils.DISCIPLINE_MATERIAL_DEFAULTS['DEFAULT']
+        )
+
+    # Create material with PBR properties
+    mat = bpy.data.materials.new(name=mat_name)
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+
+    # Clear default nodes
+    nodes.clear()
+
+    # Create Principled BSDF shader
+    bsdf = nodes.new('ShaderNodeBsdfPrincipled')
+    bsdf.location = (0, 0)
+
+    # Apply material properties from inference rules
+    base_color = mat_props.get('base_color', (0.8, 0.8, 0.8, 1.0))
+    bsdf.inputs['Base Color'].default_value = base_color
+
+    bsdf.inputs['Metallic'].default_value = mat_props.get('metallic', 0.0)
+    bsdf.inputs['Roughness'].default_value = mat_props.get('roughness', 0.5)
+
+    # Handle transparency if present (e.g., windows)
+    if 'transparency' in mat_props and mat_props['transparency'] > 0.0:
+        mat.blend_method = 'BLEND'
+        bsdf.inputs['Alpha'].default_value = 1.0 - mat_props['transparency']
+
+    # Create Material Output node
+    output = nodes.new('ShaderNodeOutputMaterial')
+    output.location = (300, 0)
+
+    # Link BSDF to output
+    links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
+
+    # Set viewport display color (for solid shading mode)
+    mat.diffuse_color = base_color
 
     return mat
 
