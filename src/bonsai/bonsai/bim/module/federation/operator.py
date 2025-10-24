@@ -763,8 +763,8 @@ class LoadFederationStage2Background(bpy.types.Operator):
         if event.type == 'TIMER':
             # This runs every timer tick (non-blocking)
 
-            # Initialize chunked loader on first tick
-            if self._chunked_loader is None:
+            # Initialize generator on first tick
+            if not hasattr(self, '_generator'):
                 db_path = context.scene.get('federation_loader_db_path')
                 if not db_path:
                     self.report({'ERROR'}, "No database path found")
@@ -794,25 +794,55 @@ class LoadFederationStage2Background(bpy.types.Operator):
                     self._db_conn = sqlite3.connect(db_path)
                     print("  ✓ Database connected")
 
-                    # Get Federation collection
+                    # Get or create Federation collection
                     federation_coll = bpy.data.collections.get("Federation")
                     if not federation_coll:
                         print("  ⚠ Federation collection not found, creating...")
                         federation_coll = bpy.data.collections.new("Federation")
                         bpy.context.scene.collection.children.link(federation_coll)
+                    else:
+                        # CRITICAL: Clear old objects to prevent scene bloat and exponential slowdown!
+                        print("  🧹 Clearing old federation objects (prevents scene bloat)...")
 
-                    # Create chunked loader
-                    print("  ✓ Creating ChunkedSemanticLoader...")
-                    self._chunked_loader = ChunkedSemanticLoader(
+                        # Count objects before cleanup
+                        old_count = 0
+                        for child_coll in list(federation_coll.children):
+                            old_count += len(child_coll.objects)
+                        old_count += len(federation_coll.objects)
+
+                        # Remove all child collections (Discipline_*, etc.)
+                        for child_coll in list(federation_coll.children):
+                            # Remove all objects in child collection
+                            for obj in list(child_coll.objects):
+                                bpy.data.objects.remove(obj, do_unlink=True)
+                            # Remove child collection
+                            bpy.data.collections.remove(child_coll)
+
+                        # Remove any objects directly in Federation collection
+                        for obj in list(federation_coll.objects):
+                            bpy.data.objects.remove(obj, do_unlink=True)
+
+                        # Clear template cache to prevent mesh accumulation
+                        from . import stage2_gpu_instancing
+                        stage2_gpu_instancing.clear_template_cache()
+
+                        print(f"  ✓ Cleared {old_count:,} old objects + template cache (scene is now clean!)")
+
+                    # Use NEW NON-BLOCKING progressive GPU instancing loader!
+                    print("  ✓ Using NON-BLOCKING PROGRESSIVE GPU INSTANCING (GENERATOR) ⚡")
+                    from . import stage2_gpu_progressive_generator
+
+                    self._discipline_collections = {}
+                    self._start_time = time.time()
+
+                    # Create generator for non-blocking loading
+                    self._generator = stage2_gpu_progressive_generator.create_semantic_shapes_progressive_generator(
                         self._db_conn,
                         federation_coll,
-                        {},  # Empty discipline collections dict (will be populated)
-                        batch_size=100  # Process 100 elements per tick
+                        self._discipline_collections
                     )
 
-                    self._start_time = time.time()
-                    print("  ✓ Chunked loader initialized")
-                    print(f"  ✓ Will process {self._chunked_loader.total:,} elements in batches")
+                    print("  ✓ Generator initialized - will process in chunks")
                     print("=" * 70)
 
                 except Exception as e:
@@ -825,38 +855,49 @@ class LoadFederationStage2Background(bpy.types.Operator):
 
                 return {'RUNNING_MODAL'}
 
-            # Process next batch
-            if not self._chunked_loader.is_complete():
-                import time
-                batch_start = time.time()
+            # Process next batch from generator
+            if hasattr(self, '_generator'):
+                try:
+                    result = next(self._generator)
 
-                batch_shapes = self._chunked_loader.process_next_batch()
+                    if result['status'] == 'batch_complete':
+                        # Update progress
+                        priority = result['priority']
+                        processed = result['processed']
+                        total = result['total']
+                        elapsed = result['elapsed']
+                        pct = (processed / total) * 100
 
-                batch_elapsed = time.time() - batch_start
+                        print(f"  ⏳ Priority {priority} yielded: {processed:,}/{total:,} ({pct:.1f}%) - {elapsed:.1f}s elapsed")
+                        print(f"  🖱️  UI is RESPONSIVE - you can work now!")
 
-                # Update progress
-                current, total, percentage = self._chunked_loader.get_progress()
+                        # Continue processing next batch in next modal tick
+                        return {'RUNNING_MODAL'}
 
-                if current % 500 == 0:  # Print every 500 elements
-                    print(f"  ⏳ Progress: {current:,}/{total:,} ({percentage:.1f}%) | Batch time: {batch_elapsed*1000:.1f}ms")
+                    elif result['status'] == 'complete':
+                        # Loading finished!
+                        print(f"\n✅ GENERATOR COMPLETE!")
+                        self._shapes = result['instances']
+                        self._loading_complete = True
 
-                # Force viewport update every batch
-                for area in context.screen.areas:
-                    if area.type == 'VIEW_3D':
-                        area.tag_redraw()
+                        # Fall through to completion handling below
 
-                return {'RUNNING_MODAL'}
+                except StopIteration:
+                    # Generator exhausted (shouldn't happen with proper yield)
+                    print(f"\n✅ GENERATOR EXHAUSTED")
+                    self._loading_complete = True
 
-            # Loading complete!
-            else:
+            # Check if loading complete
+            if getattr(self, '_loading_complete', False):
                 import time
                 elapsed = time.time() - self._start_time
-                shapes = self._chunked_loader.shapes
+                shapes = getattr(self, '_shapes', [])
 
-                print(f"\n✅ Stage 2 complete!")
+                print(f"\n✅ PROGRESSIVE LOADING COMPLETE! ⚡")
                 print(f"  - Semantic shapes: {len(shapes):,}")
                 print(f"  - Time: {elapsed:.2f}s")
                 print(f"  - Average: {elapsed/len(shapes)*1000:.2f}ms per element")
+                print(f"  - Surface elements appeared FIRST (killer UX!)")
 
                 # NOW remove Stage 1 wireframes (atomic swap)
                 # Find all Stage 1 wireframes in scene (can't rely on stored references)
@@ -870,7 +911,19 @@ class LoadFederationStage2Background(bpy.types.Operator):
                     for obj in wireframes_to_remove:
                         bpy.data.objects.remove(obj, do_unlink=True)
                 else:
-                    print(f"  ⚠ No Stage 1 wireframes found to replace")
+                    print(f"  ⚠ No Stage 1 wireframe objects found")
+
+                # Disable GPU batch wireframes (Stage 1)
+                print(f"  - Disabling Stage 1 GPU wireframes...")
+                try:
+                    from ..clash import bbox_visualization
+                    success, msg = bbox_visualization.disable_bbox_visualization()
+                    if success:
+                        print(f"  ✓ GPU wireframes disabled: {msg}")
+                    else:
+                        print(f"  ⚠ Could not disable wireframes: {msg}")
+                except Exception as e:
+                    print(f"  ⚠ Error disabling wireframes: {e}")
 
                 print("✅ USER CAN NOW WORK (routing, clashing, MEP calculations)")
                 print("=" * 70)
