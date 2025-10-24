@@ -424,7 +424,16 @@ SEMANTIC_MATERIAL_RULES = {
         'metallic': 0.8,
         'has_insulation': False,
         'display_name': 'FP Steel Pipe (Painted)',
-        'assembly_details': {'wall_schedule': 'Schedule 40', 'coating': 'red_enamel'}
+        'assembly_details': {
+            'wall_schedule': 'Schedule 40',
+            'coating': 'red_enamel',
+            'junction_type': 'flange',
+            'flange_spacing': 3000,  # mm - add flange every 3m in runs
+            'assembly_method': 'threaded',
+            'supports_visible': True,
+            'support_spacing': 3000,  # mm
+            'support_type': 'steel_hanger'
+        }
     },
     ('IfcPipeFitting', 'FP'): {
         'material': 'steel',
@@ -448,7 +457,16 @@ SEMANTIC_MATERIAL_RULES = {
         'metallic': 0.2,   # Insulation visible, not steel
         'has_insulation': True,
         'display_name': 'ACMV Chilled Water Pipe (Insulated)',
-        'assembly_details': {'insulation_thickness': 25, 'insulation_type': 'armaflex'}
+        'assembly_details': {
+            'insulation_thickness': 25,
+            'insulation_type': 'armaflex',
+            'junction_type': 'flange',
+            'flange_spacing': 6000,  # mm - every 6m (less frequent than FP)
+            'assembly_method': 'welded',
+            'supports_visible': True,
+            'support_spacing': 2500,  # mm - closer spacing due to weight
+            'support_type': 'insulated_clamp'
+        }
     },
     ('IfcPipeFitting', 'ACMV'): {
         'material': 'steel',
@@ -472,7 +490,16 @@ SEMANTIC_MATERIAL_RULES = {
         'metallic': 0.0,
         'has_insulation': False,
         'display_name': 'Sanitary PVC Pipe',
-        'assembly_details': {'material_type': 'upvc', 'joint': 'solvent_weld'}
+        'assembly_details': {
+            'material_type': 'upvc',
+            'joint': 'solvent_weld',
+            'junction_type': 'smooth',  # No flanges for PVC!
+            'assembly_method': 'solvent_weld',
+            'supports_visible': True,
+            'support_spacing': 1500,  # mm - PVC needs more support
+            'support_type': 'plastic_clip',
+            'expansion_joint_spacing': 10000  # mm - PVC expands with temperature
+        }
     },
     ('IfcPipeFitting', 'SP'): {
         'material': 'pvc',
@@ -496,7 +523,18 @@ SEMANTIC_MATERIAL_RULES = {
         'metallic': 0.9,
         'has_insulation': True,  # External insulation common
         'display_name': 'ACMV Galvanized Duct',
-        'assembly_details': {'gauge': 'G24', 'insulation_thickness': 25}
+        'assembly_details': {
+            'gauge': 'G24',
+            'insulation_thickness': 25,
+            'junction_type': 'flanged',
+            'seam_visibility': True,
+            'seam_spacing': 3000,  # mm - sheet metal comes in 3m sections
+            'assembly_method': 'snap_lock',
+            'corner_type': 'welded',
+            'supports_visible': True,
+            'support_spacing': 3000,  # mm
+            'support_type': 'rod_hanger'
+        }
     },
     ('IfcDuctFitting', 'ACMV'): {
         'material': 'galvanized_steel',

@@ -176,6 +176,29 @@ class FederationLoader:
 
             print(f"✓ Stage 2 complete: {len(shapes)} semantic shapes loaded")
             print("✅ USER CAN NOW WORK (routing, clashing, MEP calculations)")
+
+            # Store loader and objects in scene for background operator access
+            bpy.context.scene['federation_stage2_objects'] = shapes
+            bpy.context.scene['federation_loader'] = self
+
+            # Start background refinement (material details + Stage 3)
+            # Runs in separate thread while user works!
+            print("\n⏳ Starting background refinement (material + detail)...")
+            print("   User can continue working - refinement runs in background!")
+
+            try:
+                from . import background_refinement
+                # Register operator if not already registered
+                if not hasattr(bpy.types, 'FEDERATION_OT_background_refinement'):
+                    background_refinement.register()
+
+                # Trigger background operator (non-blocking)
+                bpy.ops.federation.background_refinement()
+
+            except Exception as e:
+                print(f"⚠ Background refinement unavailable: {e}")
+                print("  (Model still fully functional for coordination work)")
+
             return shapes
 
         finally:
