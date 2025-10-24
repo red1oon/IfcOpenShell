@@ -12,7 +12,8 @@ from typing import Dict, Optional, Tuple, Any
 
 
 # IFC Class to Semantic Type Mapping
-# Maps 27+ IFC classes to 8 semantic types for procedural generation
+# Maps 35+ IFC classes to 8 semantic types for procedural generation
+# Following industry standard BIM classification practices
 SEMANTIC_TYPE_MAPPING = {
     # Architecture
     'IfcDoor': 'door',
@@ -24,40 +25,49 @@ SEMANTIC_TYPE_MAPPING = {
     'IfcSlab': 'slab',
     'IfcRoof': 'slab',
     'IfcCurtainWall': 'wall',
+    'IfcCovering': 'slab',  # Floor/wall coverings (carpets, tiles, cladding)
+    'IfcStairFlight': 'slab',  # Stairs (treated as horizontal slabs)
+    'IfcRampFlight': 'slab',  # Ramps (treated as sloped slabs)
+    'IfcRailing': 'equipment',  # Railings (linear equipment)
+    'IfcFurnishingElement': 'equipment',  # Furniture (desks, chairs, cabinets)
 
     # Structure
     'IfcBeam': 'beam',
     'IfcBeamStandardCase': 'beam',
     'IfcColumn': 'column',
     'IfcColumnStandardCase': 'column',
-    'IfcMember': 'beam',  # Treat members as beams
-    'IfcPlate': 'slab',
+    'IfcMember': 'beam',  # Structural members (treat as beams)
+    'IfcPlate': 'slab',  # Structural plates (thin slabs)
 
-    # MEP - ACMV
+    # MEP - ACMV (Heating, Ventilation, Air Conditioning)
     'IfcDuctSegment': 'duct',
     'IfcDuctFitting': 'duct',
-    'IfcAirTerminal': 'equipment',
-    'IfcUnitaryEquipment': 'equipment',
+    'IfcAirTerminal': 'equipment',  # Diffusers, grilles, VAV boxes
+    'IfcUnitaryEquipment': 'equipment',  # AHUs, FCUs, chillers
 
     # MEP - Fire Protection
     'IfcPipeSegment': 'pipe',
     'IfcPipeFitting': 'pipe',
-    'IfcFireSuppressionTerminal': 'equipment',
+    'IfcFireSuppressionTerminal': 'equipment',  # Sprinkler heads, fire extinguishers
 
-    # MEP - Plumbing
-    'IfcSanitaryTerminal': 'equipment',
-    'IfcFlowTerminal': 'equipment',
+    # MEP - Plumbing & Sanitary
+    'IfcSanitaryTerminal': 'equipment',  # Toilets, sinks, urinals
+    'IfcFlowTerminal': 'equipment',  # Generic terminals (includes FP equipment when discipline=FP)
 
     # MEP - Electrical
     'IfcCableSegment': 'conduit',
     'IfcCableCarrierSegment': 'conduit',
     'IfcCableCarrierFitting': 'conduit',
-    'IfcElectricDistributionBoard': 'equipment',
-    'IfcLightFixture': 'equipment',
+    'IfcElectricDistributionBoard': 'equipment',  # Switchboards, DBs
+    'IfcLightFixture': 'equipment',  # Light fittings
+
+    # MEP - Generic Flow (pipes, ducts, cables across disciplines)
+    'IfcFlowFitting': 'pipe',  # Elbows, tees, crosses (contextual: pipe for FP/SP, duct for ACMV)
+    'IfcFlowController': 'equipment',  # Valves, dampers, switches (control devices)
 
     # Proxy/Generic elements
-    'IfcBuildingElementProxy': 'equipment',
-    'IfcElementAssembly': 'equipment',
+    'IfcBuildingElementProxy': 'equipment',  # Generic proxy elements
+    'IfcElementAssembly': 'equipment',  # Assembled elements
 
     # Default fallback
     'DEFAULT': 'equipment'
