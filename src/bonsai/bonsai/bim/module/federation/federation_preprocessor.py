@@ -296,6 +296,89 @@ def build_guid_discipline_map(file_paths, disciplines):
     return guid_map
 
 
+def extract_site_context(ifc_file, discipline, filepath):
+    """Extract site offset, true north, and georeferencing from IFC file
+
+    Phase 0: Coordinate Storage Enhancement
+    """
+    import math
+
+    site_data = {
+        'discipline': discipline,
+        'offset_x': 0.0,
+        'offset_y': 0.0,
+        'offset_z': 0.0,
+        'true_north_angle': 0.0,
+        'latitude': None,
+        'longitude': None,
+        'elevation': None,
+        'epsg_code': None,
+        'site_guid': None,
+        'project_guid': None,
+        'source_file': str(filepath)
+    }
+
+    try:
+        # Get IfcProject
+        projects = ifc_file.by_type('IfcProject')
+        if projects:
+            project = projects[0]
+            site_data['project_guid'] = project.GlobalId
+
+            # Extract True North from RepresentationContexts
+            if hasattr(project, 'RepresentationContexts'):
+                for context in project.RepresentationContexts:
+                    if hasattr(context, 'TrueNorth') and context.TrueNorth:
+                        ratios = context.TrueNorth.DirectionRatios
+                        if len(ratios) >= 2:
+                            true_north_angle = math.atan2(ratios[0], ratios[1])
+                            site_data['true_north_angle'] = true_north_angle
+
+        # Get IfcSite
+        sites = ifc_file.by_type('IfcSite')
+        if sites:
+            site = sites[0]
+            site_data['site_guid'] = site.GlobalId
+
+            # Extract site placement (offset)
+            if hasattr(site, 'ObjectPlacement') and site.ObjectPlacement:
+                try:
+                    import ifcopenshell.util.placement
+                    matrix = ifcopenshell.util.placement.get_local_placement(site.ObjectPlacement)
+                    if matrix:
+                        translation = matrix.translation
+                        site_data['offset_x'] = float(translation[0])
+                        site_data['offset_y'] = float(translation[1])
+                        site_data['offset_z'] = float(translation[2])
+                except:
+                    pass
+
+            # Extract georeferencing
+            if hasattr(site, 'RefLatitude') and site.RefLatitude:
+                lat_parts = site.RefLatitude
+                if len(lat_parts) >= 3:
+                    latitude = lat_parts[0] + lat_parts[1]/60.0 + lat_parts[2]/3600.0
+                    if len(lat_parts) >= 4:
+                        latitude += lat_parts[3] / 3600000000.0
+                    site_data['latitude'] = latitude
+
+            if hasattr(site, 'RefLongitude') and site.RefLongitude:
+                lon_parts = site.RefLongitude
+                if len(lon_parts) >= 3:
+                    longitude = lon_parts[0] + lon_parts[1]/60.0 + lon_parts[2]/3600.0
+                    if len(lon_parts) >= 4:
+                        longitude += lon_parts[3] / 3600000000.0
+                    site_data['longitude'] = longitude
+
+            if hasattr(site, 'RefElevation') and site.RefElevation:
+                site_data['elevation'] = float(site.RefElevation)
+
+    except Exception as e:
+        print(f"  Warning: Could not extract site context: {e}")
+
+    return site_data
+
+
 def extract_bboxes_from_merged(merged_ifc_path, guid_map):
     """Extract bounding boxes from merged IFC file"""
     print_header("STEP 3: EXTRACT BOUNDING BOXES")
@@ -344,6 +427,40 @@ def extract_bboxes_from_merged(merged_ifc_path, guid_map):
                 xs, ys, zs = zip(*vertices)
                 bbox = (min(xs), min(ys), min(zs), max(xs), max(ys), max(zs))
 
+                # Phase 0: Extract transformation matrix from element placement
+                center_x, center_y, center_z = 0, 0, 0
+                rot_x, rot_y, rot_z = 0, 0, 0
+                transform_source = 'bbox_fallback'
+
+                try:
+                    # Try to get actual IFC placement
+                    if hasattr(element, 'ObjectPlacement') and element.ObjectPlacement:
+                        import ifcopenshell.util.placement
+                        matrix = ifcopenshell.util.placement.get_local_placement(element.ObjectPlacement)
+
+                        if matrix:
+                            # Extract position from matrix
+                            translation = matrix.translation
+                            center_x = float(translation[0])
+                            center_y = float(translation[1])
+                            center_z = float(translation[2])
+
+                            # Extract rotation (Euler angles)
+                            rotation = matrix.to_euler('XYZ')
+                            rot_x = float(rotation.x)
+                            rot_y = float(rotation.y)
+                            rot_z = float(rotation.z)
+
+                            transform_source = 'placement'
+                except:
+                    pass  # Fall back to bbox center
+
+                # Fallback: Use bbox center if placement extraction failed
+                if transform_source == 'bbox_fallback':
+                    center_x = (bbox[0] + bbox[3]) / 2
+                    center_y = (bbox[1] + bbox[4]) / 2
+                    center_z = (bbox[2] + bbox[5]) / 2
+
                 global_id = getattr(element, 'GlobalId', None)
                 if not global_id:
                     global_id = f"NO_GUID_{element.id()}"
@@ -359,7 +476,15 @@ def extract_bboxes_from_merged(merged_ifc_path, guid_map):
                     'ifc_class': element.is_a(),
                     'min_x': bbox[0], 'min_y': bbox[1], 'min_z': bbox[2],
                     'max_x': bbox[3], 'max_y': bbox[4], 'max_z': bbox[5],
-                    'filepath': source_file
+                    'filepath': source_file,
+                    # Phase 0: Transform data
+                    'center_x': center_x,
+                    'center_y': center_y,
+                    'center_z': center_z,
+                    'rotation_x': rot_x,
+                    'rotation_y': rot_y,
+                    'rotation_z': rot_z,
+                    'transform_source': transform_source
                 })
 
                 processed_count += 1
@@ -491,7 +616,64 @@ def create_federation_database(db_path, elements_data):
               material['base_color'], material['metallic'], material['roughness'],
               material['transparency'], material['emissive']))
 
-    print(f"  Schema created (with semantic metadata + {len(MATERIAL_LIBRARY_DATA)} materials)")
+    # Element transformation table (Phase 0: Coordinate Storage)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS element_transforms (
+            guid TEXT PRIMARY KEY,
+
+            -- Center position (world coordinates)
+            center_x REAL NOT NULL,
+            center_y REAL NOT NULL,
+            center_z REAL NOT NULL,
+
+            -- Rotation (Euler angles in radians, XYZ order)
+            rotation_x REAL DEFAULT 0,
+            rotation_y REAL DEFAULT 0,
+            rotation_z REAL DEFAULT 0,
+
+            -- Scale (usually 1,1,1 for IFC elements)
+            scale_x REAL DEFAULT 1,
+            scale_y REAL DEFAULT 1,
+            scale_z REAL DEFAULT 1,
+
+            -- Transformation source ('placement' or 'bbox_fallback')
+            transform_source TEXT DEFAULT 'bbox_fallback',
+
+            FOREIGN KEY (guid) REFERENCES elements_meta(guid)
+        )
+    """)
+
+    cursor.execute("CREATE INDEX idx_transform_source ON element_transforms(transform_source)")
+
+    # Site context table (Phase 0: Georeferencing)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS site_context (
+            discipline TEXT PRIMARY KEY,
+
+            -- Site offset (from IfcSite/IfcProject placement)
+            offset_x REAL DEFAULT 0,
+            offset_y REAL DEFAULT 0,
+            offset_z REAL DEFAULT 0,
+
+            -- True North angle (radians from Y-axis, 0 = North is +Y)
+            true_north_angle REAL DEFAULT 0,
+
+            -- Georeferencing (WGS84 if available)
+            latitude REAL,
+            longitude REAL,
+            elevation REAL,
+            epsg_code INTEGER,
+
+            -- Reference GUIDs
+            site_guid TEXT,
+            project_guid TEXT,
+            source_file TEXT,
+
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    print(f"  Schema created (with transforms + site context + semantic metadata + {len(MATERIAL_LIBRARY_DATA)} materials)")
 
     # Insert elements (with semantic metadata extraction)
     print(f"  Inserting {len(elements_data)} elements (with semantic metadata)...")
@@ -537,8 +719,57 @@ def create_federation_database(db_path, elements_data):
               semantic_data['has_opening'], semantic_data['connects_to'],
               semantic_data['flow_direction']))
 
+        # Phase 0: Insert element transforms
+        cursor.execute("""
+            INSERT INTO element_transforms
+            (guid, center_x, center_y, center_z,
+             rotation_x, rotation_y, rotation_z,
+             transform_source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (elem['guid'], elem['center_x'], elem['center_y'], elem['center_z'],
+              elem['rotation_x'], elem['rotation_y'], elem['rotation_z'],
+              elem['transform_source']))
+
         if (i + 1) % 5000 == 0:
             print(f"    {i + 1}/{len(elements_data)}...")
+
+    conn.commit()
+
+    # Phase 0: Extract and insert site context for each discipline
+    print(f"\n  Extracting site context for each discipline...")
+
+    # Group source files by discipline
+    discipline_files = {}
+    for elem in elements_data:
+        disc = elem['discipline']
+        filepath = elem['filepath']
+        if disc not in discipline_files:
+            discipline_files[disc] = set()
+        discipline_files[disc].add(filepath)
+
+    # Extract site context from first file of each discipline
+    for discipline, files in discipline_files.items():
+        if files:
+            source_file = Path(list(files)[0])
+            if source_file.exists():
+                try:
+                    temp_ifc = ifcopenshell.open(source_file)
+                    site_data = extract_site_context(temp_ifc, discipline, source_file)
+
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO site_context
+                        (discipline, offset_x, offset_y, offset_z,
+                         true_north_angle, latitude, longitude, elevation,
+                         epsg_code, site_guid, project_guid, source_file)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (site_data['discipline'], site_data['offset_x'], site_data['offset_y'], site_data['offset_z'],
+                          site_data['true_north_angle'], site_data['latitude'], site_data['longitude'],
+                          site_data['elevation'], site_data['epsg_code'],
+                          site_data['site_guid'], site_data['project_guid'], site_data['source_file']))
+
+                    print(f"    {discipline}: Site offset ({site_data['offset_x']:.2f}, {site_data['offset_y']:.2f}, {site_data['offset_z']:.2f})")
+                except Exception as e:
+                    print(f"    Warning: Could not extract site context for {discipline}: {e}")
 
     conn.commit()
 
