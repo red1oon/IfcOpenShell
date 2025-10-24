@@ -178,6 +178,10 @@ def create_semantic_shapes_progressive_generator(
             instance['is_gpu_instance'] = True
             instance['template_type'] = f"{semantic_type}_{ifc_class}"
             instance['priority'] = priority_level
+            instance['federation_semantic_type'] = semantic_type  # For Stage 3 upgrade
+            instance['federation_discipline'] = discipline  # For Stage 3
+            instance['federation_ifc_class'] = ifc_class  # For Stage 3
+            instance['federation_stage'] = 2  # Mark as Stage 2 object
 
             # Group by discipline
             if discipline not in instances_by_discipline:

@@ -930,6 +930,18 @@ class LoadFederationStage2Background(bpy.types.Operator):
 
                 self.report({'INFO'}, f"Stage 2 loaded: {len(shapes):,} shapes in {elapsed:.2f}s")
 
+                # Stage 3: Upgrade to detailed shapes (optional, in background)
+                print(f"\n🔧 Starting Stage 3: Detailed shape upgrade...")
+                try:
+                    from . import stage3_details
+                    stage3_details.upgrade_to_detailed_shapes(
+                        objects=shapes,
+                        frustum_cull=True  # Only upgrade visible objects
+                    )
+                    print(f"✅ Stage 3 complete - shapes upgraded to Level 2 detail")
+                except Exception as e:
+                    print(f"⚠ Stage 3 failed (shapes remain at Level 1): {e}")
+
                 # Force final viewport update
                 for area in context.screen.areas:
                     if area.type == 'VIEW_3D':
