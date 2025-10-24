@@ -177,26 +177,26 @@ class FederationLoader:
             print(f"✓ Stage 2 complete: {len(shapes)} semantic shapes loaded")
             print("✅ USER CAN NOW WORK (routing, clashing, MEP calculations)")
 
-            # Store loader and objects in scene for background operator access
-            bpy.context.scene['federation_stage2_objects'] = shapes
-            bpy.context.scene['federation_loader'] = self
-
             # Start background refinement (material details + Stage 3)
-            # Runs in separate thread while user works!
-            print("\n⏳ Starting background refinement (material + detail)...")
-            print("   User can continue working - refinement runs in background!")
+            # Note: For v1.0, run synchronously (background operator for v1.1)
+            print("\n⏳ Running material refinement (assembly details)...")
 
             try:
-                from . import background_refinement
-                # Register operator if not already registered
-                if not hasattr(bpy.types, 'FEDERATION_OT_background_refinement'):
-                    background_refinement.register()
+                from . import material_refinement
+                import time
 
-                # Trigger background operator (non-blocking)
-                bpy.ops.federation.background_refinement()
+                start = time.time()
+                stats = material_refinement.refine_shapes_by_material(shapes)
+                elapsed = time.time() - start
+
+                print(f"✓ Material refinement complete in {elapsed:.2f}s")
+                print(f"  - Linear groups: {stats.get('linear_groups_detected', 0)}")
+                print(f"  - Flanges: {stats.get('flanges_added', 0)}")
+                print(f"  - Seams: {stats.get('seams_added', 0)}")
+                print(f"  - Elements refined: {stats.get('elements_refined', 0)}")
 
             except Exception as e:
-                print(f"⚠ Background refinement unavailable: {e}")
+                print(f"⚠ Material refinement unavailable: {e}")
                 print("  (Model still fully functional for coordination work)")
 
             return shapes
