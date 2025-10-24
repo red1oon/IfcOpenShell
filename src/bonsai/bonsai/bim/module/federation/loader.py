@@ -148,14 +148,6 @@ class FederationLoader:
         """
         print("Loading Stage 2: Semantic shape generation...")
 
-        # Remove Stage 1 wireframes if they exist
-        if self.stage1_objects:
-            print(f"Removing {len(self.stage1_objects)} wireframes...")
-            for obj in self.stage1_objects:
-                if obj and obj.name in bpy.data.objects:
-                    bpy.data.objects.remove(obj, do_unlink=True)
-            self.stage1_objects = []
-
         # Create main federation collection if needed
         if not self.federation_collection:
             self.federation_collection = self._get_or_create_collection("Federation")
@@ -175,6 +167,14 @@ class FederationLoader:
             self.stage2_objects = shapes
 
             print(f"✓ Stage 2 complete: {len(shapes)} semantic shapes loaded")
+
+            # NOW remove Stage 1 wireframes (atomic swap - keep visible until Stage 2 ready)
+            if self.stage1_objects:
+                print(f"Replacing {len(self.stage1_objects)} wireframes with semantic shapes...")
+                for obj in self.stage1_objects:
+                    if obj and obj.name in bpy.data.objects:
+                        bpy.data.objects.remove(obj, do_unlink=True)
+                self.stage1_objects = []
             print("✅ USER CAN NOW WORK (routing, clashing, MEP calculations)")
 
             # Start background refinement (material details + Stage 3)

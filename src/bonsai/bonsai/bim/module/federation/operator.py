@@ -682,7 +682,7 @@ class QueryFederationIndex(Operator):
             print(f"    {element}")
 
 class LoadFederationModel(bpy.types.Operator):
-    """Load federated model with three-stage progressive loading"""
+    """Load federated model with three-stage progressive loading (non-blocking)"""
     bl_idname = "bim.load_federation_model"
     bl_label = "Load Federation Model"
     bl_description = "Load federated BIM model from database (three-stage loading)"
@@ -704,7 +704,7 @@ class LoadFederationModel(bpy.types.Operator):
 
         try:
             print("\n" + "=" * 70)
-            print("FEDERATION MODEL LOADING")
+            print("FEDERATION MODEL LOADING - NON-BLOCKING")
             print("=" * 70)
 
             start_time = time.time()
@@ -712,18 +712,24 @@ class LoadFederationModel(bpy.types.Operator):
             # Create loader
             loader = FederationLoader(self.filepath)
 
-            # Load federation (Stage 1 + 2 + material refinement)
-            objects = loader.load_federation()
+            # Load Stage 1 only (wireframes - instant)
+            print("\n🔷 Loading Stage 1: Wireframes (instant feedback)...")
+            wireframes = loader.load_stage1()
+            elapsed_stage1 = time.time() - start_time
 
-            elapsed = time.time() - start_time
-
-            print(f"\n✅ Federation loaded successfully!")
-            print(f"  - Total time: {elapsed:.1f}s")
-            print(f"  - Objects loaded: {len(objects):,}")
-            print(f"  - Database: {self.filepath}")
+            print(f"\n✅ Stage 1 complete!")
+            print(f"  - Wireframes: {len(wireframes):,}")
+            print(f"  - Time: {elapsed_stage1:.2f}s")
+            print(f"  - User can now work with wireframes!")
             print("=" * 70)
 
-            self.report({'INFO'}, f"Loaded {len(objects):,} objects in {elapsed:.1f}s")
+            self.report({'INFO'}, f"Stage 1 loaded: {len(wireframes):,} wireframes. Stage 2 loading in background...")
+
+            # Store loader in scene for background operator
+            context.scene['federation_loader_db_path'] = self.filepath
+
+            # Start background Stage 2 loading
+            bpy.ops.bim.load_federation_stage2_background()
 
             return {'FINISHED'}
 
@@ -739,6 +745,162 @@ class LoadFederationModel(bpy.types.Operator):
         # Open file browser
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
+
+
+class LoadFederationStage2Background(bpy.types.Operator):
+    """Load Stage 2 in background (non-blocking chunked modal operator)"""
+    bl_idname = "bim.load_federation_stage2_background"
+    bl_label = "Load Stage 2 (Background)"
+    bl_description = "Load semantic shapes in background without blocking UI (chunked)"
+
+    _timer = None
+    _chunked_loader = None
+    _start_time = None
+    _db_conn = None
+    _federation_loader = None
+
+    def modal(self, context, event):
+        if event.type == 'TIMER':
+            # This runs every timer tick (non-blocking)
+
+            # Initialize chunked loader on first tick
+            if self._chunked_loader is None:
+                db_path = context.scene.get('federation_loader_db_path')
+                if not db_path:
+                    self.report({'ERROR'}, "No database path found")
+                    self.cancel(context)
+                    return {'CANCELLED'}
+
+                print("\n" + "=" * 70)
+                print("🔷 STAGE 2: CHUNKED BACKGROUND LOADING")
+                print("=" * 70)
+                print(f"  Mode: NON-BLOCKING (100 elements per 0.1s tick)")
+                print(f"  UI: FULLY RESPONSIVE during loading")
+                print("=" * 70)
+
+                try:
+                    from .loader import FederationLoader
+                    from .stage2_semantics_chunked import ChunkedSemanticLoader
+                    import sqlite3
+                    import time
+
+                    print("  ✓ Imports successful")
+
+                    # Recreate loader (just for collections, don't load anything)
+                    self._federation_loader = FederationLoader(db_path)
+                    print("  ✓ FederationLoader created")
+
+                    # Open database connection
+                    self._db_conn = sqlite3.connect(db_path)
+                    print("  ✓ Database connected")
+
+                    # Get Federation collection
+                    federation_coll = bpy.data.collections.get("Federation")
+                    if not federation_coll:
+                        print("  ⚠ Federation collection not found, creating...")
+                        federation_coll = bpy.data.collections.new("Federation")
+                        bpy.context.scene.collection.children.link(federation_coll)
+
+                    # Create chunked loader
+                    print("  ✓ Creating ChunkedSemanticLoader...")
+                    self._chunked_loader = ChunkedSemanticLoader(
+                        self._db_conn,
+                        federation_coll,
+                        {},  # Empty discipline collections dict (will be populated)
+                        batch_size=100  # Process 100 elements per tick
+                    )
+
+                    self._start_time = time.time()
+                    print("  ✓ Chunked loader initialized")
+                    print(f"  ✓ Will process {self._chunked_loader.total:,} elements in batches")
+                    print("=" * 70)
+
+                except Exception as e:
+                    print(f"\n❌ FAILED to initialize chunked loader: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    self.report({'ERROR'}, f"Initialization failed: {str(e)}")
+                    self.cancel(context)
+                    return {'CANCELLED'}
+
+                return {'RUNNING_MODAL'}
+
+            # Process next batch
+            if not self._chunked_loader.is_complete():
+                import time
+                batch_start = time.time()
+
+                batch_shapes = self._chunked_loader.process_next_batch()
+
+                batch_elapsed = time.time() - batch_start
+
+                # Update progress
+                current, total, percentage = self._chunked_loader.get_progress()
+
+                if current % 500 == 0:  # Print every 500 elements
+                    print(f"  ⏳ Progress: {current:,}/{total:,} ({percentage:.1f}%) | Batch time: {batch_elapsed*1000:.1f}ms")
+
+                # Force viewport update every batch
+                for area in context.screen.areas:
+                    if area.type == 'VIEW_3D':
+                        area.tag_redraw()
+
+                return {'RUNNING_MODAL'}
+
+            # Loading complete!
+            else:
+                import time
+                elapsed = time.time() - self._start_time
+                shapes = self._chunked_loader.shapes
+
+                print(f"\n✅ Stage 2 complete!")
+                print(f"  - Semantic shapes: {len(shapes):,}")
+                print(f"  - Time: {elapsed:.2f}s")
+                print(f"  - Average: {elapsed/len(shapes)*1000:.2f}ms per element")
+
+                # NOW remove Stage 1 wireframes (atomic swap)
+                # Find all Stage 1 wireframes in scene (can't rely on stored references)
+                wireframes_to_remove = [
+                    obj for obj in bpy.data.objects
+                    if obj.get("federation_stage") == 1
+                ]
+
+                if wireframes_to_remove:
+                    print(f"  - Replacing {len(wireframes_to_remove):,} wireframes with semantic shapes...")
+                    for obj in wireframes_to_remove:
+                        bpy.data.objects.remove(obj, do_unlink=True)
+                else:
+                    print(f"  ⚠ No Stage 1 wireframes found to replace")
+
+                print("✅ USER CAN NOW WORK (routing, clashing, MEP calculations)")
+                print("=" * 70)
+
+                self.report({'INFO'}, f"Stage 2 loaded: {len(shapes):,} shapes in {elapsed:.2f}s")
+
+                # Force final viewport update
+                for area in context.screen.areas:
+                    if area.type == 'VIEW_3D':
+                        area.tag_redraw()
+
+                # Clean up
+                self._db_conn.close()
+                self.cancel(context)
+                return {'FINISHED'}
+
+        return {'PASS_THROUGH'}
+
+    def execute(self, context):
+        # Start modal timer (0.1s = 100ms per tick)
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.1, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def cancel(self, context):
+        # Clean up timer
+        wm = context.window_manager
+        if self._timer:
+            wm.event_timer_remove(self._timer)
 
 
 class DetectFederationClashes(bpy.types.Operator):

@@ -40,6 +40,7 @@ classes = (
     operator.UnloadFederationIndex,
     operator.QueryFederationIndex,
     operator.LoadFederationModel,
+    operator.LoadFederationStage2Background,
     operator.DetectFederationClashes,
     ui.BIM_PT_federation,
     ui.BIM_UL_federated_files,

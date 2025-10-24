@@ -135,13 +135,13 @@ class BIM_PT_federation(Panel):
         row.enabled = not props.preprocessing_in_progress
         row.operator("bim.preprocess_federated_models", icon="PLAY")
         
-        # Load/Unload buttons
-        row = col.row(align=True)
-        if props.index_loaded:
-            row.operator("bim.unload_federation_index", icon="PANEL_CLOSE")
-            row.operator("bim.query_federation_index", text="Run System Tests", icon="CHECKBOX_HLT")
-        else:
-            row.operator("bim.load_federation_index", icon="IMPORT")
+        # Load/Unload buttons (hidden - use Three-Stage Loading instead)
+        # row = col.row(align=True)
+        # if props.index_loaded:
+        #     row.operator("bim.unload_federation_index", icon="PANEL_CLOSE")
+        #     row.operator("bim.query_federation_index", text="Run System Tests", icon="CHECKBOX_HLT")
+        # else:
+        #     row.operator("bim.load_federation_index", icon="IMPORT")
         
         layout.separator()
         
@@ -179,11 +179,12 @@ class BIM_PT_federation(Panel):
         # Three-Stage Loading section
         layout.separator()
         box = layout.box()
-        box.label(text="Three-Stage Loading:", icon="MESH_DATA")
+        box.label(text="Three-Stage Loading (Non-Blocking):", icon="MESH_DATA")
         col = box.column(align=True)
         col.operator("bim.load_federation_model", icon="IMPORT", text="Load Federation Model")
-        col.label(text="Loads: wireframes → semantic → materials")
-        col.label(text="(~4-5 min for 44K elements)")
+        col.label(text="Stage 1: Instant wireframes (work immediately!)")
+        col.label(text="Stage 2: Auto-loads in background (~2 min)")
+        col.label(text="Stage 3: Material details (automatic)")
 
         # Clash Detection section
         if props.index_loaded:

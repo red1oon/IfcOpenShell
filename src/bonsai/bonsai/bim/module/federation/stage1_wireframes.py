@@ -49,6 +49,20 @@ def create_wireframe_boxes(db_conn: sqlite3.Connection,
     """
     cursor = db_conn.cursor()
 
+    # Get site offset to bring objects to origin
+    cursor.execute("SELECT site_offset_x, site_offset_y, site_offset_z FROM site_context LIMIT 1")
+    offset_row = cursor.fetchone()
+
+    if offset_row:
+        # Convert from mm to meters and negate (to subtract from world coords)
+        offset_x = -offset_row[0] / 1000.0
+        offset_y = -offset_row[1] / 1000.0
+        offset_z = -offset_row[2] / 1000.0
+        print(f"Applying site offset: ({offset_x:.2f}, {offset_y:.2f}, {offset_z:.2f}) m")
+    else:
+        offset_x = offset_y = offset_z = 0.0
+        print("⚠ No site offset found in database")
+
     # Query all elements with bbox and discipline
     cursor.execute("""
         SELECT
@@ -70,10 +84,13 @@ def create_wireframe_boxes(db_conn: sqlite3.Connection,
 
     # Process elements
     for idx, (guid, discipline, min_x, max_x, min_y, max_y, min_z, max_z) in enumerate(elements):
-        # Convert mm to meters (Blender units)
-        min_x_m, max_x_m = min_x / 1000.0, max_x / 1000.0
-        min_y_m, max_y_m = min_y / 1000.0, max_y / 1000.0
-        min_z_m, max_z_m = min_z / 1000.0, max_z / 1000.0
+        # Convert mm to meters AND apply site offset (to bring to origin)
+        min_x_m = min_x / 1000.0 + offset_x
+        max_x_m = max_x / 1000.0 + offset_x
+        min_y_m = min_y / 1000.0 + offset_y
+        max_y_m = max_y / 1000.0 + offset_y
+        min_z_m = min_z / 1000.0 + offset_z
+        max_z_m = max_z / 1000.0 + offset_z
 
         # Create wireframe mesh (8 vertices, 12 edges, no faces)
         mesh = bpy.data.meshes.new(f"WF_{guid}")
@@ -121,8 +138,35 @@ def create_wireframe_boxes(db_conn: sqlite3.Connection,
 
     print(f"✓ Created {len(wireframes):,} wireframes")
 
-    # Deferred scene update (optimization for batch performance)
+    # IMMEDIATE viewport update (force wireframes to appear NOW)
     bpy.context.view_layer.update()
+
+    # Frame all objects in viewport (only in GUI mode)
+    try:
+        if bpy.context.window_manager.windows:
+            for window in bpy.context.window_manager.windows:
+                for area in window.screen.areas:
+                    if area.type == 'VIEW_3D':
+                        # Override context to frame all visible objects
+                        with bpy.context.temp_override(window=window, area=area):
+                            # View all objects (fast - doesn't require selection)
+                            bpy.ops.view3d.view_all()
+
+                        # Force redraw
+                        area.tag_redraw()
+
+            print(f"✅ WIREFRAMES NOW VISIBLE - You can work immediately!")
+            print(f"   Viewport auto-framed to show all {len(wireframes):,} objects")
+        else:
+            print(f"✅ WIREFRAMES CREATED - {len(wireframes):,} objects")
+            print(f"   (Running in background mode - no viewport to frame)")
+
+    except RuntimeError as e:
+        # Gracefully handle background mode or missing viewport
+        print(f"✅ WIREFRAMES CREATED - {len(wireframes):,} objects")
+        print(f"   (Viewport framing skipped: {e})")
+
+    print(f"   (Stage 2 will load in background without blocking UI)")
 
     return wireframes
 
