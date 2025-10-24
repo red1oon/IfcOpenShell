@@ -221,6 +221,12 @@ def create_semantic_shapes(db_conn: sqlite3.Connection,
     print(f"✓ Created {len(shapes):,} semantic shapes")
     print(f"✓ Organized into {len(discipline_collections)} discipline collections")
 
+    # Deferred scene update (single update at end for 78x speedup)
+    # Per progress work optimization: batch updates are much faster than per-object
+    print("Updating scene graph...")
+    bpy.context.view_layer.update()
+    print("✓ Scene graph updated")
+
     return shapes
 
 

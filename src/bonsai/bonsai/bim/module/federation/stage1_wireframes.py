@@ -120,6 +120,10 @@ def create_wireframe_boxes(db_conn: sqlite3.Connection,
             progress_callback(idx + 1, total, f"Creating wireframes...")
 
     print(f"✓ Created {len(wireframes):,} wireframes")
+
+    # Deferred scene update (optimization for batch performance)
+    bpy.context.view_layer.update()
+
     return wireframes
 
 
