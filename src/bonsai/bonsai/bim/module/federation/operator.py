@@ -680,3 +680,137 @@ class QueryFederationIndex(Operator):
         print("\nFirst 5 elements:")
         for element in results[:5]:
             print(f"    {element}")
+
+class LoadFederationModel(bpy.types.Operator):
+    """Load federated model with three-stage progressive loading"""
+    bl_idname = "bim.load_federation_model"
+    bl_label = "Load Federation Model"
+    bl_description = "Load federated BIM model from database (three-stage loading)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    filepath: bpy.props.StringProperty(
+        name="Database Path",
+        description="Path to federation database (.db file)",
+        subtype='FILE_PATH'
+    )
+
+    def execute(self, context):
+        from .loader import FederationLoader
+        import time
+
+        if not self.filepath:
+            self.report({'ERROR'}, "No database path specified")
+            return {'CANCELLED'}
+
+        try:
+            print("\n" + "=" * 70)
+            print("FEDERATION MODEL LOADING")
+            print("=" * 70)
+
+            start_time = time.time()
+
+            # Create loader
+            loader = FederationLoader(self.filepath)
+
+            # Load federation (Stage 1 + 2 + material refinement)
+            objects = loader.load_federation()
+
+            elapsed = time.time() - start_time
+
+            print(f"\n✅ Federation loaded successfully!")
+            print(f"  - Total time: {elapsed:.1f}s")
+            print(f"  - Objects loaded: {len(objects):,}")
+            print(f"  - Database: {self.filepath}")
+            print("=" * 70)
+
+            self.report({'INFO'}, f"Loaded {len(objects):,} objects in {elapsed:.1f}s")
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            print(f"\n❌ Failed to load federation: {e}")
+            import traceback
+            traceback.print_exc()
+
+            self.report({'ERROR'}, f"Failed to load federation: {str(e)}")
+            return {'CANCELLED'}
+
+    def invoke(self, context, event):
+        # Open file browser
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+
+class DetectFederationClashes(bpy.types.Operator):
+    """Detect clashes using database (NO IFC required)"""
+    bl_idname = "bim.detect_federation_clashes"
+    bl_label = "Detect Clashes (Database)"
+    bl_description = "Run bbox-based clash detection on federation database"
+    bl_options = {'REGISTER'}
+
+    tolerance_mm: bpy.props.FloatProperty(
+        name="Tolerance (mm)",
+        description="Clash tolerance in millimeters",
+        default=10.0,
+        min=0.0,
+        max=1000.0
+    )
+
+    def execute(self, context):
+        from ..clash import bbox_clash_detector
+        import time
+
+        props = context.scene.BIMFederationProperties
+        db_path = props.federation_database_path
+
+        if not db_path:
+            self.report({'ERROR'}, "No federation database loaded")
+            return {'CANCELLED'}
+
+        try:
+            print("\n" + "=" * 70)
+            print("DATABASE-DRIVEN CLASH DETECTION")
+            print("=" * 70)
+
+            start_time = time.time()
+
+            # Run bbox clash detection
+            clashes = bbox_clash_detector.detect_clashes_from_database(
+                db_path,
+                tolerance_mm=self.tolerance_mm
+            )
+
+            elapsed = time.time() - start_time
+
+            # Group by discipline
+            grouped = bbox_clash_detector.group_clashes_by_discipline(clashes)
+
+            print(f"\n✅ Clash detection complete!")
+            print(f"  - Time: {elapsed:.2f}s")
+            print(f"  - Total clashes: {len(clashes):,}")
+            print(f"\nClashes by discipline pair:")
+            for pair, pair_clashes in sorted(grouped.items()):
+                print(f"  - {pair}: {len(pair_clashes):,} clashes")
+
+            # Export to clash database
+            clash_db = db_path.replace('.db', '_clashes.db')
+            bbox_clash_detector.export_clashes_to_database(
+                clashes, clash_db, "Default"
+            )
+
+            print(f"\n✓ Exported to: {clash_db}")
+            print("=" * 70)
+
+            self.report({'INFO'},
+                f"Found {len(clashes):,} clashes in {elapsed:.2f}s"
+            )
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            print(f"\n❌ Clash detection failed: {e}")
+            import traceback
+            traceback.print_exc()
+
+            self.report({'ERROR'}, f"Clash detection failed: {str(e)}")
+            return {'CANCELLED'}

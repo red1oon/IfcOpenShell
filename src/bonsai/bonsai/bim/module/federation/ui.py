@@ -175,7 +175,26 @@ class BIM_PT_federation(Panel):
                 
                 if props.filter_by_discipline:
                     col.prop(props, "active_disciplines", text="Disciplines")
-        
+
+        # Three-Stage Loading section
+        layout.separator()
+        box = layout.box()
+        box.label(text="Three-Stage Loading:", icon="MESH_DATA")
+        col = box.column(align=True)
+        col.operator("bim.load_federation_model", icon="IMPORT", text="Load Federation Model")
+        col.label(text="Loads: wireframes → semantic → materials")
+        col.label(text="(~4-5 min for 44K elements)")
+
+        # Clash Detection section
+        if props.index_loaded:
+            layout.separator()
+            box = layout.box()
+            box.label(text="Clash Detection (Database):", icon="OUTLINER_OB_FORCE_FIELD")
+            col = box.column(align=True)
+            col.operator("bim.detect_federation_clashes", icon="ERROR", text="Detect Clashes")
+            col.label(text="Pure bbox collision (NO IFC!)")
+            col.label(text="(~0.5s for 44K elements)")
+
         # Tips section
         layout.separator()
         box = layout.box()
