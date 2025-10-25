@@ -258,8 +258,9 @@ def get_template_object(semantic_type: str, ifc_class: str, parent_collection: b
     # Create template mesh
     mesh = create_template_mesh(semantic_type, ifc_class)
 
-    # Create template object
-    template_obj = bpy.data.objects.new(f"Template_{semantic_type}_{ifc_class}", mesh)
+    # Create template object (name includes discipline for uniqueness)
+    template_name = f"Template_{semantic_type}_{ifc_class}_{discipline}" if discipline else f"Template_{semantic_type}_{ifc_class}"
+    template_obj = bpy.data.objects.new(template_name, mesh)
 
     # Assign material (shared by all instances)
     if discipline:
@@ -536,3 +537,4 @@ def clear_template_cache():
     """Clear template mesh cache (for testing/cleanup)"""
     _TEMPLATE_MESHES.clear()
     _TEMPLATE_OBJECTS.clear()
+    _MATERIAL_CACHE.clear()
