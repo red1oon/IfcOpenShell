@@ -156,7 +156,8 @@ def create_semantic_shapes_progressive(db_conn: sqlite3.Connection,
                                        parent_collection: bpy.types.Collection,
                                        discipline_collections: Dict[str, bpy.types.Collection],
                                        progress_callback: Optional[Callable] = None,
-                                       batch_delay: float = 0.05) -> List[bpy.types.Object]:
+                                       batch_delay: float = 0.05,
+                                       offset: Vector = None) -> List[bpy.types.Object]:
     """
     Create semantic shapes with progressive surface-first loading.
 
@@ -287,9 +288,9 @@ def create_semantic_shapes_progressive(db_conn: sqlite3.Connection,
             # Infer semantic type
             semantic_type = semantic_utils.get_semantic_type(ifc_class)
 
-            # Get or create template
-            template_obj = get_template_object(semantic_type, ifc_class, parent_collection)
-            templates_used.add(f"{semantic_type}_{ifc_class}")
+            # Get or create template (with material for discipline)
+            template_obj = get_template_object(semantic_type, ifc_class, parent_collection, discipline)
+            templates_used.add(f"{semantic_type}_{ifc_class}_{discipline}")
 
             # Calculate transform (with offset to center model at origin)
             location, scale, rotation = calculate_transform_from_bbox(bbox, semantic_type, ifc_class, offset)

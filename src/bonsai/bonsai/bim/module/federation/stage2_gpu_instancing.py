@@ -234,7 +234,7 @@ def create_template_mesh(semantic_type: str, ifc_class: str) -> bpy.types.Mesh:
     return mesh
 
 
-def get_template_object(semantic_type: str, ifc_class: str, parent_collection: bpy.types.Collection) -> bpy.types.Object:
+def get_template_object(semantic_type: str, ifc_class: str, parent_collection: bpy.types.Collection, discipline: str = None) -> bpy.types.Object:
     """
     Get or create a template object for instancing.
 
@@ -244,11 +244,12 @@ def get_template_object(semantic_type: str, ifc_class: str, parent_collection: b
         semantic_type: Semantic type (CYLINDER, BOX, etc.)
         ifc_class: IFC class name
         parent_collection: Collection to store template in
+        discipline: Discipline for material assignment (ACMV, FP, ELEC, etc.)
 
     Returns:
-        Template object (hidden)
+        Template object (hidden) with material assigned
     """
-    cache_key = f"{semantic_type}_{ifc_class}"
+    cache_key = f"{semantic_type}_{ifc_class}_{discipline}" if discipline else f"{semantic_type}_{ifc_class}"
 
     # Check cache
     if cache_key in _TEMPLATE_OBJECTS:
@@ -259,6 +260,14 @@ def get_template_object(semantic_type: str, ifc_class: str, parent_collection: b
 
     # Create template object
     template_obj = bpy.data.objects.new(f"Template_{semantic_type}_{ifc_class}", mesh)
+
+    # Assign material (shared by all instances)
+    if discipline:
+        material = get_or_create_material(semantic_type, discipline)
+        if mesh.materials:
+            mesh.materials[0] = material
+        else:
+            mesh.materials.append(material)
 
     # Add to templates collection
     templates_collection = parent_collection.children.get("Templates")
@@ -354,7 +363,8 @@ def calculate_transform_from_bbox(bbox: Tuple[float, float, float, float, float,
 def create_semantic_shapes_instanced(db_conn: sqlite3.Connection,
                                       parent_collection: bpy.types.Collection,
                                       discipline_collections: Dict[str, bpy.types.Collection],
-                                      progress_callback: Optional[Callable] = None) -> List[bpy.types.Object]:
+                                      progress_callback: Optional[Callable] = None,
+                                      offset: Vector = None) -> List[bpy.types.Object]:
     """
     Create semantic shapes using GPU instancing.
 
@@ -423,12 +433,12 @@ def create_semantic_shapes_instanced(db_conn: sqlite3.Connection,
         # Infer semantic type
         semantic_type = semantic_utils.get_semantic_type(ifc_class)
 
-        # Get or create template
-        template_obj = get_template_object(semantic_type, ifc_class, parent_collection)
-        templates_used.add(f"{semantic_type}_{ifc_class}")
+        # Get or create template (with material for discipline)
+        template_obj = get_template_object(semantic_type, ifc_class, parent_collection, discipline)
+        templates_used.add(f"{semantic_type}_{ifc_class}_{discipline}")
 
-        # Calculate transform from bbox
-        location, scale, rotation = calculate_transform_from_bbox(bbox, semantic_type, ifc_class)
+        # Calculate transform from bbox (with coordinate offset for viewport centering)
+        location, scale, rotation = calculate_transform_from_bbox(bbox, semantic_type, ifc_class, offset)
 
         # Create instance (shares mesh with template!)
         instance = bpy.data.objects.new(guid, template_obj.data)
