@@ -122,7 +122,27 @@ class BIMFederationProperties(PropertyGroup):
         description="Whether the federation spatial index is loaded in memory",
         default=False
     )
-    
+
+    # Visualization mode (for UI control)
+    visualization_mode: EnumProperty(
+        name="Visualization Mode",
+        description="Choose visualization detail level",
+        items=[
+            ('NONE', 'None', 'No visualization loaded', 'BLANK1', 0),
+            ('BBOXES', 'BBoxes', 'Fast wireframe bounding boxes (< 1s load)', 'MESH_CUBE', 1),
+            ('SEMANTICS', 'Semantics', 'Simple semantic shapes (~10s load, instant switching!)', 'MESH_ICOSPHERE', 2),
+            ('MATERIALS', 'Materials', 'Detailed shapes with materials (same as Semantics + enhancements)', 'SHADING_RENDERED', 3),
+        ],
+        default='SEMANTICS'  # Default to SEMANTICS for best balance
+    )
+
+    # Auto-reload on file open
+    auto_reload_on_open: BoolProperty(
+        name="Auto-reload Visualization",
+        description="Automatically restore visualization mode when reopening Blender file",
+        default=True
+    )
+
     # Preprocessing settings
     preprocessing_in_progress: BoolProperty(
         name="Preprocessing In Progress",

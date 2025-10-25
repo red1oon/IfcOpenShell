@@ -1041,3 +1041,99 @@ class DetectFederationClashes(bpy.types.Operator):
 
             self.report({'ERROR'}, f"Clash detection failed: {str(e)}")
             return {'CANCELLED'}
+
+
+class ReloadFederationViewport(bpy.types.Operator):
+    """Load or switch federation visualization mode (multi-layer caching)"""
+    bl_idname = "bim.reload_federation_viewport"
+    bl_label = "Load/Switch Visualization"
+    bl_description = "Load all layers once, then instant mode switching"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.BIMFederationProperties
+
+        if not props.federation_database_path:
+            self.report({'ERROR'}, "No federation database loaded")
+            return {'CANCELLED'}
+
+        mode = props.visualization_mode
+
+        try:
+            from .visualization_manager import VisualizationManager
+            viz_mgr = VisualizationManager(props.federation_database_path)
+
+            # Handle NONE mode - unload everything
+            if mode == 'NONE':
+                viz_mgr.unload_all_layers()
+                self.report({'INFO'}, "Visualization unloaded")
+                return {'FINISHED'}
+
+            # Check if all layers are already loaded
+            if viz_mgr.are_all_layers_loaded():
+                # Instant mode switch (just toggle visibility)
+                print(f"\n{'='*70}")
+                print(f"SWITCHING TO {mode} MODE (Instant)")
+                print(f"{'='*70}\n")
+
+                elapsed = viz_mgr.switch_mode(mode)
+
+                self.report({'INFO'},
+                    f"Switched to {mode} in {elapsed*1000:.1f}ms")
+
+                return {'FINISHED'}
+
+            else:
+                # First-time load: Generate all 3 layers
+                print(f"\n{'='*70}")
+                print("FIRST-TIME LOAD: Generating all 3 visualization layers")
+                print(f"{'='*70}\n")
+
+                timing = viz_mgr.load_all_layers()
+
+                # Show selected mode, hide others
+                viz_mgr.switch_mode(mode)
+
+                total_time = sum(timing.values())
+                self.report({'INFO'},
+                    f"Loaded all layers in {total_time:.1f}s (future switches instant!)")
+
+                print(f"\n✓ All layers ready! Future mode switches will be instant (<0.1s)")
+                return {'FINISHED'}
+
+        except Exception as e:
+            print(f"\n❌ Load/switch failed: {e}")
+            import traceback
+            traceback.print_exc()
+
+            self.report({'ERROR'}, f"Operation failed: {str(e)}")
+            return {'CANCELLED'}
+
+
+class UnloadFederationViewport(bpy.types.Operator):
+    """Unload all federation viewport layers and free memory"""
+    bl_idname = "bim.unload_federation_viewport"
+    bl_label = "Unload All Layers"
+    bl_description = "Remove all 3 visualization layers and free memory (~153 MB)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        try:
+            from .visualization_manager import VisualizationManager
+
+            props = context.scene.BIMFederationProperties
+            viz_mgr = VisualizationManager(props.federation_database_path)
+
+            # Unload all layers
+            viz_mgr.unload_all_layers()
+
+            self.report({'INFO'}, "Unloaded all visualization layers")
+            return {'FINISHED'}
+
+        except Exception as e:
+            print(f"\n❌ Unload failed: {e}")
+            import traceback
+            traceback.print_exc()
+
+            self.report({'ERROR'}, f"Unload failed: {str(e)}")
+            return {'CANCELLED'}

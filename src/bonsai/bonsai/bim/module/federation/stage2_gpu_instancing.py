@@ -281,7 +281,8 @@ def get_template_object(semantic_type: str, ifc_class: str, parent_collection: b
 
 def calculate_transform_from_bbox(bbox: Tuple[float, float, float, float, float, float],
                                     semantic_type: str,
-                                    ifc_class: str) -> Tuple[Vector, Vector, Euler]:
+                                    ifc_class: str,
+                                    offset: Vector = None) -> Tuple[Vector, Vector, Euler]:
     """
     Calculate position, scale, rotation from bounding box.
 
@@ -289,6 +290,7 @@ def calculate_transform_from_bbox(bbox: Tuple[float, float, float, float, float,
         bbox: (min_x, min_y, min_z, max_x, max_y, max_z) in mm
         semantic_type: CYLINDER, BOX, etc.
         ifc_class: IFC class name
+        offset: Coordinate offset to center model at origin (in meters)
 
     Returns:
         (location, scale, rotation) for Blender object
@@ -308,6 +310,13 @@ def calculate_transform_from_bbox(bbox: Tuple[float, float, float, float, float,
     center_x = (min_x + max_x) / 2.0
     center_y = (min_y + max_y) / 2.0
     center_z = (min_z + max_z) / 2.0
+
+    # Apply coordinate offset to center model at origin
+    if offset is not None:
+        center_x -= offset.x
+        center_y -= offset.y
+        center_z -= offset.z
+
     location = Vector((center_x, center_y, center_z))
 
     # Calculate scale based on semantic type
