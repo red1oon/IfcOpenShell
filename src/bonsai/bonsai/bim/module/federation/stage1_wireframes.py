@@ -13,12 +13,14 @@ Characteristics:
 - Minimal data (8 vertices per box)
 - Discipline colors
 - No Bmesh needed (simple mesh)
+- Batched viewport updates to prevent UI freeze
 
 Part of Phase 1: Three-Stage Inference-Based Loading
 """
 
 import bpy
 import sqlite3
+import time
 from typing import List, Optional, Callable
 from ..clash.shape_templates import DISCIPLINE_COLORS
 
@@ -138,8 +140,12 @@ def create_wireframe_boxes(db_conn: sqlite3.Connection,
 
     print(f"✓ Created {len(wireframes):,} wireframes")
 
-    # IMMEDIATE viewport update (force wireframes to appear NOW)
+    # Single viewport update at end (FAST!)
+    print(f"⚡ Updating viewport...")
+    update_start = time.time()
     bpy.context.view_layer.update()
+    update_time = time.time() - update_start
+    print(f"✓ Viewport updated in {update_time:.2f}s")
 
     # Frame all objects in viewport (only in GUI mode)
     try:
@@ -155,8 +161,13 @@ def create_wireframe_boxes(db_conn: sqlite3.Connection,
                         # Force redraw
                         area.tag_redraw()
 
-            print(f"✅ WIREFRAMES NOW VISIBLE - You can work immediately!")
-            print(f"   Viewport auto-framed to show all {len(wireframes):,} objects")
+            print(f"\n🖱️  STAGE 1 COMPLETE - VIEWPORT FULLY RESPONSIVE!")
+            print(f"   ✅ {len(wireframes):,} wireframes visible")
+            print(f"   ✅ Mouse works normally")
+            print(f"   ✅ Outliner accessible")
+            print(f"   ✅ Viewport auto-framed")
+            print(f"   ⏳ Stage 2 will load progressively in background")
+            print(f"      (Surface elements will appear first, then MEP, then complete)")
         else:
             print(f"✅ WIREFRAMES CREATED - {len(wireframes):,} objects")
             print(f"   (Running in background mode - no viewport to frame)")
@@ -165,8 +176,6 @@ def create_wireframe_boxes(db_conn: sqlite3.Connection,
         # Gracefully handle background mode or missing viewport
         print(f"✅ WIREFRAMES CREATED - {len(wireframes):,} objects")
         print(f"   (Viewport framing skipped: {e})")
-
-    print(f"   (Stage 2 will load in background without blocking UI)")
 
     return wireframes
 

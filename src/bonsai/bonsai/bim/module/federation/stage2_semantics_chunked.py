@@ -11,10 +11,63 @@ Part of Phase 1: Three-Stage Inference-Based Loading
 import bpy
 import bmesh
 import sqlite3
+import time
 from mathutils import Vector, Euler
 from typing import List, Optional, Callable, Dict, Tuple
 from . import semantic_utils
 from ..clash import shape_templates
+
+
+# Priority system for progressive loading
+ELEMENT_PRIORITIES = {
+    # Surface elements (visible first - instant impact!)
+    'IfcWall': 1,
+    'IfcWallStandardCase': 1,
+    'IfcCurtainWall': 1,
+    'IfcRoof': 1,
+    'IfcSlab': 1,
+    'IfcWindow': 2,
+    'IfcDoor': 2,
+
+    # MEP elements (needed for routing)
+    'IfcDuctSegment': 3,
+    'IfcPipeSegment': 3,
+    'IfcCableCarrierSegment': 3,
+    'IfcFlowSegment': 3,
+
+    # Structure (important context)
+    'IfcBeam': 4,
+    'IfcColumn': 4,
+
+    # Everything else (lower priority)
+    'DEFAULT': 5
+}
+
+def get_element_priority(ifc_class: str, min_z: float, max_z: float) -> int:
+    """
+    Calculate loading priority for element.
+
+    Lower number = higher priority (loaded first)
+
+    Priority factors:
+    - Surface elements (walls, roofs) - Priority 1-2
+    - MEP elements (for routing) - Priority 3
+    - High elevation (visible from outside) - Bonus
+    - Ground level - Bonus
+
+    Returns:
+        Priority value (1-5, lower is higher priority)
+    """
+    # Base priority from IFC class
+    base_priority = ELEMENT_PRIORITIES.get(ifc_class, ELEMENT_PRIORITIES['DEFAULT'])
+
+    # Bonus for surface/exterior elements (high elevation or ground level)
+    if max_z > 10000:  # High up (> 10m) - likely exterior/roof
+        base_priority -= 0.5
+    elif min_z < 500:  # Ground level (< 0.5m) - likely foundation/ground floor
+        base_priority -= 0.3
+
+    return base_priority
 
 
 class ChunkedSemanticLoader:
@@ -27,20 +80,27 @@ class ChunkedSemanticLoader:
     def __init__(self, db_conn: sqlite3.Connection,
                  parent_collection: bpy.types.Collection,
                  discipline_collections: Dict[str, bpy.types.Collection],
-                 batch_size: int = 100):
+                 batch_size: int = 100,
+                 pause_between_batches: float = 0.05,
+                 priority_loading: bool = True):
         """
-        Initialize chunked loader.
+        Initialize chunked loader with priority-based progressive loading.
 
         Args:
             db_conn: SQLite database connection
             parent_collection: Parent federation collection
             discipline_collections: Dict to store discipline collections
             batch_size: Number of elements to process per tick (default 100)
+            pause_between_batches: Seconds to pause between batches (default 0.05s)
+            priority_loading: Enable priority-based loading (surface first)
         """
         self.db_conn = db_conn
         self.parent_collection = parent_collection
         self.discipline_collections = discipline_collections
         self.batch_size = batch_size
+        self.pause_between_batches = pause_between_batches
+        self.priority_loading = priority_loading
+        self.last_batch_time = time.time()
 
         # Get site offset to bring objects to origin
         cursor = db_conn.cursor()
@@ -76,11 +136,26 @@ class ChunkedSemanticLoader:
 
         self.elements = cursor.fetchall()
         self.total = len(self.elements)
+
+        # Sort elements by priority (surface elements first!)
+        if self.priority_loading:
+            print(f"  Sorting {self.total:,} elements by priority (surface elements first)...")
+            self.elements = sorted(
+                self.elements,
+                key=lambda elem: get_element_priority(
+                    ifc_class=elem[1],  # ifc_class
+                    min_z=elem[7],      # min_z (in mm)
+                    max_z=elem[8]       # max_z (in mm)
+                )
+            )
+            print(f"  ✓ Priority sorting complete - surface elements will load first!")
+
         self.current_index = 0
         self.shapes = []
 
         print(f"  Chunked loader initialized: {self.total:,} elements")
         print(f"  Batch size: {self.batch_size}")
+        print(f"  Pause between batches: {self.pause_between_batches}s (prevents jerky system)")
         print(f"  Estimated ticks: {(self.total + self.batch_size - 1) // self.batch_size}")
 
     def is_complete(self) -> bool:
@@ -99,13 +174,21 @@ class ChunkedSemanticLoader:
 
     def process_next_batch(self) -> List[bpy.types.Object]:
         """
-        Process next batch of elements.
+        Process next batch of elements with smart pausing.
 
         Returns:
             List of objects created in this batch
         """
         if self.is_complete():
             return []
+
+        # Pause between batches to prevent jerky system
+        if self.pause_between_batches > 0:
+            elapsed = time.time() - self.last_batch_time
+            if elapsed < self.pause_between_batches:
+                time.sleep(self.pause_between_batches - elapsed)
+
+        batch_start_time = time.time()
 
         # Calculate batch range
         start_idx = self.current_index
@@ -128,11 +211,20 @@ class ChunkedSemanticLoader:
                 'min_z': min_z / 1000.0, 'max_z': max_z / 1000.0,
             }
 
+            # Convert bbox dict to tuple for semantic_utils functions
+            bbox_tuple = (
+                min_x / 1000.0, min_y / 1000.0, min_z / 1000.0,
+                max_x / 1000.0, max_y / 1000.0, max_z / 1000.0
+            )
+
             # Infer semantic type
             semantic_type = semantic_utils.get_semantic_type(ifc_class)
 
-            # Extract dimensions from bbox
-            dimensions = semantic_utils.extract_profile_dimensions(bbox, semantic_type)
+            # Determine dominant axis for linear elements
+            dominant_axis = semantic_utils.determine_dominant_axis(bbox_tuple)
+
+            # Extract dimensions from bbox with dominant axis
+            dimensions = semantic_utils.extract_profile_dimensions(bbox_tuple, semantic_type, dominant_axis)
 
             # Create Bmesh shape based on semantic type
             obj = self._create_semantic_object(
@@ -161,40 +253,65 @@ class ChunkedSemanticLoader:
                 batch_shapes.append(obj)
                 self.shapes.append(obj)
 
-        # Update progress
+        # Batch scene graph update (much faster than per-object updates)
+        if batch_shapes:
+            bpy.context.view_layer.update()
+
+        # Update progress and timing
         self.current_index = end_idx
+        self.last_batch_time = time.time()
+
+        # Log batch performance
+        batch_time = (self.last_batch_time - batch_start_time) * 1000  # Convert to ms
+        if batch_shapes:
+            # Show what types of elements were loaded (for visual feedback)
+            ifc_types = set(elem[1] for elem in batch_elements[:5])  # First 5 types
+            type_str = ', '.join(list(ifc_types)[:2])  # Show first 2 types
+            print(f"  ⏳ Progress: {self.current_index}/{self.total} ({(self.current_index/self.total*100):.1f}%) | "
+                  f"Batch time: {batch_time:.1f}ms | Loading: {type_str}...")
 
         return batch_shapes
 
     def _create_semantic_object(self, guid: str, semantic_type: str,
-                                dimensions: dict, discipline: str,
+                                dimensions: tuple, discipline: str,
                                 ifc_class: str) -> Optional[bpy.types.Object]:
         """Create semantic shape using shape templates"""
 
-        # Create Bmesh based on semantic type
-        bm = bmesh.new()
+        # Convert dimensions tuple (width, height) to dict for shape_templates
+        # extract_profile_dimensions returns (profile_width, profile_height) in meters
+        profile_width, profile_height = dimensions
 
-        if semantic_type == 'pipe':
-            shape_templates.create_pipe_basic(bm, dimensions)
-        elif semantic_type == 'duct':
-            shape_templates.create_duct_basic(bm, dimensions)
-        elif semantic_type == 'cable_tray':
-            shape_templates.create_cable_tray_basic(bm, dimensions)
-        elif semantic_type == 'conduit':
-            shape_templates.create_conduit_basic(bm, dimensions)
-        elif semantic_type == 'beam':
-            shape_templates.create_beam_basic(bm, dimensions)
-        elif semantic_type == 'column':
-            shape_templates.create_column_basic(bm, dimensions)
-        elif semantic_type == 'wall':
-            shape_templates.create_wall_basic(bm, dimensions)
-        elif semantic_type == 'slab':
-            shape_templates.create_slab_basic(bm, dimensions)
-        elif semantic_type == 'equipment':
-            shape_templates.create_equipment_basic(bm, dimensions)
+        # Build dimensions dict for create_shape_from_semantics
+        dim_dict = {}
+
+        # Determine profile type based on semantic type
+        if semantic_type in ['pipe', 'conduit']:
+            # Circular profile: use width as diameter, convert to radius
+            profile_type = 'CIRCULAR'
+            dim_dict['radius'] = (profile_width / 2.0) if profile_width else 0.05
+            dim_dict['length'] = profile_height if profile_height else 1.0  # Use height as length
         else:
-            # Generic box for unknown types
-            shape_templates.create_generic_box(bm, dimensions)
+            # Rectangular profile
+            profile_type = 'RECTANGULAR'
+            dim_dict['width'] = profile_width if profile_width else 0.5
+            dim_dict['height'] = profile_height if profile_height else 0.5
+            dim_dict['length'] = 1.0  # Default length
+
+        # Create Bmesh using unified shape template function
+        bm = shape_templates.create_shape_from_semantics(
+            ifc_class=ifc_class,
+            semantic_type=semantic_type,
+            profile_type=profile_type,
+            dimensions=dim_dict,
+            detail_level='basic'
+        )
+
+        if bm is None:
+            # Fallback: create simple box if shape generation failed
+            width = dim_dict.get('width', 0.5)
+            height = dim_dict.get('height', 0.5)
+            length = dim_dict.get('length', 1.0)
+            bm = shape_templates.create_box_basic(width, height, length)
 
         # Create mesh from Bmesh
         mesh = bpy.data.meshes.new(f"{semantic_type}_{guid}")

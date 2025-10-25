@@ -250,6 +250,51 @@ def get_material_id(semantic_type: str, discipline: str) -> int:
     return 10
 
 
+def calculate_instance_scale(bbox: Tuple[float, float, float, float, float, float],
+                              semantic_type: str) -> Tuple[float, float, float]:
+    """
+    Calculate scale values for GPU instancing based on bbox and semantic type.
+
+    Pre-calculates the scale transformation so visualization can directly apply it
+    without recalculating for each element.
+
+    Args:
+        bbox: Bounding box (min_x, min_y, min_z, max_x, max_y, max_z) in millimeters
+        semantic_type: Semantic type from get_semantic_type()
+
+    Returns:
+        Tuple of (scale_x, scale_y, scale_z) in meters for Blender object scaling
+    """
+    min_x, min_y, min_z, max_x, max_y, max_z = bbox
+
+    # Calculate dimensions in mm
+    width_mm = max_x - min_x
+    depth_mm = max_y - min_y
+    height_mm = max_z - min_z
+
+    # Convert to meters for Blender
+    width = width_mm / 1000.0
+    depth = depth_mm / 1000.0
+    height = height_mm / 1000.0
+
+    # Calculate scale based on semantic type
+    # Templates: CYLINDER radius=0.5m height=1.0m, BOX 1.0m×1.0m×1.0m
+    if semantic_type in ('pipe', 'conduit'):
+        # For cylinders: scale based on radius and height
+        radius = max(width, depth) / 2.0
+        scale_x = radius / 0.5  # Template radius is 0.5m
+        scale_y = radius / 0.5
+        scale_z = height / 1.0  # Template height is 1.0m
+    else:
+        # For boxes (walls, slabs, beams, columns, equipment, etc.)
+        # Template is 1.0m × 1.0m × 1.0m
+        scale_x = width / 1.0
+        scale_y = depth / 1.0
+        scale_z = height / 1.0
+
+    return (scale_x, scale_y, scale_z)
+
+
 def extract_semantic_metadata(guid: str,
                                ifc_class: str,
                                discipline: str,

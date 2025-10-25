@@ -928,77 +928,31 @@ class BIM_OT_select_discipline_clash(bpy.types.Operator):
 
         candidate = props.discipline_clash_candidates[props.active_discipline_clash_index]
 
-        # Get the merged IFC file
-        ifc_file = tool.Ifc.get()
-        if not ifc_file:
-            self.report({'ERROR'}, "No IFC file loaded")
+        # NEW: Use federation database for visualization (NO IFC NEEDED!)
+        db_path = props.bbox_database_path
+        if not db_path:
+            self.report({'ERROR'}, "No federation database loaded")
             return {"CANCELLED"}
 
-        # Try to find elements by GUID first (fast path)
-        elem_a = None
-        elem_b = None
+        from . import federation_viz_helper
 
-        try:
-            elem_a = ifc_file.by_guid(candidate.guid_a)
-            print(f"✓ Found Element A by GUID")
-        except RuntimeError:
-            print(f"Element A not found by GUID, using spatial lookup")
+        # Find or create elements from database
+        print(f"Finding clash elements from database (no IFC needed)...")
+        obj_a, obj_b = federation_viz_helper.get_clash_elements_for_visualization(
+            candidate.guid_a,
+            candidate.guid_b,
+            db_path
+        )
 
-        try:
-            elem_b = ifc_file.by_guid(candidate.guid_b)
-            print(f"✓ Found Element B by GUID")
-        except RuntimeError:
-            print(f"Element B not found by GUID, using spatial lookup")
+        # Report status
+        if not obj_a:
+            self.report({'WARNING'}, f"Element A ({candidate.name_a}) not found in database")
+        if not obj_b:
+            self.report({'WARNING'}, f"Element B ({candidate.name_b}) not found in database")
 
-        # If GUID lookup failed, use spatial lookup (robust fallback)
-        if not elem_a or not elem_b:
-            # Query federation DB for bbox centers (lazy loading)
-            from . import gizmo
-            db_path = props.bbox_database_path
-            center_a, center_b = gizmo.get_clash_bbox_centers(
-                candidate.guid_a,
-                candidate.guid_b,
-                db_path
-            )
-
-            if not elem_a and center_a:
-                elem_a = self.find_element_by_spatial_proximity(
-                    ifc_file,
-                    candidate.ifc_class_a,
-                    center_a
-                )
-                if elem_a:
-                    print(f"✓ Found Element A by spatial proximity")
-
-            if not elem_b and center_b:
-                elem_b = self.find_element_by_spatial_proximity(
-                    ifc_file,
-                    candidate.ifc_class_b,
-                    center_b
-                )
-                if elem_b:
-                    print(f"✓ Found Element B by spatial proximity")
-
-        if not elem_a and not elem_b:
-            self.report({'ERROR'},
-                f"Neither clash element found in loaded IFC. "
-                f"Elements may not be loaded or geometries may have changed.")
+        if not obj_a and not obj_b:
+            self.report({'ERROR'}, "Neither clash element found in federation database")
             return {"CANCELLED"}
-
-        # Find corresponding Blender objects (only for found elements)
-        obj_a = tool.Ifc.get_object(elem_a) if elem_a else None
-        obj_b = tool.Ifc.get_object(elem_b) if elem_b else None
-
-        # Report which elements were found/not found
-        if not elem_a:
-            self.report({'WARNING'}, f"Element A ({candidate.name_a}) not in loaded IFC file")
-        elif not obj_a:
-            self.report({'WARNING'}, f"Element A ({candidate.name_a}) found but not loaded in viewport")
-
-        if not elem_b:
-            self.report({'WARNING'}, f"Element B ({candidate.name_b}) not in loaded IFC file")
-        elif not obj_b:
-            self.report({'WARNING'}, f"Element B ({candidate.name_b}) found but not loaded in viewport")
 
         # Select objects
         bpy.ops.object.select_all(action='DESELECT')

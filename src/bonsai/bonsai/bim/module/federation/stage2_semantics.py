@@ -1,6 +1,6 @@
 """
-Stage 2: Semantic Shape Generation
-===================================
+Stage 2: Semantic Shape Generation with Priority-Based Progressive Loading
+===========================================================================
 
 Creates procedurally generated semantic shapes for working visualization.
 
@@ -8,12 +8,19 @@ Performance: 9-12 seconds for 44K elements (VALIDATED: 9.4s actual)
 Memory: ~108 MB
 Purpose: Working visualization (USER CAN WORK after this stage!)
 
+**NEW: Priority-Based Loading**
+- Surface elements first (walls, roofs, slabs) → instant visual impact
+- MEP elements second (ducts, pipes) → routing-ready
+- Interior elements last → complete detail
+
 Characteristics:
 - Semantic-aware shapes (pipes→cylinders, ducts→boxes, beams→boxes)
 - Bmesh-based procedural generation
 - Dimensions inferred from bbox
 - Materials inferred from semantic type + discipline
 - Transforms applied from database (accurate positioning)
+- **Batched scene updates** → better performance
+- **Pauses between batches** → responsive system
 
 User can perform after Stage 2:
 - Conduit routing
@@ -27,10 +34,49 @@ Part of Phase 1: Three-Stage Inference-Based Loading
 import bpy
 import bmesh
 import sqlite3
+import time
 from mathutils import Vector, Euler
 from typing import List, Optional, Callable, Dict
 from . import semantic_utils
 from ..clash import shape_templates
+
+
+# Priority system for progressive loading (same as chunked version)
+ELEMENT_PRIORITIES = {
+    # Surface elements (visible first - instant impact!)
+    'IfcWall': 1,
+    'IfcWallStandardCase': 1,
+    'IfcCurtainWall': 1,
+    'IfcRoof': 1,
+    'IfcSlab': 1,
+    'IfcWindow': 2,
+    'IfcDoor': 2,
+
+    # MEP elements (needed for routing)
+    'IfcDuctSegment': 3,
+    'IfcPipeSegment': 3,
+    'IfcCableCarrierSegment': 3,
+    'IfcFlowSegment': 3,
+
+    # Structure (important context)
+    'IfcBeam': 4,
+    'IfcColumn': 4,
+
+    # Everything else (lower priority)
+    'DEFAULT': 5
+}
+
+def get_element_priority(ifc_class: str, min_z: float, max_z: float) -> float:
+    """Calculate loading priority (lower = higher priority)"""
+    base_priority = ELEMENT_PRIORITIES.get(ifc_class, ELEMENT_PRIORITIES['DEFAULT'])
+
+    # Bonus for exterior/surface elements
+    if max_z > 10000:  # High elevation (>10m) - likely exterior/roof
+        base_priority -= 0.5
+    elif min_z < 500:  # Ground level (<0.5m) - likely foundation
+        base_priority -= 0.3
+
+    return base_priority
 
 
 def create_semantic_shapes(db_conn: sqlite3.Connection,
@@ -88,12 +134,27 @@ def create_semantic_shapes(db_conn: sqlite3.Connection,
     elements = cursor.fetchall()
     total = len(elements)
 
-    print(f"Creating {total:,} semantic shapes...")
+    # Sort elements by priority (surface elements first!)
+    print(f"Sorting {total:,} elements by priority (surface elements first)...")
+    elements_sorted = sorted(
+        elements,
+        key=lambda elem: get_element_priority(
+            ifc_class=elem[1],  # ifc_class
+            min_z=elem[7],      # min_z (in mm)
+            max_z=elem[8]       # max_z (in mm)
+        )
+    )
+    print(f"✓ Priority sorting complete - surface elements will load first!")
+
+    print(f"Creating {total:,} semantic shapes with progressive loading...")
     print("This takes 9-12 seconds for 44K elements...")
+    print("Surface elements (walls, roofs) will appear first!")
 
     shapes = []
+    batch_size = 1000  # Batch scene updates for better performance
+    last_update = time.time()
 
-    for idx, elem in enumerate(elements):
+    for idx, elem in enumerate(elements_sorted):
         guid, ifc_class, discipline = elem[0:3]
         min_x, max_x, min_y, max_y, min_z, max_z = elem[3:9]
         pos_x, pos_y, pos_z = elem[9:12]
@@ -209,6 +270,19 @@ def create_semantic_shapes(db_conn: sqlite3.Connection,
         discipline_coll.objects.link(obj)
 
         shapes.append(obj)
+
+        # Batched scene updates + pauses for responsive system
+        if (idx + 1) % batch_size == 0:
+            # Update scene graph once per batch (much faster than per-object)
+            bpy.context.view_layer.update()
+
+            # Small pause to prevent jerky system (50ms)
+            time.sleep(0.05)
+
+            # Show what types are being loaded
+            current_type = ifc_class
+            progress_pct = ((idx + 1) / total * 100)
+            print(f"  ⏳ Progress: {idx+1}/{total} ({progress_pct:.1f}%) | Loading: {current_type}...")
 
         # Progress callback every 500 elements
         if progress_callback and idx % 500 == 0:

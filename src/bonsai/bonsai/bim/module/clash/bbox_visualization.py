@@ -89,9 +89,11 @@ def get_model_offset(db_path: str = None) -> Vector:
     """
     Get coordinate offset to convert IFC world coords to Blender scene coords.
 
+    Apollo 13 Approach: Read pre-calculated offset from site_context (already in meters)
+
     Priority:
     1. Cached MEP offset from scene properties
-    2. Calculate from database element bounds (center of all elements)
+    2. Pre-calculated offset from site_context table (Apollo 13)
     3. Fallback to zero offset
     """
     # Try MEP cached offset first
@@ -99,27 +101,24 @@ def get_model_offset(db_path: str = None) -> Vector:
     if cached:
         return Vector(cached)
 
-    # If database path provided, calculate offset from element bounds
+    # If database path provided, read pre-calculated offset from site_context (Apollo 13)
     if db_path and Path(db_path).exists():
         try:
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
+
+            # Apollo 13: Read pre-calculated federation offset (already in meters!)
             cursor.execute("""
-                SELECT MIN(min_x), MIN(min_y), MIN(min_z),
-                       MAX(max_x), MAX(max_y), MAX(max_z)
-                FROM elements_rtree
+                SELECT offset_x, offset_y, offset_z
+                FROM site_context
+                LIMIT 1
             """)
-            bounds = cursor.fetchone()
+            site_offset = cursor.fetchone()
             conn.close()
 
-            if bounds and all(b is not None for b in bounds):
-                # Calculate center of all elements
-                center_x = (bounds[0] + bounds[3]) / 2
-                center_y = (bounds[1] + bounds[4]) / 2
-                center_z = (bounds[2] + bounds[5]) / 2
-
-                # Offset to bring elements to origin
-                offset = Vector((center_x, center_y, center_z))
+            if site_offset and all(v is not None for v in site_offset):
+                # Offset is already in meters from preprocessing
+                offset = Vector((site_offset[0], site_offset[1], site_offset[2]))
                 print(f"  Calculated offset from database: ({offset.x:.1f}, {offset.y:.1f}, {offset.z:.1f})")
 
                 # Cache it for future use
@@ -127,7 +126,7 @@ def get_model_offset(db_path: str = None) -> Vector:
 
                 return offset
         except Exception as e:
-            print(f"  Warning: Could not calculate offset from database: {e}")
+            print(f"  Warning: Could not read offset from site_context: {e}")
 
     # Fallback: assume zero offset (IFC world coords = Blender coords)
     return Vector((0, 0, 0))
@@ -168,7 +167,8 @@ def load_federation_bboxes(db_path: str, limit: Optional[int] = None) -> Dict[st
     discipline_bboxes = {}
     for row in rows:
         discipline = row[0]
-        bbox = tuple(row[1:7])  # min_x, min_y, min_z, max_x, max_y, max_z
+        # Convert bbox coordinates from mm to m
+        bbox = tuple(coord / 1000.0 for coord in row[1:7])  # min_x, min_y, min_z, max_x, max_y, max_z (mm → m)
         guid = row[7]
 
         if discipline not in discipline_bboxes:

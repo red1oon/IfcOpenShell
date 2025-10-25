@@ -176,15 +176,48 @@ class BIM_PT_federation(Panel):
                 if props.filter_by_discipline:
                     col.prop(props, "active_disciplines", text="Disciplines")
 
-        # Three-Stage Loading section
+        # Visualization Control section
         layout.separator()
         box = layout.box()
-        box.label(text="Three-Stage Loading (Non-Blocking):", icon="MESH_DATA")
+        box.label(text="Visualization Control:", icon="MESH_DATA")
+
+        # Show current mode status
+        if props.visualization_mode != 'NONE':
+            row = box.row()
+            row.label(text=f"Active: {props.visualization_mode.title()}", icon='CHECKMARK')
+
+        # Visualization mode selector
         col = box.column(align=True)
-        col.operator("bim.load_federation_model", icon="IMPORT", text="Load Federation Model")
-        col.label(text="Stage 1: Instant wireframes (work immediately!)")
-        col.label(text="Stage 2: Auto-loads in background (~2 min)")
-        col.label(text="Stage 3: Material details (automatic)")
+        col.label(text="Mode:")
+        col.prop(props, "visualization_mode", text="")
+
+        # Mode descriptions
+        col = box.column(align=True)
+        col.scale_y = 0.8
+        if props.visualization_mode == 'BBOXES':
+            col.label(text="→ Fast wireframes (< 1s)")
+            col.label(text="→ Best for coordination work")
+        elif props.visualization_mode == 'SEMANTICS':
+            col.label(text="→ Simple 3D shapes (~23s)")
+            col.label(text="→ Balanced detail/performance")
+        elif props.visualization_mode == 'MATERIALS':
+            col.label(text="→ Detailed + materials (~30s)")
+            col.label(text="→ Best for presentations")
+
+        box.separator()
+
+        # Action buttons
+        col = box.column(align=True)
+        row = col.row(align=True)
+        row.scale_y = 1.3
+        row.operator("bim.reload_federation_viewport", icon="FILE_REFRESH", text="Reload Viewport")
+        row = col.row(align=True)
+        row.operator("bim.unload_federation_viewport", icon="PANEL_CLOSE", text="Unload All")
+
+        # Auto-reload setting
+        box.separator()
+        col = box.column()
+        col.prop(props, "auto_reload_on_open", text="Auto-reload on file open")
 
         # Clash Detection section
         if props.index_loaded:
