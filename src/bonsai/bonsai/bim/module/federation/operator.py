@@ -1059,6 +1059,11 @@ class ReloadFederationViewport(bpy.types.Operator):
 
         mode = props.visualization_mode
 
+        # Start logging to timestamped file
+        from . import logging_utils
+        log_path = logging_utils.start_file_logging()
+        print(f"📝 Logging to: {log_path}")
+
         try:
             from .visualization_manager import VisualizationManager
             viz_mgr = VisualizationManager(props.federation_database_path)
@@ -1067,6 +1072,7 @@ class ReloadFederationViewport(bpy.types.Operator):
             if mode == 'NONE':
                 viz_mgr.unload_all_layers()
                 self.report({'INFO'}, "Visualization unloaded")
+                logging_utils.stop_file_logging()
                 return {'FINISHED'}
 
             # Check if all layers are already loaded
@@ -1081,6 +1087,7 @@ class ReloadFederationViewport(bpy.types.Operator):
                 self.report({'INFO'},
                     f"Switched to {mode} in {elapsed*1000:.1f}ms")
 
+                logging_utils.stop_file_logging()
                 return {'FINISHED'}
 
             else:
@@ -1099,6 +1106,7 @@ class ReloadFederationViewport(bpy.types.Operator):
                     f"Loaded all layers in {total_time:.1f}s (future switches instant!)")
 
                 print(f"\n✓ All layers ready! Future mode switches will be instant (<0.1s)")
+                logging_utils.stop_file_logging()
                 return {'FINISHED'}
 
         except Exception as e:
@@ -1107,6 +1115,7 @@ class ReloadFederationViewport(bpy.types.Operator):
             traceback.print_exc()
 
             self.report({'ERROR'}, f"Operation failed: {str(e)}")
+            logging_utils.stop_file_logging()
             return {'CANCELLED'}
 
 
@@ -1118,6 +1127,11 @@ class UnloadFederationViewport(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
+        # Start logging to timestamped file
+        from . import logging_utils
+        log_path = logging_utils.start_file_logging()
+        print(f"📝 Logging to: {log_path}")
+
         try:
             from .visualization_manager import VisualizationManager
 
@@ -1125,9 +1139,11 @@ class UnloadFederationViewport(bpy.types.Operator):
             viz_mgr = VisualizationManager(props.federation_database_path)
 
             # Unload all layers
+            print("\n🗑️  Unloading all visualization layers...")
             viz_mgr.unload_all_layers()
 
             self.report({'INFO'}, "Unloaded all visualization layers")
+            logging_utils.stop_file_logging()
             return {'FINISHED'}
 
         except Exception as e:
@@ -1136,4 +1152,5 @@ class UnloadFederationViewport(bpy.types.Operator):
             traceback.print_exc()
 
             self.report({'ERROR'}, f"Unload failed: {str(e)}")
+            logging_utils.stop_file_logging()
             return {'CANCELLED'}
