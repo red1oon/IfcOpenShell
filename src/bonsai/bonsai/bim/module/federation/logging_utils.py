@@ -56,14 +56,24 @@ class TeeStream:
 
     def write(self, data: str):
         """Write to both file and console."""
-        self.file.write(data)
-        self.file.flush()  # Ensure immediate write
+        # Check if file is still open before writing
+        if self.file and not self.file.closed:
+            try:
+                self.file.write(data)
+                self.file.flush()  # Ensure immediate write
+            except (ValueError, OSError):
+                # File was closed, skip file writing
+                pass
         self.console.write(data)
         self.console.flush()
 
     def flush(self):
         """Flush both streams."""
-        self.file.flush()
+        if self.file and not self.file.closed:
+            try:
+                self.file.flush()
+            except (ValueError, OSError):
+                pass
         self.console.flush()
 
     def isatty(self):
