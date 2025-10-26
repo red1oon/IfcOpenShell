@@ -147,17 +147,12 @@ def create_wireframe_boxes(db_conn: sqlite3.Connection,
     update_time = time.time() - update_start
     print(f"✓ Viewport updated in {update_time:.2f}s")
 
-    # Frame all objects in viewport (only in GUI mode)
+    # Force viewport redraw (skip auto-framing - building already centered near origin)
     try:
         if bpy.context.window_manager.windows:
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:
                     if area.type == 'VIEW_3D':
-                        # Override context to frame all visible objects
-                        with bpy.context.temp_override(window=window, area=area):
-                            # View all objects (fast - doesn't require selection)
-                            bpy.ops.view3d.view_all()
-
                         # Force redraw
                         area.tag_redraw()
 
@@ -165,7 +160,7 @@ def create_wireframe_boxes(db_conn: sqlite3.Connection,
             print(f"   ✅ {len(wireframes):,} wireframes visible")
             print(f"   ✅ Mouse works normally")
             print(f"   ✅ Outliner accessible")
-            print(f"   ✅ Viewport auto-framed")
+            print(f"   ℹ️  Building centered near origin (auto-framing skipped)")
             print(f"   ⏳ Stage 2 will load progressively in background")
             print(f"      (Surface elements will appear first, then MEP, then complete)")
         else:
