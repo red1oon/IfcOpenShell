@@ -76,14 +76,18 @@ def get_log_filepath() -> Path:
     Get timestamped log file path.
 
     Returns:
-        Path to log file: ~/Documents/bonsai/console_YYYYMMDD_HHMMSS.log
+        Path to log file: ~/Documents/bonsai/consolelogs/console_YYYYMMDD_HHMMSS.log
     """
     home = Path.home()
 
-    # Priority 1: ~/Documents/bonsai/
-    bonsai_docs = home / "Documents" / "bonsai"
-    if bonsai_docs.exists() and bonsai_docs.is_dir():
-        log_dir = bonsai_docs
+    # Priority 1: ~/Documents/bonsai/consolelogs/
+    bonsai_consolelogs = home / "Documents" / "bonsai" / "consolelogs"
+    if bonsai_consolelogs.exists() and bonsai_consolelogs.is_dir():
+        log_dir = bonsai_consolelogs
+    elif (home / "Documents" / "bonsai").exists():
+        # Create consolelogs folder if bonsai exists but consolelogs doesn't
+        bonsai_consolelogs.mkdir(parents=True, exist_ok=True)
+        log_dir = bonsai_consolelogs
     else:
         # Priority 2: ~/Documents/
         documents = home / "Documents"

@@ -411,6 +411,8 @@ def load_tessellated_shapes_instanced(db_path: str,
     print(f"  Creating {len(unique_templates):,} unique template objects...")
 
     templates_used = {}
+    meshes_with_materials = set()  # Track which meshes already have materials
+
     for geom_hash, discipline, ifc_class in unique_templates:
         template_key = f"{geom_hash}_{discipline}"
 
@@ -423,11 +425,20 @@ def load_tessellated_shapes_instanced(db_path: str,
         template_name = f"Template_{ifc_class}_{discipline}_{geom_hash[:8]}"
         template_obj = bpy.data.objects.new(template_name, mesh)
 
-        # Assign material
-        semantic_type = semantic_utils.get_semantic_type(ifc_class)
-        material = get_or_create_material(semantic_type, discipline)
-        if len(mesh.materials) == 0:
-            mesh.materials.append(material)
+        # Assign material (only once per mesh to avoid material invalidation)
+        if geom_hash not in meshes_with_materials:
+            semantic_type = semantic_utils.get_semantic_type(ifc_class)
+            try:
+                material = get_or_create_material(semantic_type, discipline)
+                # Safe material assignment
+                if len(mesh.materials) == 0:
+                    mesh.materials.append(material)
+                else:
+                    mesh.materials[0] = material
+                meshes_with_materials.add(geom_hash)
+            except ReferenceError:
+                # Material was removed - skip for now
+                pass
 
         # Link to templates collection
         templates_collection.objects.link(template_obj)

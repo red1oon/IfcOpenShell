@@ -176,53 +176,16 @@ class BIM_PT_federation(Panel):
                 if props.filter_by_discipline:
                     col.prop(props, "active_disciplines", text="Disciplines")
 
-        # Visualization Control section
+        # Viewport Control section
         layout.separator()
         box = layout.box()
-        box.label(text="Visualization Control:", icon="MESH_DATA")
+        box.label(text="Viewport Control:", icon="MESH_DATA")
 
-        # Show current mode status
-        if props.visualization_mode != 'NONE':
-            row = box.row()
-            row.label(text=f"Active: {props.visualization_mode.title()}", icon='CHECKMARK')
-
-        # Geometry loading mode (Tessellation toggle)
-        box.separator()
-        col = box.column(align=True)
-        col.prop(props, "use_tessellation", toggle=True)
-
-        # Show performance info based on selection
+        # Info
         col = box.column(align=True)
         col.scale_y = 0.8
-        if props.use_tessellation:
-            col.label(text="✓ Exact IFC geometry (~27s load)", icon='BLANK1')
-            col.label(text="✓ 100% accurate shapes", icon='BLANK1')
-        else:
-            col.label(text="⚡ Approximate shapes (~9s load)", icon='BLANK1')
-            col.label(text="⚠ Procedural geometry", icon='BLANK1')
-
-        box.separator()
-
-        # Visualization mode selector (ONLY show if tessellation is OFF)
-        if not props.use_tessellation:
-            col = box.column(align=True)
-            col.label(text="Visualization Detail:")
-            col.prop(props, "visualization_mode", text="")
-
-            # Mode descriptions
-            col = box.column(align=True)
-            col.scale_y = 0.8
-            if props.visualization_mode == 'BBOXES':
-                col.label(text="→ Fast wireframes (< 1s)")
-                col.label(text="→ Best for coordination work")
-            elif props.visualization_mode == 'SEMANTICS':
-                col.label(text="→ Simple 3D shapes (~9s)")
-                col.label(text="→ Balanced detail/performance")
-            elif props.visualization_mode == 'MATERIALS':
-                col.label(text="→ Detailed + materials (~12s)")
-                col.label(text="→ Best for presentations")
-
-            box.separator()
+        col.label(text="Loads exact IFC geometry with GPU instancing")
+        col.label(text="Expected load time: ~27 seconds for 14K elements")
 
         box.separator()
 

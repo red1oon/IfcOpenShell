@@ -1106,6 +1106,10 @@ class ReloadFederationViewport(bpy.types.Operator):
 
                 self.report({'INFO'}, f"Loaded {len(objects):,} objects with exact geometry in {elapsed:.1f}s")
                 print(f"\n✓ Tessellation complete: {len(objects):,} objects in {elapsed:.1f}s")
+
+                # Auto-frame viewport to loaded geometry (like IFC import does)
+                self._frame_viewport_to_objects(context, objects)
+
                 logging_utils.stop_file_logging()
                 return {'FINISHED'}
 
@@ -1162,6 +1166,56 @@ class ReloadFederationViewport(bpy.types.Operator):
             self.report({'ERROR'}, f"Operation failed: {str(e)}")
             logging_utils.stop_file_logging()
             return {'CANCELLED'}
+
+    def _frame_viewport_to_objects(self, context, objects):
+        """
+        Auto-frame viewport to loaded objects (like IFC import does).
+
+        Args:
+            context: Blender context
+            objects: List of loaded objects
+        """
+        if not objects:
+            return
+
+        print("\n📷 Auto-framing viewport to loaded geometry...")
+
+        try:
+            # Select all loaded objects
+            bpy.ops.object.select_all(action='DESELECT')
+            for obj in objects:
+                if obj and obj.name in bpy.data.objects:
+                    obj.select_set(True)
+
+            # Set one as active
+            if objects and objects[0].name in bpy.data.objects:
+                context.view_layer.objects.active = objects[0]
+
+            # Frame all selected objects in all 3D viewports
+            for area in context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    # Get the 3D view region
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            # Frame selected
+                            override = {
+                                'area': area,
+                                'region': region,
+                                'edit_object': context.edit_object,
+                                'scene': context.scene,
+                                'screen': context.screen,
+                                'window': context.window,
+                            }
+                            with context.temp_override(**override):
+                                bpy.ops.view3d.view_selected()
+                            break
+
+            print(f"✓ Viewport framed to {len(objects):,} objects")
+
+        except Exception as e:
+            print(f"⚠️  Viewport framing failed: {e}")
+            # Don't fail the whole operation if framing fails
+            pass
 
 
 class UnloadFederationViewport(bpy.types.Operator):
