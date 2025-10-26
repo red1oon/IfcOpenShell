@@ -186,9 +186,26 @@ class BIM_PT_federation(Panel):
             row = box.row()
             row.label(text=f"Active: {props.visualization_mode.title()}", icon='CHECKMARK')
 
+        # Geometry loading mode (NEW: Tessellation toggle)
+        box.separator()
+        col = box.column(align=True)
+        col.prop(props, "use_tessellation", toggle=True)
+
+        # Show performance info based on selection
+        col = box.column(align=True)
+        col.scale_y = 0.8
+        if props.use_tessellation:
+            col.label(text="✓ Exact IFC geometry (~27s load)", icon='BLANK1')
+            col.label(text="✓ 100% accurate shapes", icon='BLANK1')
+        else:
+            col.label(text="⚡ Approximate shapes (~9s load)", icon='BLANK1')
+            col.label(text="⚠ Procedural geometry", icon='BLANK1')
+
+        box.separator()
+
         # Visualization mode selector
         col = box.column(align=True)
-        col.label(text="Mode:")
+        col.label(text="Visualization Detail:")
         col.prop(props, "visualization_mode", text="")
 
         # Mode descriptions

@@ -136,6 +136,14 @@ class BIMFederationProperties(PropertyGroup):
         default='SEMANTICS'  # Default to SEMANTICS for best balance
     )
 
+    # Geometry loading mode
+    use_tessellation: BoolProperty(
+        name="Use Exact IFC Geometry",
+        description="Load exact tessellated geometry from IFC (27s, 100% accurate)\n"
+                    "If disabled, uses progressive procedural geometry (9s, approximate shapes)",
+        default=True  # DEFAULT TO TESSELLATION for accuracy
+    )
+
     # Auto-reload on file open
     auto_reload_on_open: BoolProperty(
         name="Auto-reload Visualization",

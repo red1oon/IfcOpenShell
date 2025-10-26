@@ -31,6 +31,7 @@ from . import stage1_wireframes
 from . import stage2_semantics
 from . import stage2_gpu_instancing
 from . import stage2_gpu_progressive
+from . import stage2_tessellation_loader
 from . import stage3_details
 
 
@@ -193,9 +194,9 @@ class FederationLoader:
                         offset=self.federation_offset
                     )
                 else:
-                    print("  Using GPU instancing (30× faster!)")
-                    shapes = stage2_gpu_instancing.create_semantic_shapes_instanced(
-                        conn,
+                    print("  Using tessellated geometry loading (exact IFC shapes!)")
+                    shapes = stage2_tessellation_loader.load_tessellated_shapes_instanced(
+                        str(self.db_path),
                         self.federation_collection,
                         self.discipline_collections,
                         progress_callback,

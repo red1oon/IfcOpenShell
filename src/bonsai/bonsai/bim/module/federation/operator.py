@@ -712,6 +712,17 @@ class LoadFederationModel(bpy.types.Operator):
             # Create loader
             loader = FederationLoader(self.filepath)
 
+            # Configure loading mode from UI properties
+            props = context.scene.BIMFederationProperties
+            if props.use_tessellation:
+                # Use tessellation (exact geometry, 27s)
+                loader.stage2_progressive = False
+                print("  ⚙️  Loading Mode: TESSELLATION (exact IFC geometry)")
+            else:
+                # Use progressive (approximate geometry, 9s)
+                loader.stage2_progressive = True
+                print("  ⚙️  Loading Mode: PROGRESSIVE (approximate procedural)")
+
             # Load Stage 1 only (wireframes - instant)
             print("\n🔷 Loading Stage 1: Wireframes (instant feedback)...")
             wireframes = loader.load_stage1()
@@ -788,6 +799,16 @@ class LoadFederationStage2Background(bpy.types.Operator):
 
                     # Recreate loader (just for collections, don't load anything)
                     self._federation_loader = FederationLoader(db_path)
+
+                    # Configure loading mode from UI properties
+                    props = context.scene.BIMFederationProperties
+                    if props.use_tessellation:
+                        self._federation_loader.stage2_progressive = False
+                        print("  ⚙️  Loading Mode: TESSELLATION (exact IFC geometry)")
+                    else:
+                        self._federation_loader.stage2_progressive = True
+                        print("  ⚙️  Loading Mode: PROGRESSIVE (approximate procedural)")
+
                     print("  ✓ FederationLoader created")
 
                     # Open database connection
