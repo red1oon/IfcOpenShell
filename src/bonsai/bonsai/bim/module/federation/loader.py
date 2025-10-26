@@ -67,19 +67,46 @@ class FederationLoader:
         if not self.db_path.exists():
             raise FileNotFoundError(f"Database not found: {db_path}")
 
-        # Verify database schema version
+        # Verify database schema version (with backward compatibility)
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT value FROM schema_info WHERE key = 'version'")
-            result = cursor.fetchone()
-            if not result or result[0] != "2.0.0":
-                raise ValueError(f"Database schema version mismatch. Expected 2.0.0, found {result[0] if result else 'unknown'}")
+            # Try to get schema version (optional - for v2.0.0 databases)
+            try:
+                cursor.execute("SELECT value FROM schema_info WHERE key = 'version'")
+                result = cursor.fetchone()
+                schema_version = result[0] if result else "unknown"
+                print(f"Database schema version: {schema_version}")
+            except sqlite3.OperationalError:
+                # schema_info table doesn't exist - likely enhanced schema
+                schema_version = "enhanced"
+                print("Database schema: Enhanced IFC4 schema (with full metadata)")
 
             # Retrieve federation-wide coordinate offset for viewport centering
             # This offset centers the entire federation (all terminals) near origin
-            cursor.execute("SELECT offset_x, offset_y, offset_z FROM site_context LIMIT 1")
-            offset_result = cursor.fetchone()
+            # Try new global_offset table first (enhanced schema), fall back to site_context (old schema)
+            offset_result = None
+
+            try:
+                # NEW: Try global_offset table (enhanced schema with IFC4)
+                cursor.execute("SELECT offset_x, offset_y, offset_z FROM global_offset WHERE id = 1")
+                offset_result = cursor.fetchone()
+                if offset_result:
+                    print("  Using global_offset from enhanced schema")
+            except sqlite3.OperationalError:
+                # Table doesn't exist, try old schema
+                pass
+
+            if not offset_result:
+                # OLD: Fall back to site_context table (v2.0.0 schema)
+                try:
+                    cursor.execute("SELECT offset_x, offset_y, offset_z FROM site_context LIMIT 1")
+                    offset_result = cursor.fetchone()
+                    if offset_result:
+                        print("  Using site_context from v2.0.0 schema")
+                except sqlite3.OperationalError:
+                    pass
+
             if offset_result:
                 from mathutils import Vector
                 self.federation_offset = Vector((

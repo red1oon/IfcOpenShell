@@ -76,18 +76,29 @@ class FederationElement:
 
 class FederationIndex:
     """Spatial index for federated IFC models using SQLite R-tree"""
-    
+
     def __init__(self, database_path: Path, logger: Optional[logging.Logger] = None):
         self.database_path = Path(database_path)
         self.logger = logger or self._setup_logging()
         self.is_loaded = False
-        
+
         # Statistics
         self.stats = {
             'total_elements': 0,
             'disciplines': set(),
             'ifc_classes': set()
         }
+
+        # Coordinate system for viewport/database conversions
+        try:
+            from . import coordinate_utils
+            self.coords = coordinate_utils.CoordinateSystem(str(database_path))
+            offset = self.coords.get_offset()
+            self.logger.info(f"Coordinate system loaded: offset ({offset[0]:.2f}, {offset[1]:.2f}, {offset[2]:.2f})m")
+        except Exception as e:
+            self.logger.warning(f"Could not load coordinate system: {e}")
+            self.logger.warning("Viewport coordinate queries will not be available")
+            self.coords = None
     
     def _setup_logging(self) -> logging.Logger:
         """Configure logging"""
@@ -177,35 +188,36 @@ class FederationIndex:
                         f"{len(self.stats['disciplines'])} disciplines")
     
     def _validate_database(self):
-        """Validate database schema"""
+        """Validate database schema (supports both v2.0.0 and enhanced schemas)"""
         conn = sqlite3.connect(self.database_path)
         cursor = conn.cursor()
-        
-        # Check schema version
+
+        # Check schema version (optional - enhanced schema may not have this)
         try:
             cursor.execute("SELECT value FROM schema_info WHERE key = 'version'")
             version = cursor.fetchone()
-            if not version:
-                raise ValueError("Missing schema version in database")
+            if version:
+                self.logger.info(f"Database schema version: {version[0]}")
         except sqlite3.OperationalError:
-            raise ValueError("Invalid database: missing schema_info table")
-        
+            # schema_info table doesn't exist - likely enhanced schema
+            self.logger.info("Database schema: Enhanced (with full metadata)")
+
         # Check elements_meta table exists
         cursor.execute("""
-            SELECT name FROM sqlite_master 
+            SELECT name FROM sqlite_master
             WHERE type='table' AND name='elements_meta'
         """)
         if not cursor.fetchone():
             raise ValueError("Invalid database: missing elements_meta table")
-        
+
         # Check elements_rtree exists
         cursor.execute("""
-            SELECT name FROM sqlite_master 
+            SELECT name FROM sqlite_master
             WHERE type='table' AND name='elements_rtree'
         """)
         if not cursor.fetchone():
             raise ValueError("Invalid database: missing elements_rtree spatial index")
-        
+
         conn.close()
     
     def query_by_bbox(self, min_xyz: Tuple[float, float, float],
@@ -415,7 +427,139 @@ class FederationIndex:
             'class_count': len(self.stats['ifc_classes']),
             'is_loaded': self.is_loaded
         }
-    
+
+    # ========================================================================
+    # VIEWPORT COORDINATE QUERY METHODS (New - for routing integration)
+    # ========================================================================
+
+    def query_by_bbox_viewport(self, min_xyz_viewport: Tuple[float, float, float],
+                               max_xyz_viewport: Tuple[float, float, float],
+                               disciplines: Optional[List[str]] = None,
+                               ifc_classes: Optional[List[str]] = None) -> List[FederationElement]:
+        """
+        Query elements using VIEWPORT coordinates (offset-relative meters).
+
+        This is the main query method for routing and clash detection.
+        Automatically converts viewport coordinates to database coordinates.
+
+        Args:
+            min_xyz_viewport: Minimum corner in viewport coords (meters, offset-relative)
+            max_xyz_viewport: Maximum corner in viewport coords (meters, offset-relative)
+            disciplines: Optional filter by discipline tags
+            ifc_classes: Optional filter by IFC classes
+
+        Returns:
+            List of FederationElement instances (with database coords in millimeters)
+
+        Example:
+            # User clicks at (50, 30, 12) in Blender viewport
+            results = index.query_by_bbox_viewport((49, 29, 11), (51, 31, 13))
+            # Internally converts to absolute coords and queries R-tree
+
+        Note:
+            - Input coordinates are viewport-relative (near origin)
+            - Returned elements have database coordinates (millimeters)
+            - Use coords.db_to_viewport() to convert results back if needed
+        """
+        if not self.coords:
+            raise RuntimeError(
+                "Coordinate system not loaded. Cannot perform viewport queries.\n"
+                "Use query_by_bbox() with database coordinates instead."
+            )
+
+        # Convert viewport bbox to database bbox (mm)
+        bbox_viewport = (
+            min_xyz_viewport[0], min_xyz_viewport[1], min_xyz_viewport[2],
+            max_xyz_viewport[0], max_xyz_viewport[1], max_xyz_viewport[2]
+        )
+        bbox_db_mm = self.coords.viewport_bbox_to_db(bbox_viewport)
+
+        # Query with database coords (mm)
+        return self.query_by_bbox(
+            bbox_db_mm[:3], bbox_db_mm[3:],
+            disciplines, ifc_classes
+        )
+
+    def query_corridor_viewport(self, start_viewport: Tuple[float, float, float],
+                                end_viewport: Tuple[float, float, float],
+                                buffer: float = 0.5,
+                                disciplines: Optional[List[str]] = None) -> List[FederationElement]:
+        """
+        Query elements along a corridor using VIEWPORT coordinates.
+
+        Args:
+            start_viewport: Start point in viewport coords (meters, offset-relative)
+            end_viewport: End point in viewport coords (meters, offset-relative)
+            buffer: Corridor width/height buffer in METERS (default: 0.5m)
+            disciplines: Optional filter by discipline tags
+
+        Returns:
+            List of FederationElement instances along corridor
+
+        Example:
+            # Route conduit from point A to point B
+            obstacles = index.query_corridor_viewport(
+                start_viewport=(10.5, 20.3, 12.0),
+                end_viewport=(15.8, 25.6, 12.0),
+                buffer=0.5,  # 500mm clearance
+                disciplines=['ACMV', 'FP']  # Only MEP elements
+            )
+        """
+        if not self.coords:
+            raise RuntimeError("Coordinate system not loaded. Cannot perform viewport queries.")
+
+        # Calculate bbox encompassing corridor with buffer
+        min_x = min(start_viewport[0], end_viewport[0]) - buffer
+        max_x = max(start_viewport[0], end_viewport[0]) + buffer
+        min_y = min(start_viewport[1], end_viewport[1]) - buffer
+        max_y = max(start_viewport[1], end_viewport[1]) + buffer
+        min_z = min(start_viewport[2], end_viewport[2]) - buffer
+        max_z = max(start_viewport[2], end_viewport[2]) + buffer
+
+        return self.query_by_bbox_viewport(
+            (min_x, min_y, min_z),
+            (max_x, max_y, max_z),
+            disciplines
+        )
+
+    def query_by_point_viewport(self, point_viewport: Tuple[float, float, float],
+                                radius: float = 0.1,
+                                disciplines: Optional[List[str]] = None) -> List[FederationElement]:
+        """
+        Query elements at or near a point using VIEWPORT coordinates.
+
+        Args:
+            point_viewport: Query point in viewport coords (meters, offset-relative)
+            radius: Search radius in METERS (default: 0.1m = 100mm)
+            disciplines: Optional filter by discipline tags
+
+        Returns:
+            List of FederationElement instances
+
+        Example:
+            # Find elements near clicked point
+            nearby = index.query_by_point_viewport(
+                point_viewport=(12.5, 18.3, 10.2),
+                radius=0.2  # 200mm search radius
+            )
+        """
+        x, y, z = point_viewport
+        min_xyz = (x - radius, y - radius, z - radius)
+        max_xyz = (x + radius, y + radius, z + radius)
+
+        return self.query_by_bbox_viewport(min_xyz, max_xyz, disciplines=disciplines)
+
+    def get_offset(self) -> Optional[Tuple[float, float, float]]:
+        """
+        Get the global coordinate offset.
+
+        Returns:
+            (offset_x, offset_y, offset_z) in meters, or None if not available
+        """
+        if self.coords:
+            return self.coords.get_offset()
+        return None
+
     def clear(self):
         """Clear index from memory (minimal cleanup needed with SQLite)"""
         self.is_loaded = False

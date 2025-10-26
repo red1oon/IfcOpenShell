@@ -507,6 +507,12 @@ def load_tessellated_shapes_instanced(db_path: str,
             remaining = (total - idx - 1) / rate if rate > 0 else 0
             print(f"  {idx+1:,}/{total:,} instances ({rate:.1f}/s, {remaining:.1f}s remaining)")
 
+            # CRITICAL: Batched scene updates prevent O(n²) slowdown!
+            # Without this, performance degrades exponentially (2.3× slower)
+            # See: ProjectKnowledge/Stage2_Performance_Lessons_Learned.md
+            bpy.context.view_layer.update()
+            time.sleep(0.05)  # Let GC run
+
     instance_elapsed = time.time() - instance_start
 
     # Link instances to collections (batch operation)
