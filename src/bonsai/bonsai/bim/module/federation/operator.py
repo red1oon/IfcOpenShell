@@ -1086,6 +1086,30 @@ class ReloadFederationViewport(bpy.types.Operator):
         print(f"📝 Logging to: {log_path}")
 
         try:
+            # CRITICAL: Check tessellation toggle
+            if props.use_tessellation:
+                # Use tessellation loader (exact IFC geometry)
+                print(f"\n{'='*70}")
+                print("TESSELLATION MODE: Loading exact IFC geometry")
+                print(f"{'='*70}\n")
+
+                from .loader import FederationLoader
+                import time
+
+                start = time.time()
+                loader = FederationLoader(props.federation_database_path)
+                loader.stage2_progressive = False  # Use tessellation
+
+                # Load Stage 2 (Stage 1 wireframes in background mode don't work well)
+                objects = loader.load_stage2()
+                elapsed = time.time() - start
+
+                self.report({'INFO'}, f"Loaded {len(objects):,} objects with exact geometry in {elapsed:.1f}s")
+                print(f"\n✓ Tessellation complete: {len(objects):,} objects in {elapsed:.1f}s")
+                logging_utils.stop_file_logging()
+                return {'FINISHED'}
+
+            # Use old VisualizationManager (progressive/procedural)
             from .visualization_manager import VisualizationManager
             viz_mgr = VisualizationManager(props.federation_database_path)
 

@@ -99,7 +99,7 @@ class FederationLoader:
         self.stage1_gpu_enabled = False  # Using GPU batch drawing instead of objects
         self.stage2_objects = []  # Semantic shape objects
         self.stage2_gpu_instancing = True  # Use GPU instancing for Stage 2 (30× faster!)
-        self.stage2_progressive = True  # Use progressive loading (surface-first UX)
+        self.stage2_progressive = False  # DEFAULT: Use tessellation (exact geometry, 27s)
         self.stage3_enabled = False  # Detailed shapes toggle (default OFF)
 
         # Collections for organization

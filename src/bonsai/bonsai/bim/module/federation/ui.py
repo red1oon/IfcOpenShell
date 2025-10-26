@@ -186,7 +186,7 @@ class BIM_PT_federation(Panel):
             row = box.row()
             row.label(text=f"Active: {props.visualization_mode.title()}", icon='CHECKMARK')
 
-        # Geometry loading mode (NEW: Tessellation toggle)
+        # Geometry loading mode (Tessellation toggle)
         box.separator()
         col = box.column(align=True)
         col.prop(props, "use_tessellation", toggle=True)
@@ -203,23 +203,26 @@ class BIM_PT_federation(Panel):
 
         box.separator()
 
-        # Visualization mode selector
-        col = box.column(align=True)
-        col.label(text="Visualization Detail:")
-        col.prop(props, "visualization_mode", text="")
+        # Visualization mode selector (ONLY show if tessellation is OFF)
+        if not props.use_tessellation:
+            col = box.column(align=True)
+            col.label(text="Visualization Detail:")
+            col.prop(props, "visualization_mode", text="")
 
-        # Mode descriptions
-        col = box.column(align=True)
-        col.scale_y = 0.8
-        if props.visualization_mode == 'BBOXES':
-            col.label(text="→ Fast wireframes (< 1s)")
-            col.label(text="→ Best for coordination work")
-        elif props.visualization_mode == 'SEMANTICS':
-            col.label(text="→ Simple 3D shapes (~23s)")
-            col.label(text="→ Balanced detail/performance")
-        elif props.visualization_mode == 'MATERIALS':
-            col.label(text="→ Detailed + materials (~30s)")
-            col.label(text="→ Best for presentations")
+            # Mode descriptions
+            col = box.column(align=True)
+            col.scale_y = 0.8
+            if props.visualization_mode == 'BBOXES':
+                col.label(text="→ Fast wireframes (< 1s)")
+                col.label(text="→ Best for coordination work")
+            elif props.visualization_mode == 'SEMANTICS':
+                col.label(text="→ Simple 3D shapes (~9s)")
+                col.label(text="→ Balanced detail/performance")
+            elif props.visualization_mode == 'MATERIALS':
+                col.label(text="→ Detailed + materials (~12s)")
+                col.label(text="→ Best for presentations")
+
+            box.separator()
 
         box.separator()
 
@@ -235,16 +238,6 @@ class BIM_PT_federation(Panel):
         box.separator()
         col = box.column()
         col.prop(props, "auto_reload_on_open", text="Auto-reload on file open")
-
-        # Clash Detection section
-        if props.index_loaded:
-            layout.separator()
-            box = layout.box()
-            box.label(text="Clash Detection (Database):", icon="OUTLINER_OB_FORCE_FIELD")
-            col = box.column(align=True)
-            col.operator("bim.detect_federation_clashes", icon="ERROR", text="Detect Clashes")
-            col.label(text="Pure bbox collision (NO IFC!)")
-            col.label(text="(~0.5s for 44K elements)")
 
         # Tips section
         layout.separator()
