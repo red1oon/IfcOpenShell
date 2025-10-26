@@ -189,8 +189,10 @@ def create_tessellated_mesh(guid: str, db_conn: sqlite3.Connection) -> Optional[
     # Create Blender mesh
     mesh = bpy.data.meshes.new(guid[:8])
 
-    # Convert to meters (database stores in meters from IFC world coords)
-    mesh.from_pydata(vertices, [], faces)
+    # Vertices are stored element-local in millimeters (from IFC tessellation)
+    # Blender expects meters, so we convert: divide by 1000
+    vertices_m = [(x/1000, y/1000, z/1000) for x, y, z in vertices]
+    mesh.from_pydata(vertices_m, [], faces)
     mesh.update()
 
     return mesh
@@ -331,11 +333,11 @@ def load_tessellated_shapes_instanced(db_path: str,
     5. Instance elements with correct transforms
 
     Args:
-        db_path: Path to IFCmigrated.db
+        db_path: Path to IFCmigrated.db (with GPS-aligned centers in mm)
         parent_collection: Parent federation collection
         discipline_collections: Dict to store discipline collections
         progress_callback: Optional callback(current, total, message)
-        offset: Site offset for coordinate transform (in meters)
+        offset: Global viewport offset for centering (in meters, from global_offset table)
 
     Returns:
         List of created instance objects
@@ -473,12 +475,15 @@ def load_tessellated_shapes_instanced(db_path: str,
         # Create instance (shares mesh with template!)
         instance = bpy.data.objects.new(guid, template_obj.data)
 
-        # Set location (geometry is already at correct position from tessellation)
-        # Just need to apply site offset
+        # Set location (convert mm → m, then apply viewport offset)
+        # Database stores GPS-aligned centers in millimeters
+        # Global offset is in meters (for viewport centering)
+        # Blender obj.location expects meters
+        center_m = Vector((center_x / 1000, center_y / 1000, center_z / 1000))
         if offset:
-            instance.location = Vector((center_x, center_y, center_z)) - offset
+            instance.location = center_m - offset
         else:
-            instance.location = Vector((center_x, center_y, center_z))
+            instance.location = center_m
 
         # No scale/rotation needed - geometry is exact!
 

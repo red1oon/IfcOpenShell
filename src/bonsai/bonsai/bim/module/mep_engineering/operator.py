@@ -222,28 +222,39 @@ class RouteMEPConduit(Operator):
             import json
             context.scene["MEP_last_route_waypoints"] = json.dumps(waypoints)
             print("✓ Waypoints stored for visualization")
-            
-            # Generate IFC geometry using tool
+
+            # Generate IFC geometry using tool (if IFC file is loaded)
             import bonsai.tool as bonsai_tool
+            import logging
+            logger = logging.getLogger("operator.py")
+
             ifc_file = bonsai_tool.Ifc.get()
-            
-            generator = tool.IFCGeometryGenerator()
-            global_ids = generator.generate_conduit(ifc_file, waypoints, diameter)
-            
-            if not global_ids:
-                self.report({'ERROR'}, "Failed to generate IFC geometry")
-                return {"CANCELLED"}
-            
-            # Store GlobalIds for focus
-            import json
-            context.scene["MEP_last_conduit_ids"] = json.dumps(global_ids)
-            
-            self.report({'INFO'}, 
-                       f"✓ Conduit route complete! Created {len(global_ids)} elements. "
-                       "Click 'View Conduit Routing' to visualize.")
-            self.report({'INFO'}, 
-                       f"✓ Conduit route complete! Created {len(waypoints)-1} segments. "
-                       "Click 'View Conduit Routing' to visualize.")
+
+            if ifc_file:
+                # IFC file available - generate geometry
+                logger.info("IFC file available - generating conduit geometry")
+                generator = tool.IFCGeometryGenerator()
+                global_ids = generator.generate_conduit(ifc_file, waypoints, diameter)
+
+                if not global_ids:
+                    self.report({'ERROR'}, "Failed to generate IFC geometry")
+                    logger.error("Failed to generate IFC conduit geometry")
+                    return {"CANCELLED"}
+
+                # Store GlobalIds for focus
+                context.scene["MEP_last_conduit_ids"] = json.dumps(global_ids)
+
+                logger.info(f"✓ Created {len(global_ids)} IFC conduit elements")
+                self.report({'INFO'},
+                           f"✓ Conduit route complete! Created {len(global_ids)} elements. "
+                           "Click 'View Conduit Routing' to visualize.")
+            else:
+                # Database-only mode - skip IFC generation
+                logger.info("Database-only mode - skipping IFC geometry generation")
+                print("ℹ️  Database-only mode: Route found, but skipping IFC generation (no IFC file loaded)")
+                self.report({'INFO'},
+                           f"✓ Route found with {len(waypoints)} waypoints (database-only mode - no IFC generated). "
+                           "Click 'View Conduit Routing' to visualize.")
             
         except Exception as e:
             self.report({'ERROR'}, f"Pathfinding failed: {str(e)}")

@@ -292,32 +292,16 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
     )
     _is_enabled = True
 
-    # Frame viewport to show elements (now at origin after offset)
-    print(f"\nFraming viewport to show elements...")
-    for window in bpy.context.window_manager.windows:
-        for area in window.screen.areas:
-            if area.type == 'VIEW_3D':
-                # Set viewport to frame a reasonable volume around origin
-                # Elements are now centered at origin after offset
-                for space in area.spaces:
-                    if space.type == 'VIEW_3D':
-                        # Set view distance to see all elements (~200m span typical)
-                        space.region_3d.view_distance = 300.0
-                        space.region_3d.view_location = (0.0, 0.0, 0.0)
-
-                        # Optional: Set to top view for better initial orientation
-                        # Uncomment if you want automatic top view:
-                        # space.region_3d.view_rotation = Quaternion((1.0, 0.0, 0.0, 0.0))
-
-                area.tag_redraw()
-
+    # NO viewport framing - building already centered by global offset!
+    # Original IFC loading doesn't auto-frame, neither should we.
+    # User can manually zoom/pan as needed (just like with native IFC import).
     print(f"\n{'='*70}")
     print(f"✅ BBOX VISUALIZATION ENABLED")
     print(f"{'='*70}")
     print(f"Elements rendered: {total_elements:,}")
     print(f"Disciplines: {', '.join(_bbox_batches.keys())}")
     print(f"GPU batches: {len(_bbox_batches)}")
-    print(f"Viewport: Framed to origin (elements offset-corrected)")
+    print(f"Viewport: Building centered near origin (no auto-framing)")
     print(f"{'='*70}\n")
 
     return True, f"Rendering {total_elements:,} elements as wireframe bboxes"

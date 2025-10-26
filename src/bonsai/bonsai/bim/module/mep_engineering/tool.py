@@ -618,13 +618,24 @@ class IFCGeometryGenerator:
         """
         import ifcopenshell.api
         from mathutils import Vector
-        
+        import logging
+
+        logger = logging.getLogger("tool.py")
+
         print(f"\n📦 Generating IFC geometry:")
         print(f"   Waypoints: {len(waypoints)}")
         print(f"   Diameter: {diameter}mm ({diameter/1000.0}m)")
-        
-        if not ifc_file or len(waypoints) < 2:
-            print(f"   ✗ Invalid input (file={ifc_file is not None}, waypoints={len(waypoints)})")
+
+        if not ifc_file:
+            msg = "   ℹ️  Skipped: No IFC file available (database-only mode)"
+            print(msg)
+            logger.info(msg)
+            return False
+
+        if len(waypoints) < 2:
+            msg = f"   ✗ Invalid input: insufficient waypoints ({len(waypoints)} < 2)"
+            print(msg)
+            logger.error(msg)
             return False
         
         try:

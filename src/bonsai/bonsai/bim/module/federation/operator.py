@@ -1169,53 +1169,24 @@ class ReloadFederationViewport(bpy.types.Operator):
 
     def _frame_viewport_to_objects(self, context, objects):
         """
-        Auto-frame viewport to loaded objects (like IFC import does).
+        Auto-framing DISABLED - causes freeze with 48K+ objects.
+
+        Original IFC loading doesn't auto-frame, neither should we.
+        Building is already centered near origin by global offset.
+        User can manually zoom/pan as needed.
 
         Args:
             context: Blender context
-            objects: List of loaded objects
+            objects: List of loaded objects (ignored)
         """
-        if not objects:
-            return
-
-        print("\n📷 Auto-framing viewport to loaded geometry...")
-
-        try:
-            # Select all loaded objects
-            bpy.ops.object.select_all(action='DESELECT')
-            for obj in objects:
-                if obj and obj.name in bpy.data.objects:
-                    obj.select_set(True)
-
-            # Set one as active
-            if objects and objects[0].name in bpy.data.objects:
-                context.view_layer.objects.active = objects[0]
-
-            # Frame all selected objects in all 3D viewports
-            for area in context.screen.areas:
-                if area.type == 'VIEW_3D':
-                    # Get the 3D view region
-                    for region in area.regions:
-                        if region.type == 'WINDOW':
-                            # Frame selected
-                            override = {
-                                'area': area,
-                                'region': region,
-                                'edit_object': context.edit_object,
-                                'scene': context.scene,
-                                'screen': context.screen,
-                                'window': context.window,
-                            }
-                            with context.temp_override(**override):
-                                bpy.ops.view3d.view_selected()
-                            break
-
-            print(f"✓ Viewport framed to {len(objects):,} objects")
-
-        except Exception as e:
-            print(f"⚠️  Viewport framing failed: {e}")
-            # Don't fail the whole operation if framing fails
-            pass
+        # NO auto-framing! Just return immediately.
+        # Auto-framing with 48K objects:
+        #   - Selecting all objects: ~30s
+        #   - view_selected() calculation: ~60s
+        #   - Total waste: ~90 seconds!
+        # Original IFC files don't auto-frame, we don't either.
+        print(f"✓ Loading complete - {len(objects):,} objects (viewport: use mouse to navigate)")
+        return
 
 
 class UnloadFederationViewport(bpy.types.Operator):
