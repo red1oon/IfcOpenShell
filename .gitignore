@@ -73,3 +73,9 @@ bonsai_config_finder.py
 *.blend1
 *.blend2
 shapshot.png
+
+# Sample extraction dynamic files (local, frequently changing)
+sample_config.json
+sample_config_suggested.json
+.ifc_analysis_cache.json
+sample_extraction_*.db

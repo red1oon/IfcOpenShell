@@ -202,6 +202,34 @@ class BIM_PT_federation(Panel):
         col = box.column()
         col.prop(props, "auto_reload_on_open", text="Auto-reload on file open")
 
+        # Sample Database section
+        layout.separator()
+        box = layout.box()
+        box.label(text="Sample Database (Fast Testing):", icon="EXPERIMENTAL")
+
+        col = box.column(align=True)
+        col.scale_y = 0.8
+        col.label(text="Quick extraction: ELEC-anchored, 300-800 elements, ~5 min")
+        col.label(text="Perfect for testing clash detection and routing")
+
+        box.separator()
+
+        # Sample extraction buttons
+        col = box.column(align=True)
+        row = col.row(align=True)
+        row.scale_y = 1.3
+        row.operator("bim.extract_sample_database", icon="EXPERIMENTAL", text="Extract Sample")
+        row = col.row(align=True)
+        row.operator("bim.redo_sample_extraction", icon="FILE_REFRESH", text="Redo Sample")
+
+        box.separator()
+
+        # Info
+        col = box.column(align=True)
+        col.scale_y = 0.8
+        col.label(text="Extract: Analyze & extract optimal region")
+        col.label(text="Redo: Try different region (randomized)")
+
         # Tips section
         layout.separator()
         box = layout.box()
@@ -209,7 +237,7 @@ class BIM_PT_federation(Panel):
         col = box.column(align=True)
         col.scale_y = 0.8
         col.label(text="1. Add all discipline IFC files")
-        col.label(text="2. Set output database path")
-        col.label(text="3. Run preprocessing (may take 10-20 min)")
-        col.label(text="4. Load index for spatial queries")
+        col.label(text="2. Extract sample or run full preprocessing")
+        col.label(text="3. Load sample for fast testing (~5 min)")
+        col.label(text="4. Or preprocess full federation (10-20 min)")
         col.label(text="5. Use in MEP routing or clash detection")

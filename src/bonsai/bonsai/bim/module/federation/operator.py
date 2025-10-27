@@ -1224,3 +1224,287 @@ class UnloadFederationViewport(bpy.types.Operator):
             self.report({'ERROR'}, f"Unload failed: {str(e)}")
             logging_utils.stop_file_logging()
             return {'CANCELLED'}
+
+
+class ExtractSampleDatabase(bpy.types.Operator):
+    """Extract a small sample database for fast testing (ELEC-anchored, ~5 min)"""
+    bl_idname = "bim.extract_sample_database"
+    bl_label = "Extract Sample Database"
+    bl_description = "Analyze IFC files and extract optimal sample region (ELEC-anchored, 300-800 elements, ~5 min)"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        print("\n" + "="*70)
+        print("SAMPLE DATABASE EXTRACTION")
+        print("="*70)
+
+        try:
+            props = context.scene.BIMFederationProperties
+
+            # Get IFC directory from federated files
+            ifc_files = [f.name for f in props.federated_files if f.name]
+            if not ifc_files:
+                self.report({'ERROR'}, "No IFC files configured. Add files first.")
+                return {'CANCELLED'}
+
+            # Get directory from first file
+            ifc_dir = Path(ifc_files[0]).parent
+            print(f"IFC directory: {ifc_dir}")
+
+            # Find scripts directory
+            addon_dir = Path(__file__).parent
+            scripts_dir = Path.home() / "Documents" / "bonsai" / "Scripts"
+
+            if not scripts_dir.exists():
+                self.report({'ERROR'}, f"Scripts directory not found: {scripts_dir}")
+                return {'CANCELLED'}
+
+            # Step 1: Run IFC analysis to find optimal region
+            print("\n📊 Step 1: Analyzing IFC files for optimal sampling region...")
+            analyze_script = scripts_dir / "analyze_ifc_for_sampling.py"
+
+            if not analyze_script.exists():
+                self.report({'ERROR'}, f"Analysis script not found: {analyze_script}")
+                return {'CANCELLED'}
+
+            result = subprocess.run(
+                [sys.executable, str(analyze_script), "--ifc-dir", str(ifc_dir)],
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+
+            if result.returncode != 0:
+                print(f"Analysis failed:\n{result.stderr}")
+                self.report({'ERROR'}, "IFC analysis failed. Check console.")
+                return {'CANCELLED'}
+
+            print(result.stdout)
+            print("✓ Analysis complete")
+
+            # Step 2: Copy suggested config to active config
+            suggested_config = scripts_dir / "sample_config_suggested.json"
+            active_config = scripts_dir / "sample_config.json"
+
+            if not suggested_config.exists():
+                self.report({'ERROR'}, "Analysis did not generate sample_config_suggested.json")
+                return {'CANCELLED'}
+
+            import shutil
+            shutil.copy(suggested_config, active_config)
+            print(f"✓ Copied {suggested_config.name} → {active_config.name}")
+
+            # Step 3: Run extraction
+            print("\n⚙️  Step 2: Extracting sample database...")
+            extract_script = scripts_dir / "extract_tessellation_to_db_v2.py"
+
+            if not extract_script.exists():
+                self.report({'ERROR'}, f"Extraction script not found: {extract_script}")
+                return {'CANCELLED'}
+
+            # Determine output database path
+            if props.federation_database_path:
+                base_db = Path(props.federation_database_path)
+                sample_db = base_db.parent / f"sample_{base_db.stem}.db"
+            else:
+                sample_db = scripts_dir.parent / "DatabaseFiles" / "sample_extraction.db"
+
+            print(f"Output database: {sample_db}")
+
+            result = subprocess.run(
+                [sys.executable, str(extract_script), "--sample", "--output", str(sample_db)],
+                capture_output=True,
+                text=True,
+                timeout=600  # 10 min timeout
+            )
+
+            if result.returncode != 0:
+                print(f"Extraction failed:\n{result.stderr}")
+                self.report({'ERROR'}, "Sample extraction failed. Check console.")
+                return {'CANCELLED'}
+
+            print(result.stdout)
+            print("✓ Extraction complete")
+
+            # Step 4: Validate sample
+            print("\n✅ Step 3: Validating sample quality...")
+            validate_script = scripts_dir / "validate_sample_quick.py"
+
+            validation_summary = "Validation skipped"
+            if validate_script.exists():
+                result = subprocess.run(
+                    [sys.executable, str(validate_script), str(sample_db)],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+
+                print(result.stdout)
+
+                # Parse validation result for status bar
+                if "SAMPLE READY FOR TESTING" in result.stdout:
+                    validation_summary = "✅ Sample ready (all checks passed)"
+                    self.report({'INFO'}, validation_summary)
+                elif "SAMPLE ACCEPTABLE WITH WARNINGS" in result.stdout:
+                    validation_summary = "⚠ Sample acceptable (some warnings)"
+                    self.report({'WARNING'}, validation_summary)
+                elif "SAMPLE NOT SUITABLE" in result.stdout:
+                    validation_summary = "✗ Sample not suitable (critical issues)"
+                    self.report({'ERROR'}, validation_summary)
+                else:
+                    validation_summary = "Validation completed"
+                    self.report({'INFO'}, validation_summary)
+            else:
+                print("⚠ Validation script not found, skipping")
+                self.report({'WARNING'}, "Validation script not found")
+
+            # Update props to point to sample database
+            props.federation_database_path = str(sample_db)
+
+            print(f"\n{'='*70}")
+            print("✅ SAMPLE EXTRACTION COMPLETE")
+            print(f"Database: {sample_db}")
+            print(f"Validation: {validation_summary}")
+            print("Next: Click 'Reload Viewport' to load sample")
+            print(f"{'='*70}\n")
+
+            return {'FINISHED'}
+
+        except subprocess.TimeoutExpired:
+            self.report({'ERROR'}, "Extraction timed out (>10 min). Try smaller region.")
+            return {'CANCELLED'}
+
+        except Exception as e:
+            print(f"\n❌ Sample extraction failed: {e}")
+            import traceback
+            traceback.print_exc()
+            self.report({'ERROR'}, f"Extraction failed: {str(e)}")
+            return {'CANCELLED'}
+
+
+class RedoSampleExtraction(bpy.types.Operator):
+    """Try extracting a different sample region (randomized)"""
+    bl_idname = "bim.redo_sample_extraction"
+    bl_label = "Redo Sample Extraction"
+    bl_description = "Try a different sample region with randomized boundaries"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        print("\n" + "="*70)
+        print("REDO SAMPLE EXTRACTION (Randomized)")
+        print("="*70)
+
+        try:
+            props = context.scene.BIMFederationProperties
+
+            # Get IFC directory from federated files
+            ifc_files = [f.name for f in props.federated_files if f.name]
+            if not ifc_files:
+                self.report({'ERROR'}, "No IFC files configured. Add files first.")
+                return {'CANCELLED'}
+
+            ifc_dir = Path(ifc_files[0]).parent
+            print(f"IFC directory: {ifc_dir}")
+
+            # Find scripts directory
+            scripts_dir = Path.home() / "Documents" / "bonsai" / "Scripts"
+
+            # Step 1: Re-analyze with randomization
+            print("\n📊 Re-analyzing IFC files (randomized boundaries)...")
+            analyze_script = scripts_dir / "analyze_ifc_for_sampling.py"
+
+            result = subprocess.run(
+                [sys.executable, str(analyze_script), "--ifc-dir", str(ifc_dir), "--randomize"],
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+
+            if result.returncode != 0:
+                print(f"Analysis failed:\n{result.stderr}")
+                self.report({'ERROR'}, "IFC re-analysis failed. Check console.")
+                return {'CANCELLED'}
+
+            print(result.stdout)
+            print("✓ Re-analysis complete (new region found)")
+
+            # Step 2: Copy suggested config
+            suggested_config = scripts_dir / "sample_config_suggested.json"
+            active_config = scripts_dir / "sample_config.json"
+
+            import shutil
+            shutil.copy(suggested_config, active_config)
+            print(f"✓ Updated {active_config.name} with new region")
+
+            # Step 3: Re-run extraction
+            print("\n⚙️  Re-extracting sample with new region...")
+            extract_script = scripts_dir / "extract_tessellation_to_db_v2.py"
+
+            # Generate new timestamped database name
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            sample_db = scripts_dir.parent / "DatabaseFiles" / f"sample_extraction_{timestamp}.db"
+
+            print(f"Output database: {sample_db}")
+
+            result = subprocess.run(
+                [sys.executable, str(extract_script), "--sample", "--output", str(sample_db)],
+                capture_output=True,
+                text=True,
+                timeout=600
+            )
+
+            if result.returncode != 0:
+                print(f"Extraction failed:\n{result.stderr}")
+                self.report({'ERROR'}, "Sample re-extraction failed. Check console.")
+                return {'CANCELLED'}
+
+            print(result.stdout)
+
+            # Step 4: Validate
+            print("\n✅ Validating new sample...")
+            validate_script = scripts_dir / "validate_sample_quick.py"
+
+            validation_summary = "Validation skipped"
+            if validate_script.exists():
+                result = subprocess.run(
+                    [sys.executable, str(validate_script), str(sample_db)],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                print(result.stdout)
+
+                # Parse validation result for status bar
+                if "SAMPLE READY FOR TESTING" in result.stdout:
+                    validation_summary = "✅ New sample ready (all checks passed)"
+                    self.report({'INFO'}, validation_summary)
+                elif "SAMPLE ACCEPTABLE WITH WARNINGS" in result.stdout:
+                    validation_summary = "⚠ New sample acceptable (some warnings)"
+                    self.report({'WARNING'}, validation_summary)
+                elif "SAMPLE NOT SUITABLE" in result.stdout:
+                    validation_summary = "✗ New sample not suitable - try Redo again"
+                    self.report({'ERROR'}, validation_summary)
+                else:
+                    validation_summary = "Validation completed"
+                    self.report({'INFO'}, validation_summary)
+            else:
+                self.report({'WARNING'}, "Validation script not found")
+
+            # Update props
+            props.federation_database_path = str(sample_db)
+
+            print(f"\n{'='*70}")
+            print("✅ REDO COMPLETE - NEW SAMPLE READY")
+            print(f"Database: {sample_db}")
+            print(f"Validation: {validation_summary}")
+            print(f"{'='*70}\n")
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            print(f"\n❌ Redo failed: {e}")
+            import traceback
+            traceback.print_exc()
+            self.report({'ERROR'}, f"Redo failed: {str(e)}")
+            return {'CANCELLED'}
