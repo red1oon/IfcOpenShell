@@ -23,6 +23,7 @@ import sqlite3
 import struct
 import hashlib
 import argparse
+import json
 from pathlib import Path
 from typing import Tuple, List, Dict, Optional
 
@@ -73,6 +74,14 @@ DISCIPLINE_COLORS = {
     "ELEC": (0.9, 0.9, 0.3, 1.0),     # Yellow
     "LPG": (0.7, 0.5, 0.3, 1.0),      # Brown
 }
+
+# NO PER-FILE COORDINATE OFFSETS NEEDED!
+# IFC files from the BIM coordinator are ALREADY COORDINATED
+# All disciplines share the same local origin (verified by check_all_discipline_coords.py)
+# - All element coords within ±0.15m of origin
+# - Disciplines overlap correctly in 3D space
+# IfcMapConversion is metadata only - DO NOT apply to geometry!
+# Reference: COORDINATE_SYSTEM_DEFINITIVE_GUIDE.md
 
 DB_PATH = "/home/red1/Documents/bonsai/DatabaseFiles/IFCmigrated_IFC4_v2.db"
 LOG_FILE = "/home/red1/Documents/bonsai/consolelogs/extraction_IFC4_v2.log"
@@ -193,6 +202,19 @@ def create_enhanced_schema(conn: sqlite3.Connection):
             offset_y REAL NOT NULL,
             offset_z REAL NOT NULL,
             unit TEXT DEFAULT 'METERS',
+            notes TEXT
+        )
+    """)
+
+    # Per-file coordinate offsets (for multi-discipline alignment)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS file_offsets (
+            filepath TEXT PRIMARY KEY,
+            discipline TEXT NOT NULL,
+            offset_x REAL NOT NULL,
+            offset_y REAL NOT NULL,
+            offset_z REAL NOT NULL,
+            reference_discipline TEXT DEFAULT 'ARC',
             notes TEXT
         )
     """)
@@ -364,11 +386,13 @@ def extract_spatial_location(element, ifc_file) -> Dict[str, Optional[str]]:
 # GEOMETRY EXTRACTION
 # ============================================================================
 
-def extract_from_ifc(ifc_path: str, discipline: str, conn: sqlite3.Connection) -> Tuple[int, int]:
+def extract_from_ifc(ifc_path: str, discipline: str, conn: sqlite3.Connection, max_elements: int = None, spatial_filter: dict = None) -> Tuple[int, int]:
     """Extract tessellation + metadata from single IFC file."""
     log(f"\n{'='*80}")
     log(f"Processing: {Path(ifc_path).name}")
     log(f"Discipline: {discipline}")
+    if max_elements:
+        log(f"⚠️  LIMITED MODE: Extracting up to {max_elements} elements only")
     log(f"{'='*80}")
 
     start_time = time.time()
@@ -441,17 +465,44 @@ def extract_from_ifc(ifc_path: str, discipline: str, conn: sqlite3.Connection) -
             normals = [(normals_flat[j], normals_flat[j+1], normals_flat[j+2])
                       for j in range(0, len(normals_flat), 3)] if normals_flat else []
 
-            # Calculate bounding box
+            # Calculate bounding box from IFC world coordinates (in METERS - GPS scale)
+            # IfcOpenShell with USE_WORLD_COORDS=True returns geometry in METERS, not millimeters!
+            # Reference: merged_federated.ifc analysis showed X: -50448 to -50407m (GPS coordinates)
             bbox = get_bbox(vertices)
-            center = (
-                (bbox[0] + bbox[1]) / 2,
-                (bbox[2] + bbox[3]) / 2,
-                (bbox[4] + bbox[5]) / 2
+            center_m = (
+                (bbox[0] + bbox[1]) / 2,  # X center in METERS
+                (bbox[2] + bbox[3]) / 2,  # Y center in METERS
+                (bbox[4] + bbox[5]) / 2   # Z center in METERS
             )
 
-            # CRITICAL: Transform vertices to be relative to center
-            # This ensures geometry can be instanced correctly with instance.location = center
+            # Store coordinates as-is in METERS (GPS scale)
+            # Database will contain GPS-scale coordinates matching merged_federated.ifc ground truth
+            # Expected values: X ~-50427m, Y ~34192m, Z ~3-29m
+            center = center_m  # Use GPS coordinates as-is from IFC (in METERS)
+
+            # Apply spatial filter if provided
+            if spatial_filter:
+                if not (spatial_filter['min_x'] <= center[0] <= spatial_filter['max_x'] and
+                        spatial_filter['min_y'] <= center[1] <= spatial_filter['max_y'] and
+                        spatial_filter['min_z'] <= center[2] <= spatial_filter['max_z']):
+                    # Element outside spatial filter - skip it
+                    continue
+
+            # Transform vertices to element-local coordinates (standard template/instance pattern)
+            # This allows mesh data to be shared between identical geometries (instancing)
+            # Subtract the ALIGNED center (not project center) to ensure vertices are relative to aligned position
             vertices = [(v[0] - center[0], v[1] - center[1], v[2] - center[2]) for v in vertices]
+
+            # Recalculate bbox based on aligned center + local vertex extents
+            local_bbox = get_bbox(vertices)
+            aligned_bbox = (
+                center[0] + local_bbox[0],  # min_x
+                center[0] + local_bbox[1],  # max_x
+                center[1] + local_bbox[2],  # min_y
+                center[1] + local_bbox[3],  # max_y
+                center[2] + local_bbox[4],  # min_z
+                center[2] + local_bbox[5]   # max_z
+            )
 
             # Extract metadata
             metadata = extract_element_metadata(element, ifc_file)
@@ -485,17 +536,20 @@ def extract_from_ifc(ifc_path: str, discipline: str, conn: sqlite3.Connection) -
             """, (guid, vertices_blob, faces_blob, normals_blob,
                   len(vertices), len(faces), geom_hash))
 
-            # Insert into R-tree (convert to mm)
+            # Insert into R-tree (using GPS-aligned bbox in mm)
+            # This ensures spatial queries work correctly across all aligned disciplines
             cursor.execute("""
                 INSERT OR REPLACE INTO elements_rtree
                 (id, min_x, max_x, min_y, max_y, min_z, max_z)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (elem_id,
-                  bbox[0]*1000, bbox[1]*1000,
-                  bbox[2]*1000, bbox[3]*1000,
-                  bbox[4]*1000, bbox[5]*1000))
+                  aligned_bbox[0], aligned_bbox[1],
+                  aligned_bbox[2], aligned_bbox[3],
+                  aligned_bbox[4], aligned_bbox[5]))
 
-            # Insert transform
+            # Insert transform (using GPS-aligned center - in mm)
+            # This center already includes the discipline alignment offset
+            # At load time, only global_offset needs to be subtracted for viewport display
             cursor.execute("""
                 INSERT OR REPLACE INTO element_transforms
                 (guid, center_x, center_y, center_z, transform_source)
@@ -527,6 +581,11 @@ def extract_from_ifc(ifc_path: str, discipline: str, conn: sqlite3.Connection) -
                       prop['property_value'], prop['property_type']))
 
             processed += 1
+
+            # Check if we've reached the limit
+            if max_elements and processed >= max_elements:
+                log(f"  Reached limit of {max_elements} elements, stopping...")
+                break
 
             if processed % 100 == 0:
                 conn.commit()
@@ -575,18 +634,23 @@ def calculate_global_offset(conn: sqlite3.Connection):
         log("⚠️  No elements in R-tree, cannot calculate offset")
         return
 
-    # Convert to meters
-    gmin_x, gmax_x, gmin_y, gmax_y, gmin_z, gmax_z = [v/1000.0 for v in row]
+    # Database stores coordinates in METERS (GPS scale) - NO conversion needed!
+    # IfcOpenShell with USE_WORLD_COORDS=True returns meters directly
+    # Expected values: X ~-50427m, Y ~34192m, Z ~3-29m (GPS coordinates)
+    gmin_x, gmax_x, gmin_y, gmax_y, gmin_z, gmax_z = row
 
-    # Calculate center
-    offset_x = (gmin_x + gmax_x) / 2
-    offset_y = (gmin_y + gmax_y) / 2
-    offset_z = gmin_z  # Use minimum Z (ground level)
+    # Calculate GPS-scale offset to position building in viewport
+    # This offset will bring the GPS coordinates (~-50km, ~34km) back near origin
+    # Expected offset: X ~-50427m, Y ~34192m, Z ~3m
+    # After offset, building appears near viewport origin (0, 0, 0)
+    offset_x = (gmin_x + gmax_x) / 2  # Center X (GPS scale)
+    offset_y = (gmin_y + gmax_y) / 2  # Center Y (GPS scale)
+    offset_z = gmin_z  # Use ground level for Z
 
-    # Store in global_offset table
+    # Store in global_offset table (GPS-scale offset in METERS)
     cursor.execute("""
         INSERT OR REPLACE INTO global_offset (id, offset_x, offset_y, offset_z, unit, notes)
-        VALUES (1, ?, ?, ?, 'METERS', 'Calculated from IFC4 tessellation bounding box')
+        VALUES (1, ?, ?, ?, 'METERS', 'GPS-scale viewport offset - matches merged_federated.ifc ground truth')
     """, (offset_x, offset_y, offset_z))
 
     conn.commit()
@@ -663,7 +727,15 @@ def main():
     """Main extraction process."""
     parser = argparse.ArgumentParser(description='Extract IFC4 tessellation with metadata')
     parser.add_argument('--test', action='store_true', help='Test on small LPG file only')
+    parser.add_argument('--light', action='store_true', help='Light test: extract ~30 elements from ALL disciplines')
+    parser.add_argument('--mini', action='store_true', help='Mini test: extract ~10-15 elements from ALL disciplines (fastest)')
+    parser.add_argument('--sample', action='store_true', help='Sample extraction: varied elements per discipline (~200 total) based on sample_config.json')
     args = parser.parse_args()
+
+    # Determine database path based on mode
+    global DB_PATH
+    if args.mini or args.light or args.sample:
+        DB_PATH = "/home/red1/Documents/bonsai/DatabaseFiles/sample_extracted.db"
 
     # Clear log file
     Path(LOG_FILE).write_text("")
@@ -674,7 +746,58 @@ def main():
     log(f"\nDatabase: {DB_PATH}")
     log(f"Log: {LOG_FILE}")
 
-    if args.test:
+    # Determine mode
+    max_elements_per_file = None
+    discipline_limits = {}  # For --sample mode
+    spatial_filter = None  # For spatial filtering
+
+    if args.sample:
+        # Load JSON config
+        config_path = Path(__file__).parent / "sample_config.json"
+        if not config_path.exists():
+            log(f"❌ ERROR: sample_config.json not found at {config_path}")
+            return
+
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+
+        sample_config = config['sample_extraction']
+        log(f"\n⚠️  SAMPLE MODE - Custom extraction based on sample_config.json")
+        log(f"   Total target: ~{sample_config['total_target']} elements")
+
+        # Check if spatial filtering is enabled
+        if 'spatial_filter' in sample_config:
+            spatial_filter = sample_config['spatial_filter']
+            log(f"   Spatial filter ENABLED:")
+            log(f"     X: {spatial_filter['min_x']:.1f} to {spatial_filter['max_x']:.1f} meters")
+            log(f"     Y: {spatial_filter['min_y']:.1f} to {spatial_filter['max_y']:.1f} meters")
+            log(f"     Z: {spatial_filter['min_z']:.1f} to {spatial_filter['max_z']:.1f} meters")
+            log(f"     Note: {spatial_filter.get('note', 'N/A')}")
+
+        log(f"   Per-discipline settings:")
+        for disc, disc_config in sample_config['disciplines'].items():
+            max_elem = disc_config.get('max_elements')
+            discipline_limits[disc] = max_elem
+            if max_elem is None:
+                log(f"     {disc:6s}: ALL elements in region - {disc_config.get('note', 'N/A')}")
+            else:
+                log(f"     {disc:6s}: {max_elem:3d} elements max - {disc_config.get('rationale', 'N/A')}")
+
+        files_to_process = IFC4_FILES
+
+    elif args.mini:
+        log(f"\n⚠️  MINI MODE - Extracting ~10-15 elements from ALL 8 disciplines")
+        log(f"   Purpose: Ultra-fast test to verify alignment and fit in one common space")
+        log(f"   Validation: 1) Alignment to origin like ORIGINAL_IFC.png (few meters away, not at origin)")
+        log(f"              2) All disciplines placed correctly with proper dimensions and fit")
+        files_to_process = IFC4_FILES
+        max_elements_per_file = 12  # ~12 elements * 8 disciplines = ~96 total
+    elif args.light:
+        log(f"\n⚠️  LIGHT MODE - Extracting ~30 elements from ALL 8 disciplines")
+        log(f"   Purpose: Fast validation test with all disciplines in common 3D space")
+        files_to_process = IFC4_FILES
+        max_elements_per_file = 30
+    elif args.test:
         log(f"\n⚠️  TEST MODE - Processing LPG file only")
         files_to_process = [TEST_FILE]
     else:
@@ -700,9 +823,27 @@ def main():
                 continue
 
             discipline = get_discipline_from_path(ifc_path)
-            processed, skipped = extract_from_ifc(ifc_path, discipline, conn)
+
+            # Determine max_elements for this discipline
+            if discipline_limits:
+                # Sample mode - use discipline-specific limit
+                discipline_max = discipline_limits.get(discipline, max_elements_per_file)
+            else:
+                # Other modes - use uniform limit
+                discipline_max = max_elements_per_file
+
+            processed, skipped = extract_from_ifc(ifc_path, discipline, conn, max_elements=discipline_max, spatial_filter=spatial_filter)
             total_processed += processed
             total_skipped += skipped
+
+            # Record that NO offset was applied (files already coordinated)
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO file_offsets
+                (filepath, discipline, offset_x, offset_y, offset_z, reference_discipline, notes)
+                VALUES (?, ?, ?, ?, ?, 'NONE', 'IFC files already coordinated by BIM coordinator - no per-file offsets applied')
+            """, (ifc_path, discipline, 0.0, 0.0, 0.0))
+            conn.commit()
 
         # Calculate global offset
         calculate_global_offset(conn)

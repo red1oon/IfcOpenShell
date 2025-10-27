@@ -1,0 +1,56 @@
+{
+  "sample_extraction": {
+    "description": "Spatial sample - extract ALL elements from a specific coordinate region",
+    "extraction_mode": "spatial",
+    "spatial_filter": {
+      "min_x": 85.0,
+      "max_x": 110.0,
+      "min_y": -45.0,
+      "max_y": 5.0,
+      "min_z": -5.0,
+      "max_z": 30.0,
+      "note": "Region with MEP systems overlap - extracts ALL elements in this volume"
+    },
+    "total_target": "all_in_region",
+    "disciplines": {
+      "ARC": {
+        "max_elements": null,
+        "note": "All ARC elements in spatial region"
+      },
+      "STR": {
+        "max_elements": null,
+        "note": "All STR elements in spatial region"
+      },
+      "ACMV": {
+        "max_elements": null,
+        "note": "All ACMV elements in spatial region"
+      },
+      "ELEC": {
+        "max_elements": null,
+        "note": "All ELEC elements in spatial region"
+      },
+      "FP": {
+        "max_elements": null,
+        "note": "All FP elements in spatial region"
+      },
+      "SP": {
+        "max_elements": null,
+        "note": "All SP elements in spatial region"
+      },
+      "LPG": {
+        "max_elements": null,
+        "note": "All LPG elements in spatial region"
+      },
+      "CW": {
+        "max_elements": null,
+        "note": "All CW elements in spatial region"
+      }
+    },
+    "notes": [
+      "Spatial filtering: Extracts ALL elements within bounding box",
+      "No per-discipline limits when spatial filtering is active",
+      "Region chosen to contain representative sample of MEP systems",
+      "Fast extraction (~2-3 min) with comprehensive spatial coverage"
+    ]
+  }
+}
