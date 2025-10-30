@@ -222,7 +222,13 @@ class BIMFederationProperties(PropertyGroup):
         description="Display detailed federation statistics",
         default=False
     )
-    
+
+    show_help: BoolProperty(
+        name="Show Help",
+        description="Display help and usage tips",
+        default=False
+    )
+
     show_advanced_settings: BoolProperty(
         name="Show Advanced",
         description="Show advanced federation settings",

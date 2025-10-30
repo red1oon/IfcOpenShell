@@ -125,25 +125,21 @@ class BIM_PT_federation(Panel):
                 from pathlib import Path
                 box.label(text=f"Progress: {Path(props.progress_json_path).name}")
         
-        layout.separator()
-        
-        # Main actions
-        col = layout.column(align=True)
-        
-        # Preprocess button
-        row = col.row()
+        # Database Extraction
+        box.separator()
+        box.label(text="Database Extraction:")
+
+        # Extraction buttons (side-by-side)
+        row = box.row(align=True)
         row.scale_y = 1.3
-        row.enabled = not props.preprocessing_in_progress
-        row.operator("bim.preprocess_federated_models", icon="PLAY")
-        
-        # Load/Unload buttons (hidden - use Three-Stage Loading instead)
-        # row = col.row(align=True)
-        # if props.index_loaded:
-        #     row.operator("bim.unload_federation_index", icon="PANEL_CLOSE")
-        #     row.operator("bim.query_federation_index", text="Run System Tests", icon="CHECKBOX_HLT")
-        # else:
-        #     row.operator("bim.load_federation_index", icon="IMPORT")
-        
+        row.operator("bim.extract_full_database", icon="SEQUENCE", text="Extract Full")
+        row.operator("bim.extract_sample_database", icon="EXPERIMENTAL", text="Extract Sample")
+
+        # Sample settings
+        row = box.row(align=True)
+        row.prop(props, "sample_anchor_type", text="Anchor")
+        row.operator("bim.redo_sample_extraction", icon="FILE_REFRESH", text="Redo")
+
         layout.separator()
         
         # Statistics section (collapsible)
@@ -203,61 +199,25 @@ class BIM_PT_federation(Panel):
         col = box.column()
         col.prop(props, "auto_reload_on_open", text="Auto-reload on file open")
 
-        # Database Extraction section
+        # Help section (collapsible)
         layout.separator()
         box = layout.box()
-        box.label(text="Database Extraction:", icon="EXPERIMENTAL")
+        row = box.row()
+        row.prop(props, "show_help",
+                icon="TRIA_DOWN" if getattr(props, "show_help", False) else "TRIA_RIGHT",
+                text="Help & Usage Tips",
+                emboss=False)
 
-        # 1. Full Extraction
-        col = box.column(align=True)
-        col.label(text="1. Full Extraction (All Elements):", icon="SEQUENCE")
-        subcol = col.column(align=True)
-        subcol.scale_y = 0.8
-        subcol.label(text="Extract all ~68K elements, ~4-6 hours")
-        subcol.label(text="Production-ready database for complete coordination")
-
-        row = col.row(align=True)
-        row.scale_y = 1.3
-        row.operator("bim.extract_full_database", icon="SEQUENCE", text="Extract Full")
-
-        box.separator()
-
-        # 2. Sample Extraction
-        col = box.column(align=True)
-        col.label(text="2. Sample Database (Fast Testing):", icon="EXPERIMENTAL")
-        subcol = col.column(align=True)
-        subcol.scale_y = 0.8
-        subcol.label(text="Quick extraction: ELEC-anchored, 300-800 elements, ~5 min")
-        subcol.label(text="Perfect for testing clash detection and routing")
-
-        box.separator()
-
-        # Sample extraction settings
-        box.prop(props, "sample_anchor_type", text="Anchor To")
-
-        # Sample extraction buttons
-        col = box.column(align=True)
-        row = col.row(align=True)
-        row.scale_y = 1.3
-        row.operator("bim.extract_sample_database", icon="EXPERIMENTAL", text="Extract Sample")
-        row = col.row(align=True)
-        row.operator("bim.redo_sample_extraction", icon="FILE_REFRESH", text="Redo Sample")
-
-        box.separator()
-
-        # Info
-        col = box.column(align=True)
-        col.scale_y = 0.8
-        col.label(text="Extract: Analyze & extract optimal region")
-        col.label(text="Redo: Try different region (randomized)")
-
-        # Tips section
-        layout.separator()
-        box = layout.box()
-        box.label(text="Usage:", icon="INFO")
-        col = box.column(align=True)
-        col.scale_y = 0.8
-        col.label(text="1. Add all discipline IFC files")
-        col.label(text="2. Extract sample (~5 min) OR full database (~4-6 hrs)")
-        col.label(text="3. Click 'Reload Viewport' to visualize")
-        col.label(text="4. Use in MEP routing or clash detection")
+        if getattr(props, "show_help", False):
+            col = box.column(align=True)
+            col.scale_y = 0.8
+            col.label(text="Workflow:")
+            col.label(text="1. Add all discipline IFC files")
+            col.label(text="2. Extract Full (~25 min) or Sample (~5 min)")
+            col.label(text="3. Click 'Reload Viewport' to visualize")
+            col.label(text="4. Use in MEP routing or clash detection")
+            col.separator()
+            col.label(text="Extraction Options:")
+            col.label(text="• Full: All elements, production-ready")
+            col.label(text="• Sample: ELEC-anchored test region")
+            col.label(text="• Redo: Try different sample region")
