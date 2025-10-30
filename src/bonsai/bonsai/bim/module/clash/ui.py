@@ -122,7 +122,7 @@ class BIM_PT_ifcclash(Panel):
             #             text=f"Visualize Selected ({selected_count})",
             #             icon="HIDE_OFF")
 
-            row.operator("bim.clear_discipline_clash_visualization", text="Clear", icon="X")
+            row.operator("bim.clear_discipline_clash_visualization", text="Clear All", icon="PANEL_CLOSE")
 
             # Clash Visualization
             layout.separator()

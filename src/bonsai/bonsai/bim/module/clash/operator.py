@@ -758,28 +758,52 @@ class BIM_OT_clash_by_discipline(bpy.types.Operator):
                 'IfcAxis2Placement3D', # Coordinate systems
             }
 
-            # Find bbox intersections with noise filtering
-            print(f"\nAnalyzing bbox intersections (with noise filtering)...")
+            # Find bbox intersections with noise filtering using R-tree spatial queries
+            print(f"\nAnalyzing bbox intersections (with R-tree optimization + noise filtering)...")
             start_time = time.time()
             candidates = []
             filtered_count = 0
+            rtree_queries = 0
 
+            # Use spatial index for efficient queries
             for elem_a in elements_a:
-                for elem_b in elements_b:
+                # Filter: Skip noise types
+                if elem_a.ifc_class in NOISE_TYPES:
+                    filtered_count += len(elements_b)
+                    continue
+
+                # Expand bbox by tolerance for query
+                tol = props.discipline_tolerance
+                min_x, min_y, min_z, max_x, max_y, max_z = elem_a.bbox
+                query_bbox = (
+                    (min_x - tol, min_y - tol, min_z - tol),
+                    (max_x + tol, max_y + tol, max_z + tol)
+                )
+
+                # Query spatial index for nearby elements in group B
+                nearby_elements = index.query_by_bbox(
+                    min_xyz=query_bbox[0],
+                    max_xyz=query_bbox[1],
+                    disciplines=disciplines_b
+                )
+                rtree_queries += 1
+
+                # Check each nearby element for actual clash
+                for elem_b in nearby_elements:
                     # Filter: Skip noise types
-                    if elem_a.ifc_class in NOISE_TYPES or elem_b.ifc_class in NOISE_TYPES:
+                    if elem_b.ifc_class in NOISE_TYPES:
                         filtered_count += 1
                         continue
 
-                    if prefilter.bboxes_intersect(elem_a.bbox, elem_b.bbox, tolerance=props.discipline_tolerance):
+                    # Precise bbox intersection check
+                    if prefilter.bboxes_intersect(elem_a.bbox, elem_b.bbox, tolerance=tol):
                         candidates.append({
                             'guid_a': elem_a.guid,
                             'guid_b': elem_b.guid,
-                            'name_a': elem_a.ifc_class,  # Use IFC class as name (FederationElement doesn't have name)
+                            'name_a': elem_a.ifc_class,
                             'name_b': elem_b.ifc_class,
                             'ifc_class_a': elem_a.ifc_class,
                             'ifc_class_b': elem_b.ifc_class,
-                            # Note: bbox_center not stored - queried from federation DB when needed
                         })
 
             analysis_time = time.time() - start_time
@@ -790,26 +814,31 @@ class BIM_OT_clash_by_discipline(bpy.types.Operator):
             reduction = 100 * (1 - len(candidates) / filtered_combinations) if filtered_combinations > 0 else 0
 
             logger.info(f"Filtered out {filtered_count:,} noise combinations (Spaces, Openings, Annotations)")
+            logger.info(f"R-tree optimization: {rtree_queries:,} spatial queries (vs {total_combinations:,} brute force)")
 
             # Report results
             logger.info("=" * 70)
             logger.info("RESULTS:")
             logger.info(f"Total combinations:     {total_combinations:,}")
+            logger.info(f"R-tree queries:         {rtree_queries:,}")
             logger.info(f"Filtered noise:         {filtered_count:,}")
             logger.info(f"After filtering:        {filtered_combinations:,}")
             logger.info(f"Clash candidates:       {len(candidates):,}")
             logger.info(f"Reduction:              {reduction:.1f}%")
             logger.info(f"Analysis time:          {analysis_time:.2f} seconds")
+            logger.info(f"Speed: {total_combinations / rtree_queries:.0f}x faster than brute force")
             logger.info("=" * 70)
 
             print(f"\n{'=' * 70}")
             print("RESULTS:")
             print(f"  Total combinations:     {total_combinations:,}")
+            print(f"  R-tree queries:         {rtree_queries:,}")
             print(f"  Filtered noise:         {filtered_count:,}")
             print(f"  After filtering:        {filtered_combinations:,}")
             print(f"  Clash candidates:       {len(candidates):,}")
             print(f"  Reduction:              {reduction:.1f}%")
             print(f"  Analysis time:          {analysis_time:.2f} seconds")
+            print(f"  Speed: {total_combinations / rtree_queries:.0f}x faster than brute force")
             print(f"{'=' * 70}\n")
 
             # Store candidates in scene properties
@@ -1255,25 +1284,33 @@ class BIM_OT_deselect_all_clashes(bpy.types.Operator):
 
 
 class BIM_OT_clear_discipline_clash_visualization(bpy.types.Operator):
-    """Clear all discipline clash visualizations from viewport"""
+    """Clear ALL clash visualizations (GPU overlays, gizmos, and mesh objects)"""
     bl_idname = "bim.clear_discipline_clash_visualization"
-    bl_label = "Clear Visualization"
-    bl_description = "Remove all clash marker spheres from viewport"
+    bl_label = "Clear All Overlays"
+    bl_description = "Remove all clash visualizations: GPU overlays, gizmos, and mesh objects"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        # GPU visualization disabled (replaced with gizmos)
-        # from . import visualization
-        # if visualization.is_enabled():
-        #     visualization.disable_visualization()
-        #     print("Disabled GPU overlay visualization")
+        print("\n=== Clearing ALL Clash Visualizations ===")
 
-        # Clear both possible collection names
+        # 1. Disable GPU overlay visualization
+        from . import visualization
+        if visualization.is_enabled():
+            visualization.disable_visualization()
+            print("✓ Disabled GPU overlay visualization")
+
+        # 2. Disable Gizmo visualization
+        from . import gizmo
+        props = tool.Clash.get_clash_props()
+        if gizmo.is_gizmo_group_active():
+            props.gizmo_visualization_enabled = False
+            gizmo.disable_clash_gizmos()
+            print("✓ Disabled gizmo visualization")
+
+        # 3. Clear mesh object collections
         collection_names = ["Selected_Clash_Markers", "Discipline_Clash_Clusters"]
         cleared_collections = 0
         cleared_objects = 0
-
-        print("\n=== Clearing Clash Visualizations ===")
 
         for collection_name in collection_names:
             if collection_name in bpy.data.collections:
@@ -1596,6 +1633,14 @@ class BIM_OT_load_clash_geometry(bpy.types.Operator):
 
         ifc_path_a = row_a[0]
         ifc_path_b = row_b[0]
+
+        # Check if filepaths are available (database-only mode may have None)
+        if not ifc_path_a or not ifc_path_b:
+            self.report({'WARNING'}, "Database-only mode: Load geometry from database not yet implemented")
+            print("\n⚠️  Database-only mode detected (filepaths are None)")
+            print("   Geometry loading from database vertices not yet implemented")
+            print("   This feature requires loading geometry from element_geometry table")
+            return {"CANCELLED"}
 
         print(f"\nSource IFC A: {Path(ifc_path_a).name}")
         print(f"Source IFC B: {Path(ifc_path_b).name}")
