@@ -48,6 +48,7 @@ classes = (
     operator.ReloadFederationViewport,
     operator.UnloadFederationViewport,
     operator.ExtractSampleDatabase,
+    operator.ExtractFullDatabase,
     operator.RedoSampleExtraction,
     ui.BIM_PT_federation,
     ui.BIM_UL_federated_files,

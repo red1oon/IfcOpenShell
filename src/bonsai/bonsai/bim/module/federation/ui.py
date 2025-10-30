@@ -203,15 +203,32 @@ class BIM_PT_federation(Panel):
         col = box.column()
         col.prop(props, "auto_reload_on_open", text="Auto-reload on file open")
 
-        # Sample Database section
+        # Database Extraction section
         layout.separator()
         box = layout.box()
-        box.label(text="Sample Database (Fast Testing):", icon="EXPERIMENTAL")
+        box.label(text="Database Extraction:", icon="EXPERIMENTAL")
 
+        # 1. Full Extraction
         col = box.column(align=True)
-        col.scale_y = 0.8
-        col.label(text="Quick extraction: ELEC-anchored, 300-800 elements, ~5 min")
-        col.label(text="Perfect for testing clash detection and routing")
+        col.label(text="1. Full Extraction (All Elements):", icon="SEQUENCE")
+        subcol = col.column(align=True)
+        subcol.scale_y = 0.8
+        subcol.label(text="Extract all ~68K elements, ~4-6 hours")
+        subcol.label(text="Production-ready database for complete coordination")
+
+        row = col.row(align=True)
+        row.scale_y = 1.3
+        row.operator("bim.extract_full_database", icon="SEQUENCE", text="Extract Full")
+
+        box.separator()
+
+        # 2. Sample Extraction
+        col = box.column(align=True)
+        col.label(text="2. Sample Database (Fast Testing):", icon="EXPERIMENTAL")
+        subcol = col.column(align=True)
+        subcol.scale_y = 0.8
+        subcol.label(text="Quick extraction: ELEC-anchored, 300-800 elements, ~5 min")
+        subcol.label(text="Perfect for testing clash detection and routing")
 
         box.separator()
 
@@ -241,7 +258,6 @@ class BIM_PT_federation(Panel):
         col = box.column(align=True)
         col.scale_y = 0.8
         col.label(text="1. Add all discipline IFC files")
-        col.label(text="2. Extract sample or run full preprocessing")
-        col.label(text="3. Load sample for fast testing (~5 min)")
-        col.label(text="4. Or preprocess full federation (10-20 min)")
-        col.label(text="5. Use in MEP routing or clash detection")
+        col.label(text="2. Extract sample (~5 min) OR full database (~4-6 hrs)")
+        col.label(text="3. Click 'Reload Viewport' to visualize")
+        col.label(text="4. Use in MEP routing or clash detection")

@@ -1478,6 +1478,101 @@ class ExtractSampleDatabase(bpy.types.Operator):
             return {'CANCELLED'}
 
 
+class ExtractFullDatabase(bpy.types.Operator):
+    """Extract full database with all elements (~4-6 hours, production-ready)"""
+    bl_idname = "bim.extract_full_database"
+    bl_label = "Extract Full Database"
+    bl_description = "Extract complete database with all ~68K elements (~4-6 hours)"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        # Setup console log file
+        from datetime import datetime
+        log_file = Path.home() / "Documents" / "bonsai" / "consolelogs" / f"full_extraction_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+
+        def log_and_print(msg):
+            """Print to console and save to log file"""
+            print(msg)
+            with open(log_file, 'a') as f:
+                f.write(msg + '\n')
+
+        log_and_print("\n" + "="*70)
+        log_and_print("FULL DATABASE EXTRACTION")
+        log_and_print("="*70)
+
+        try:
+            props = context.scene.BIMFederationProperties
+
+            # Get IFC directory from federated files (validation only)
+            ifc_files = [f.name for f in props.federated_files if f.name]
+            if not ifc_files:
+                self.report({'ERROR'}, "No IFC files configured. Add files first.")
+                return {'CANCELLED'}
+
+            # Get directory from first file
+            ifc_dir = Path(ifc_files[0]).parent
+            log_and_print(f"IFC directory: {ifc_dir}")
+            log_and_print(f"Files to process: {len(ifc_files)}")
+
+            # Find extraction script
+            extract_script = Path.home() / "Projects" / "IfcOpenShell" / "src" / "bonsai" / "scripts" / "extract_tessellation_to_db_v2.py"
+
+            if not extract_script.exists():
+                self.report({'ERROR'}, f"Extraction script not found: {extract_script}")
+                return {'CANCELLED'}
+
+            # Determine output database path
+            default_db = Path.home() / "Documents" / "bonsai" / "DatabaseFiles" / "IFCmigrated_IFC4_v2.db"
+
+            log_and_print(f"Output database: {default_db}")
+            log_and_print("\n⚙️  Starting full extraction...")
+            log_and_print("⏱️  Expected time: 4-6 hours")
+            log_and_print("⚠️  This will run in the background. Check console for progress.\n")
+
+            # Run extraction without --sample flag (full mode)
+            result = subprocess.run(
+                [sys.executable, str(extract_script), "--output", str(default_db)],
+                capture_output=True,
+                text=True,
+                timeout=25200  # 7 hour timeout (generous buffer)
+            )
+
+            if result.returncode != 0:
+                log_and_print(f"Extraction failed:\n{result.stderr}")
+                self.report({'ERROR'}, "Full extraction failed. Check console.")
+                return {'CANCELLED'}
+
+            log_and_print(result.stdout)
+            log_and_print("✓ Extraction complete")
+
+            # Auto-populate database path in UI
+            props.federation_database_path = str(default_db)
+
+            log_and_print(f"\n{'='*70}")
+            log_and_print("✅ FULL EXTRACTION COMPLETE")
+            log_and_print(f"Database: {default_db}")
+            log_and_print(f"Database path auto-populated in UI")
+            log_and_print(f"Log saved to: {log_file}")
+            log_and_print("Next: Click 'Reload Viewport' to load full model")
+            log_and_print(f"{'='*70}\n")
+
+            self.report({'INFO'}, "Full extraction complete! Click 'Reload Viewport'")
+            return {'FINISHED'}
+
+        except subprocess.TimeoutExpired:
+            log_and_print("\n❌ Extraction timed out (>7 hours)")
+            self.report({'ERROR'}, "Extraction timed out. Check if process is stuck.")
+            return {'CANCELLED'}
+
+        except Exception as e:
+            log_and_print(f"\n❌ Full extraction failed: {e}")
+            import traceback
+            traceback.print_exc()
+            self.report({'ERROR'}, f"Extraction failed: {str(e)}")
+            return {'CANCELLED'}
+
+
 class RedoSampleExtraction(bpy.types.Operator):
     """Try extracting a different sample region (randomized)"""
     bl_idname = "bim.redo_sample_extraction"
