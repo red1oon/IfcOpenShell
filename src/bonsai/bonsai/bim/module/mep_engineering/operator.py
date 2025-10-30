@@ -732,22 +732,23 @@ class AutoPickRoutingEndpoints(Operator):
             return {"CANCELLED"}
 
         try:
+            import struct
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
 
-            # Query elements from specified discipline
+            # Query elements from specified discipline with geometry
+            # NOTE: Calculating bbox from vertices on-the-fly since elements_rtree is not yet populated
+            # TODO: Once elements_rtree is populated during extraction, switch back to direct bbox query for performance
             query = """
                 SELECT
                     m.guid,
                     m.ifc_class,
-                    r.min_x, r.max_x,
-                    r.min_y, r.max_y,
-                    r.min_z, r.max_z
+                    g.vertices
                 FROM elements_meta m
-                JOIN elements_rtree r ON m.id = r.id
+                JOIN element_geometry g ON m.guid = g.guid
                 WHERE m.discipline = ?
                 ORDER BY m.ifc_class, m.guid
-                LIMIT 10
+                LIMIT 100
             """
 
             cursor.execute(query, (self.discipline,))
@@ -759,10 +760,31 @@ class AutoPickRoutingEndpoints(Operator):
                 conn.close()
                 return {"CANCELLED"}
 
-            # Calculate bbox centers for all elements
+            # Calculate bbox centers for all elements by parsing vertex data
             all_endpoints = []
             for row in rows:
-                guid, ifc_class, min_x, max_x, min_y, max_y, min_z, max_z = row
+                guid, ifc_class, vertices_blob = row
+
+                # Parse vertices blob (array of floats)
+                if not vertices_blob or len(vertices_blob) < 12:
+                    continue
+
+                # Unpack all vertices (each vertex is 3 floats: x, y, z)
+                num_floats = len(vertices_blob) // 4
+                vertices = struct.unpack(f'{num_floats}f', vertices_blob)
+
+                # Calculate bbox
+                xs = vertices[0::3]
+                ys = vertices[1::3]
+                zs = vertices[2::3]
+
+                if not xs:
+                    continue
+
+                min_x, max_x = min(xs), max(xs)
+                min_y, max_y = min(ys), max(ys)
+                min_z, max_z = min(zs), max(zs)
+
                 center_x = (min_x + max_x) / 2
                 center_y = (min_y + max_y) / 2
                 center_z = (min_z + max_z) / 2
