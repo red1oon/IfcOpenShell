@@ -76,7 +76,7 @@ def get_element_bbox_center(guid: str, db_path: str) -> Optional[Vector]:
 
         # Query bbox from elements_rtree (joined with elements_meta for GUID lookup)
         cursor.execute("""
-            SELECT r.min_x, r.min_y, r.min_z, r.max_x, r.max_y, r.max_z
+            SELECT r.minX, r.minY, r.minZ, r.maxX, r.maxY, r.maxZ
             FROM elements_meta m
             JOIN elements_rtree r ON m.id = r.id
             WHERE m.guid = ?
@@ -197,29 +197,48 @@ def get_clash_color(status: str) -> tuple:
 # SIMPLE SPHERE GEOMETRY (3 orthogonal discs for 3D appearance)
 # ============================================================================
 
-# Create a simple sphere using 3 circles on XY, YZ, XZ planes
-# Each circle has 12 segments
+# Create a proper 3D UV sphere with triangulated surface
 import math
 
-def generate_circle_tris(num_segments=12, axis='z'):
-    """Generate triangle vertices for a filled circle"""
+def generate_uv_sphere(rings=8, segments=12):
+    """Generate triangle vertices for a proper 3D UV sphere"""
     verts = []
-    for i in range(num_segments):
-        angle1 = (i / num_segments) * math.pi * 2
-        angle2 = ((i + 1) / num_segments) * math.pi * 2
 
-        x1 = math.cos(angle1)
-        y1 = math.sin(angle1)
-        x2 = math.cos(angle2)
-        y2 = math.sin(angle2)
+    # Generate sphere using UV coordinates
+    for ring in range(rings):
+        theta1 = (ring / rings) * math.pi
+        theta2 = ((ring + 1) / rings) * math.pi
 
-        # Create triangle from center to edge
-        if axis == 'z':  # XY plane
-            verts.extend([(0, 0, 0), (x1, y1, 0), (x2, y2, 0)])
-        elif axis == 'y':  # XZ plane
-            verts.extend([(0, 0, 0), (x1, 0, y1), (x2, 0, y2)])
-        else:  # YZ plane
-            verts.extend([(0, 0, 0), (0, x1, y1), (0, x2, y2)])
+        for seg in range(segments):
+            phi1 = (seg / segments) * 2 * math.pi
+            phi2 = ((seg + 1) / segments) * 2 * math.pi
+
+            # Calculate 4 vertices of quad on sphere surface
+            # Convert spherical to cartesian: (r, theta, phi) -> (x, y, z)
+            v1 = (
+                math.sin(theta1) * math.cos(phi1),
+                math.sin(theta1) * math.sin(phi1),
+                math.cos(theta1)
+            )
+            v2 = (
+                math.sin(theta1) * math.cos(phi2),
+                math.sin(theta1) * math.sin(phi2),
+                math.cos(theta1)
+            )
+            v3 = (
+                math.sin(theta2) * math.cos(phi2),
+                math.sin(theta2) * math.sin(phi2),
+                math.cos(theta2)
+            )
+            v4 = (
+                math.sin(theta2) * math.cos(phi1),
+                math.sin(theta2) * math.sin(phi1),
+                math.cos(theta2)
+            )
+
+            # Create 2 triangles from quad (proper 3D surface)
+            verts.extend([v1, v2, v3])  # First triangle
+            verts.extend([v1, v3, v4])  # Second triangle
 
     return verts
 
@@ -230,11 +249,8 @@ def get_sphere_geometry():
     """Get sphere geometry (lazy loaded on first use)"""
     global _SPHERE_SIMPLE_CACHE
     if _SPHERE_SIMPLE_CACHE is None:
-        _SPHERE_SIMPLE_CACHE = (
-            *generate_circle_tris(12, 'z'),  # XY plane
-            *generate_circle_tris(12, 'y'),  # XZ plane
-            *generate_circle_tris(12, 'x'),  # YZ plane
-        )
+        # 8 rings × 12 segments = 192 triangles (smooth 3D sphere)
+        _SPHERE_SIMPLE_CACHE = generate_uv_sphere(rings=8, segments=12)
     return _SPHERE_SIMPLE_CACHE
 
 

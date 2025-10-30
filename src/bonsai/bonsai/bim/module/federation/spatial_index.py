@@ -238,45 +238,100 @@ class FederationIndex:
         """
         if not self.is_loaded:
             raise RuntimeError("Index not loaded. Call build() first.")
-        
+
         conn = sqlite3.connect(self.database_path)
         cursor = conn.cursor()
-        
-        # Build query with optional filters
-        query = """
-            SELECT m.guid, m.discipline, m.ifc_class, m.filepath,
-                   r.min_x, r.min_y, r.min_z, r.max_x, r.max_y, r.max_z
-            FROM elements_rtree r
-            JOIN elements_meta m ON r.id = m.id
-            WHERE r.min_x <= ? AND r.max_x >= ?
-              AND r.min_y <= ? AND r.max_y >= ?
-              AND r.min_z <= ? AND r.max_z >= ?
-        """
-        params = [max_xyz[0], min_xyz[0], max_xyz[1], min_xyz[1], max_xyz[2], min_xyz[2]]
-        
-        # Add discipline filter
-        if disciplines:
-            # Normalize disciplines
-            disciplines = [self._normalize_discipline(d) for d in disciplines]
-            placeholders = ','.join('?' * len(disciplines))
-            query += f" AND m.discipline IN ({placeholders})"
-            params.extend(disciplines)
-        
-        # Add IFC class filter
-        if ifc_classes:
-            placeholders = ','.join('?' * len(ifc_classes))
-            query += f" AND m.ifc_class IN ({placeholders})"
-            params.extend(ifc_classes)
-        
-        cursor.execute(query, params)
-        
-        # Convert results to FederationElement objects
-        results = []
-        for row in cursor.fetchall():
-            guid, discipline, ifc_class, filepath = row[:4]
-            bbox = row[4:]
-            results.append(FederationElement(guid, discipline, ifc_class, bbox, filepath))
-        
+
+        # Check if rtree is populated
+        cursor.execute("SELECT COUNT(*) FROM elements_rtree")
+        rtree_count = cursor.fetchone()[0]
+
+        if rtree_count > 0:
+            # Use rtree for efficient spatial query
+            query = """
+                SELECT m.guid, m.discipline, m.ifc_class, m.filepath,
+                       r.minX, r.minY, r.minZ, r.maxX, r.maxY, r.maxZ
+                FROM elements_rtree r
+                JOIN elements_meta m ON r.id = m.id
+                WHERE r.minX <= ? AND r.maxX >= ?
+                  AND r.minY <= ? AND r.maxY >= ?
+                  AND r.minZ <= ? AND r.maxZ >= ?
+            """
+            params = [max_xyz[0], min_xyz[0], max_xyz[1], min_xyz[1], max_xyz[2], min_xyz[2]]
+
+            # Add discipline filter
+            if disciplines:
+                disciplines = [self._normalize_discipline(d) for d in disciplines]
+                placeholders = ','.join('?' * len(disciplines))
+                query += f" AND m.discipline IN ({placeholders})"
+                params.extend(disciplines)
+
+            # Add IFC class filter
+            if ifc_classes:
+                placeholders = ','.join('?' * len(ifc_classes))
+                query += f" AND m.ifc_class IN ({placeholders})"
+                params.extend(ifc_classes)
+
+            cursor.execute(query, params)
+
+            # Convert results to FederationElement objects
+            results = []
+            for row in cursor.fetchall():
+                guid, discipline, ifc_class, filepath = row[:4]
+                bbox = row[4:]
+                results.append(FederationElement(guid, discipline, ifc_class, bbox, filepath))
+        else:
+            # Fallback: Calculate bbox on-the-fly from element_geometry
+            import struct
+            query = """
+                SELECT m.guid, m.discipline, m.ifc_class, m.filepath, g.vertices
+                FROM elements_meta m
+                LEFT JOIN element_geometry g ON m.guid = g.guid
+                WHERE 1=1
+            """
+            params = []
+
+            # Add discipline filter
+            if disciplines:
+                disciplines = [self._normalize_discipline(d) for d in disciplines]
+                placeholders = ','.join('?' * len(disciplines))
+                query += f" AND m.discipline IN ({placeholders})"
+                params.extend(disciplines)
+
+            # Add IFC class filter
+            if ifc_classes:
+                placeholders = ','.join('?' * len(ifc_classes))
+                query += f" AND m.ifc_class IN ({placeholders})"
+                params.extend(ifc_classes)
+
+            cursor.execute(query, params)
+
+            # Filter by bbox on client side
+            results = []
+            for row in cursor.fetchall():
+                guid, discipline, ifc_class, filepath, vertices_blob = row
+
+                if not vertices_blob:
+                    continue
+
+                # Calculate bbox from vertices
+                vertices = struct.unpack(f'{len(vertices_blob)//4}f', vertices_blob)
+                coords = [(vertices[i], vertices[i+1], vertices[i+2])
+                         for i in range(0, len(vertices), 3)]
+
+                if not coords:
+                    continue
+
+                bbox_min = [min(c[i] for c in coords) for i in range(3)]
+                bbox_max = [max(c[i] for c in coords) for i in range(3)]
+
+                # Check bbox intersection
+                if (bbox_min[0] <= max_xyz[0] and bbox_max[0] >= min_xyz[0] and
+                    bbox_min[1] <= max_xyz[1] and bbox_max[1] >= min_xyz[1] and
+                    bbox_min[2] <= max_xyz[2] and bbox_max[2] >= min_xyz[2]):
+                    bbox = tuple(bbox_min + bbox_max)
+                    results.append(FederationElement(guid, discipline, ifc_class, bbox, filepath))
+
         conn.close()
         return results
     
@@ -320,7 +375,7 @@ class FederationIndex:
         
         cursor.execute("""
             SELECT m.guid, m.discipline, m.ifc_class, m.filepath,
-                   r.min_x, r.min_y, r.min_z, r.max_x, r.max_y, r.max_z
+                   r.minX, r.minY, r.minZ, r.maxX, r.maxY, r.maxZ
             FROM elements_rtree r
             JOIN elements_meta m ON r.id = m.id
             WHERE m.discipline = ?
@@ -393,7 +448,7 @@ class FederationIndex:
         
         cursor.execute("""
             SELECT m.guid, m.discipline, m.ifc_class, m.filepath,
-                   r.min_x, r.min_y, r.min_z, r.max_x, r.max_y, r.max_z
+                   r.minX, r.minY, r.minZ, r.maxX, r.maxY, r.maxZ
             FROM elements_meta m
             JOIN elements_rtree r ON m.id = r.id
             WHERE m.guid = ?

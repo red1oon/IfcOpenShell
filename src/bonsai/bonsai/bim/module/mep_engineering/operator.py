@@ -85,8 +85,12 @@ class RouteMEPConduit(Operator):
         
         # Query obstacles along corridor using federation
         try:
-            # Filter to essential blocking disciplines only (not FP, SP, CW)
-            disciplines = ['STR', 'ACMV']  # Structural, mechanical only, not avoid architectural
+            # Filter to essential blocking disciplines
+            # ARC: walls, slabs, columns (major obstacles)
+            # STR: structural elements (beams, columns) - if available
+            # ACMV: mechanical ducts and equipment
+            # FP: fire protection (pipes may clash)
+            disciplines = ['ARC', 'STR', 'ACMV', 'FP']
             
             obstacles = index.query_corridor(
                 start=start,
@@ -372,14 +376,23 @@ class VisualizeRoutingObstacles(Operator):
                 import json
                 waypoints = json.loads(context.scene["MEP_last_route_waypoints"])
                 print(f"✓ Retrieved {len(waypoints)} waypoints for visualization")
-            # Create visualization
+            # Create visualization (sample obstacles for performance)
+            # Limit to 200 obstacles to prevent viewport slowdown
+            MAX_OBSTACLES_TO_SHOW = 200
+            if len(obstacle_bboxes) > MAX_OBSTACLES_TO_SHOW:
+                import random
+                sampled_obstacles = random.sample(obstacle_bboxes, MAX_OBSTACLES_TO_SHOW)
+                print(f"  ⚠️  Sampled {MAX_OBSTACLES_TO_SHOW} obstacles (of {len(obstacle_bboxes)}) for visualization")
+            else:
+                sampled_obstacles = obstacle_bboxes
+
             created = visualization.visualize_routing_scenario(
                 start=start,
                 end=end,
-                obstacles=obstacle_bboxes,
+                obstacles=sampled_obstacles,
                 clearance=clearance,
                 waypoints=waypoints,
-                show_clearance_zones=True,
+                show_clearance_zones=False,  # Disable clearance zones for performance
                 show_corridor=True
             )
             # Selection and viewport navigation handled by focus functions below

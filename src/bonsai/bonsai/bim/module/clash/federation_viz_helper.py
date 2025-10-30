@@ -50,8 +50,8 @@ def find_or_create_element_from_database(
         cursor.execute("""
             SELECT
                 m.guid, m.ifc_class, m.discipline,
-                r.min_x, r.min_y, r.min_z,
-                r.max_x, r.max_y, r.max_z
+                r.minX, r.minY, r.minZ,
+                r.maxX, r.maxY, r.maxZ
             FROM elements_meta m
             JOIN elements_rtree r ON m.id = r.id
             WHERE m.guid = ?

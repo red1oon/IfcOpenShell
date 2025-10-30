@@ -69,9 +69,9 @@ def detect_clashes_from_database(db_path: str,
             m.guid,
             m.discipline,
             m.ifc_class,
-            r.min_x, r.max_x,
-            r.min_y, r.max_y,
-            r.min_z, r.max_z
+            r.minX, r.maxX,
+            r.minY, r.maxY,
+            r.minZ, r.maxZ
         FROM elements_meta m
         JOIN elements_rtree r ON m.id = r.id
         {discipline_filter}
@@ -109,14 +109,14 @@ def detect_clashes_from_database(db_path: str,
                 m.guid,
                 m.discipline,
                 m.ifc_class,
-                r.min_x, r.max_x,
-                r.min_y, r.max_y,
-                r.min_z, r.max_z
+                r.minX, r.maxX,
+                r.minY, r.maxY,
+                r.minZ, r.maxZ
             FROM elements_rtree r
             JOIN elements_meta m ON r.id = m.id
-            WHERE r.min_x <= ? AND r.max_x >= ?
-              AND r.min_y <= ? AND r.max_y >= ?
-              AND r.min_z <= ? AND r.max_z >= ?
+            WHERE r.minX <= ? AND r.maxX >= ?
+              AND r.minY <= ? AND r.maxY >= ?
+              AND r.minZ <= ? AND r.maxZ >= ?
               AND m.id > ?
         """, (*query_bbox, elem_a_id))
 

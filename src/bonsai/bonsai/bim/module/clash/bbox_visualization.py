@@ -152,7 +152,7 @@ def load_federation_bboxes(db_path: str, limit: Optional[int] = None) -> Dict[st
 
     # Query bboxes with discipline
     query = """
-        SELECT m.discipline, r.min_x, r.min_y, r.min_z, r.max_x, r.max_y, r.max_z, m.guid
+        SELECT m.discipline, r.minX, r.minY, r.minZ, r.maxX, r.maxY, r.maxZ, m.guid
         FROM elements_meta m
         JOIN elements_rtree r ON m.id = r.id
     """

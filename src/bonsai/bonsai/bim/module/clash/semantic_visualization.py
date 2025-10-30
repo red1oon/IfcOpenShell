@@ -98,8 +98,8 @@ def query_semantic_elements(db_path: str, limit: Optional[int] = None) -> List[D
             s.semantic_type,
             s.profile_width,
             s.profile_height,
-            r.min_x, r.min_y, r.min_z,
-            r.max_x, r.max_y, r.max_z
+            r.minX, r.minY, r.minZ,
+            r.maxX, r.maxY, r.maxZ
         FROM elements_meta m
         JOIN elements_rtree r ON m.id = r.id
         LEFT JOIN element_semantics s ON m.guid = s.guid
