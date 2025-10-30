@@ -23,7 +23,6 @@ import sqlite3
 import struct
 import hashlib
 import argparse
-import json
 from pathlib import Path
 from typing import Tuple, List, Dict, Optional
 
@@ -75,16 +74,13 @@ DISCIPLINE_COLORS = {
     "LPG": (0.7, 0.5, 0.3, 1.0),      # Brown
 }
 
-# NO PER-FILE COORDINATE OFFSETS NEEDED!
-# IFC files from the BIM coordinator are ALREADY COORDINATED
-# All disciplines share the same local origin (verified by check_all_discipline_coords.py)
-# - All element coords within ±0.15m of origin
-# - Disciplines overlap correctly in 3D space
-# IfcMapConversion is metadata only - DO NOT apply to geometry!
-# Reference: COORDINATE_SYSTEM_DEFINITIVE_GUIDE.md
-
 DB_PATH = "/home/red1/Documents/bonsai/DatabaseFiles/IFCmigrated_IFC4_v2.db"
 LOG_FILE = "/home/red1/Documents/bonsai/consolelogs/extraction_IFC4_v2.log"
+SPATIAL_FILTER = None  # Set by --sample mode (deprecated - use skip_offset instead)
+SKIP_OFFSET = 0  # Number of elements to skip before starting extraction
+MAX_ELEMENTS = None  # Maximum elements to extract (None = unlimited)
+TIMEOUT_SECONDS = None  # Time limit for extraction (None = unlimited)
+STOREY_FILTER = None  # Extract only elements from specific IfcBuildingStorey
 
 # ============================================================================
 # UTILITY FUNCTIONS
@@ -202,19 +198,6 @@ def create_enhanced_schema(conn: sqlite3.Connection):
             offset_y REAL NOT NULL,
             offset_z REAL NOT NULL,
             unit TEXT DEFAULT 'METERS',
-            notes TEXT
-        )
-    """)
-
-    # Per-file coordinate offsets (for multi-discipline alignment)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS file_offsets (
-            filepath TEXT PRIMARY KEY,
-            discipline TEXT NOT NULL,
-            offset_x REAL NOT NULL,
-            offset_y REAL NOT NULL,
-            offset_z REAL NOT NULL,
-            reference_discipline TEXT DEFAULT 'ARC',
             notes TEXT
         )
     """)
@@ -386,13 +369,11 @@ def extract_spatial_location(element, ifc_file) -> Dict[str, Optional[str]]:
 # GEOMETRY EXTRACTION
 # ============================================================================
 
-def extract_from_ifc(ifc_path: str, discipline: str, conn: sqlite3.Connection, max_elements: int = None, spatial_filter: dict = None) -> Tuple[int, int]:
+def extract_from_ifc(ifc_path: str, discipline: str, conn: sqlite3.Connection) -> Tuple[int, int]:
     """Extract tessellation + metadata from single IFC file."""
     log(f"\n{'='*80}")
     log(f"Processing: {Path(ifc_path).name}")
     log(f"Discipline: {discipline}")
-    if max_elements:
-        log(f"⚠️  LIMITED MODE: Extracting up to {max_elements} elements only")
     log(f"{'='*80}")
 
     start_time = time.time()
@@ -415,6 +396,7 @@ def extract_from_ifc(ifc_path: str, discipline: str, conn: sqlite3.Connection, m
     processed = 0
     skipped = 0
     no_geometry = 0
+    element_index = 0  # Track position in element stream (for skip logic)
 
     # Excluded types (spatial containers, not physical elements)
     excluded_types = {
@@ -431,6 +413,22 @@ def extract_from_ifc(ifc_path: str, discipline: str, conn: sqlite3.Connection, m
             if ifc_class in excluded_types:
                 no_geometry += 1
                 continue
+
+            # STOREY FILTERING: Check if element belongs to target storey
+            if STOREY_FILTER:
+                # Get element's storey
+                element_storey = None
+                for rel in getattr(element, 'ContainedInStructure', []):
+                    if hasattr(rel, 'RelatingStructure'):
+                        structure = rel.RelatingStructure
+                        if structure.is_a("IfcBuildingStorey"):
+                            element_storey = structure.Name or structure.LongName
+                            break
+
+                # Skip if not in target storey
+                if element_storey != STOREY_FILTER:
+                    skipped += 1
+                    continue
 
             # Skip if already processed
             cursor.execute("SELECT guid FROM elements_meta WHERE guid = ?", (guid,))
@@ -465,44 +463,35 @@ def extract_from_ifc(ifc_path: str, discipline: str, conn: sqlite3.Connection, m
             normals = [(normals_flat[j], normals_flat[j+1], normals_flat[j+2])
                       for j in range(0, len(normals_flat), 3)] if normals_flat else []
 
-            # Calculate bounding box from IFC world coordinates (in METERS - GPS scale)
-            # IfcOpenShell with USE_WORLD_COORDS=True returns geometry in METERS, not millimeters!
-            # Reference: merged_federated.ifc analysis showed X: -50448 to -50407m (GPS coordinates)
+            # Calculate bounding box
             bbox = get_bbox(vertices)
-            center_m = (
-                (bbox[0] + bbox[1]) / 2,  # X center in METERS
-                (bbox[2] + bbox[3]) / 2,  # Y center in METERS
-                (bbox[4] + bbox[5]) / 2   # Z center in METERS
+            center = (
+                (bbox[0] + bbox[1]) / 2,
+                (bbox[2] + bbox[3]) / 2,
+                (bbox[4] + bbox[5]) / 2
             )
 
-            # Store coordinates as-is in METERS (GPS scale)
-            # Database will contain GPS-scale coordinates matching merged_federated.ifc ground truth
-            # Expected values: X ~-50427m, Y ~34192m, Z ~3-29m
-            center = center_m  # Use GPS coordinates as-is from IFC (in METERS)
+            # SKIP-BASED SAMPLING: Skip first N elements, then extract up to max
+            element_index += 1
 
-            # Apply spatial filter if provided
-            if spatial_filter:
-                if not (spatial_filter['min_x'] <= center[0] <= spatial_filter['max_x'] and
-                        spatial_filter['min_y'] <= center[1] <= spatial_filter['max_y'] and
-                        spatial_filter['min_z'] <= center[2] <= spatial_filter['max_z']):
-                    # Element outside spatial filter - skip it
-                    continue
+            # Check timeout (if set)
+            if TIMEOUT_SECONDS and (time.time() - start_time) > TIMEOUT_SECONDS:
+                log(f"  ⏱️ Timeout reached ({TIMEOUT_SECONDS}s), stopping extraction for {discipline}")
+                break
 
-            # Transform vertices to element-local coordinates (standard template/instance pattern)
-            # This allows mesh data to be shared between identical geometries (instancing)
-            # Subtract the ALIGNED center (not project center) to ensure vertices are relative to aligned position
+            # Skip elements before skip_offset
+            if SKIP_OFFSET > 0 and element_index <= SKIP_OFFSET:
+                skipped += 1
+                continue
+
+            # Stop if we've reached max_elements limit
+            if MAX_ELEMENTS and processed >= MAX_ELEMENTS:
+                log(f"  ⚠️ Reached max_elements limit ({MAX_ELEMENTS}), stopping extraction for {discipline}")
+                break
+
+            # CRITICAL: Transform vertices to be relative to center
+            # This ensures geometry can be instanced correctly with instance.location = center
             vertices = [(v[0] - center[0], v[1] - center[1], v[2] - center[2]) for v in vertices]
-
-            # Recalculate bbox based on aligned center + local vertex extents
-            local_bbox = get_bbox(vertices)
-            aligned_bbox = (
-                center[0] + local_bbox[0],  # min_x
-                center[0] + local_bbox[1],  # max_x
-                center[1] + local_bbox[2],  # min_y
-                center[1] + local_bbox[3],  # max_y
-                center[2] + local_bbox[4],  # min_z
-                center[2] + local_bbox[5]   # max_z
-            )
 
             # Extract metadata
             metadata = extract_element_metadata(element, ifc_file)
@@ -536,20 +525,17 @@ def extract_from_ifc(ifc_path: str, discipline: str, conn: sqlite3.Connection, m
             """, (guid, vertices_blob, faces_blob, normals_blob,
                   len(vertices), len(faces), geom_hash))
 
-            # Insert into R-tree (using GPS-aligned bbox in mm)
-            # This ensures spatial queries work correctly across all aligned disciplines
+            # Insert into R-tree (convert to mm)
             cursor.execute("""
                 INSERT OR REPLACE INTO elements_rtree
                 (id, min_x, max_x, min_y, max_y, min_z, max_z)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (elem_id,
-                  aligned_bbox[0], aligned_bbox[1],
-                  aligned_bbox[2], aligned_bbox[3],
-                  aligned_bbox[4], aligned_bbox[5]))
+                  bbox[0]*1000, bbox[1]*1000,
+                  bbox[2]*1000, bbox[3]*1000,
+                  bbox[4]*1000, bbox[5]*1000))
 
-            # Insert transform (using GPS-aligned center - in mm)
-            # This center already includes the discipline alignment offset
-            # At load time, only global_offset needs to be subtracted for viewport display
+            # Insert transform
             cursor.execute("""
                 INSERT OR REPLACE INTO element_transforms
                 (guid, center_x, center_y, center_z, transform_source)
@@ -581,11 +567,6 @@ def extract_from_ifc(ifc_path: str, discipline: str, conn: sqlite3.Connection, m
                       prop['property_value'], prop['property_type']))
 
             processed += 1
-
-            # Check if we've reached the limit
-            if max_elements and processed >= max_elements:
-                log(f"  Reached limit of {max_elements} elements, stopping...")
-                break
 
             if processed % 100 == 0:
                 conn.commit()
@@ -634,23 +615,18 @@ def calculate_global_offset(conn: sqlite3.Connection):
         log("⚠️  No elements in R-tree, cannot calculate offset")
         return
 
-    # Database stores coordinates in METERS (GPS scale) - NO conversion needed!
-    # IfcOpenShell with USE_WORLD_COORDS=True returns meters directly
-    # Expected values: X ~-50427m, Y ~34192m, Z ~3-29m (GPS coordinates)
-    gmin_x, gmax_x, gmin_y, gmax_y, gmin_z, gmax_z = row
+    # Convert to meters
+    gmin_x, gmax_x, gmin_y, gmax_y, gmin_z, gmax_z = [v/1000.0 for v in row]
 
-    # Calculate GPS-scale offset to position building in viewport
-    # This offset will bring the GPS coordinates (~-50km, ~34km) back near origin
-    # Expected offset: X ~-50427m, Y ~34192m, Z ~3m
-    # After offset, building appears near viewport origin (0, 0, 0)
-    offset_x = (gmin_x + gmax_x) / 2  # Center X (GPS scale)
-    offset_y = (gmin_y + gmax_y) / 2  # Center Y (GPS scale)
-    offset_z = gmin_z  # Use ground level for Z
+    # Calculate center
+    offset_x = (gmin_x + gmax_x) / 2
+    offset_y = (gmin_y + gmax_y) / 2
+    offset_z = gmin_z  # Use minimum Z (ground level)
 
-    # Store in global_offset table (GPS-scale offset in METERS)
+    # Store in global_offset table
     cursor.execute("""
         INSERT OR REPLACE INTO global_offset (id, offset_x, offset_y, offset_z, unit, notes)
-        VALUES (1, ?, ?, ?, 'METERS', 'GPS-scale viewport offset - matches merged_federated.ifc ground truth')
+        VALUES (1, ?, ?, ?, 'METERS', 'Calculated from IFC4 tessellation bounding box')
     """, (offset_x, offset_y, offset_z))
 
     conn.commit()
@@ -727,15 +703,14 @@ def main():
     """Main extraction process."""
     parser = argparse.ArgumentParser(description='Extract IFC4 tessellation with metadata')
     parser.add_argument('--test', action='store_true', help='Test on small LPG file only')
-    parser.add_argument('--light', action='store_true', help='Light test: extract ~30 elements from ALL disciplines')
-    parser.add_argument('--mini', action='store_true', help='Mini test: extract ~10-15 elements from ALL disciplines (fastest)')
-    parser.add_argument('--sample', action='store_true', help='Sample extraction: varied elements per discipline (~200 total) based on sample_config.json')
+    parser.add_argument('--sample', action='store_true', help='Extract sample using sample_config.json')
+    parser.add_argument('--output', type=str, help='Output database path (overrides default)')
     args = parser.parse_args()
 
-    # Determine database path based on mode
+    # Override DB_PATH if --output specified
     global DB_PATH
-    if args.mini or args.light or args.sample:
-        DB_PATH = "/home/red1/Documents/bonsai/DatabaseFiles/sample_extracted.db"
+    if args.output:
+        DB_PATH = args.output
 
     # Clear log file
     Path(LOG_FILE).write_text("")
@@ -746,60 +721,58 @@ def main():
     log(f"\nDatabase: {DB_PATH}")
     log(f"Log: {LOG_FILE}")
 
-    # Determine mode
-    max_elements_per_file = None
-    discipline_limits = {}  # For --sample mode
-    spatial_filter = None  # For spatial filtering
-
-    if args.sample:
-        # Load JSON config
-        config_path = Path(__file__).parent / "sample_config.json"
-        if not config_path.exists():
-            log(f"❌ ERROR: sample_config.json not found at {config_path}")
-            return
-
-        with open(config_path, 'r') as f:
-            config = json.load(f)
-
-        sample_config = config['sample_extraction']
-        log(f"\n⚠️  SAMPLE MODE - Custom extraction based on sample_config.json")
-        log(f"   Total target: ~{sample_config['total_target']} elements")
-
-        # Check if spatial filtering is enabled
-        if 'spatial_filter' in sample_config:
-            spatial_filter = sample_config['spatial_filter']
-            log(f"   Spatial filter ENABLED:")
-            log(f"     X: {spatial_filter['min_x']:.1f} to {spatial_filter['max_x']:.1f} meters")
-            log(f"     Y: {spatial_filter['min_y']:.1f} to {spatial_filter['max_y']:.1f} meters")
-            log(f"     Z: {spatial_filter['min_z']:.1f} to {spatial_filter['max_z']:.1f} meters")
-            log(f"     Note: {spatial_filter.get('note', 'N/A')}")
-
-        log(f"   Per-discipline settings:")
-        for disc, disc_config in sample_config['disciplines'].items():
-            max_elem = disc_config.get('max_elements')
-            discipline_limits[disc] = max_elem
-            if max_elem is None:
-                log(f"     {disc:6s}: ALL elements in region - {disc_config.get('note', 'N/A')}")
-            else:
-                log(f"     {disc:6s}: {max_elem:3d} elements max - {disc_config.get('rationale', 'N/A')}")
-
-        files_to_process = IFC4_FILES
-
-    elif args.mini:
-        log(f"\n⚠️  MINI MODE - Extracting ~10-15 elements from ALL 8 disciplines")
-        log(f"   Purpose: Ultra-fast test to verify alignment and fit in one common space")
-        log(f"   Validation: 1) Alignment to origin like ORIGINAL_IFC.png (few meters away, not at origin)")
-        log(f"              2) All disciplines placed correctly with proper dimensions and fit")
-        files_to_process = IFC4_FILES
-        max_elements_per_file = 12  # ~12 elements * 8 disciplines = ~96 total
-    elif args.light:
-        log(f"\n⚠️  LIGHT MODE - Extracting ~30 elements from ALL 8 disciplines")
-        log(f"   Purpose: Fast validation test with all disciplines in common 3D space")
-        files_to_process = IFC4_FILES
-        max_elements_per_file = 30
-    elif args.test:
+    if args.test:
         log(f"\n⚠️  TEST MODE - Processing LPG file only")
         files_to_process = [TEST_FILE]
+    elif args.sample:
+        # Load sample config
+        sample_config_path = Path.home() / "Documents" / "bonsai" / "Scripts" / "sample_config.json"
+        if not sample_config_path.exists():
+            log(f"❌ ERROR: sample_config.json not found at {sample_config_path}")
+            log("   Create sample_config.json with extraction parameters")
+            return 1
+
+        import json
+        with open(sample_config_path) as f:
+            sample_config = json.load(f)
+
+        sample_params = sample_config.get('sample_extraction', {})
+        extraction_mode = sample_params.get('extraction_mode', 'skip')
+
+        if extraction_mode == 'storey':
+            log(f"\n⚠️  SAMPLE MODE - Storey-based extraction")
+            storey_name = sample_params.get('storey_name')
+            max_elements = sample_params.get('max_elements', 800)
+
+            log(f"   Config: {sample_config_path}")
+            log(f"   Storey: {storey_name}")
+            log(f"   Max elements: {max_elements}")
+
+            files_to_process = IFC4_FILES
+
+            # Store sampling parameters globally
+            global STOREY_FILTER, MAX_ELEMENTS
+            STOREY_FILTER = storey_name
+            MAX_ELEMENTS = max_elements
+
+        else:  # skip mode
+            log(f"\n⚠️  SAMPLE MODE - Skip-based progressive sampling")
+            skip_offset = sample_params.get('skip_offset', 0)
+            max_elements = sample_params.get('max_elements', 800)
+            timeout_seconds = sample_params.get('timeout_seconds', 300)
+
+            log(f"   Config: {sample_config_path}")
+            log(f"   Skip offset: {skip_offset}")
+            log(f"   Max elements: {max_elements}")
+            log(f"   Timeout: {timeout_seconds}s ({timeout_seconds/60:.1f} minutes)")
+
+            files_to_process = IFC4_FILES
+
+            # Store sampling parameters globally
+            global SKIP_OFFSET, TIMEOUT_SECONDS
+            SKIP_OFFSET = skip_offset
+            MAX_ELEMENTS = max_elements
+            TIMEOUT_SECONDS = timeout_seconds
     else:
         log(f"IFC Files: {len(IFC4_FILES)}")
         files_to_process = IFC4_FILES
@@ -823,27 +796,9 @@ def main():
                 continue
 
             discipline = get_discipline_from_path(ifc_path)
-
-            # Determine max_elements for this discipline
-            if discipline_limits:
-                # Sample mode - use discipline-specific limit
-                discipline_max = discipline_limits.get(discipline, max_elements_per_file)
-            else:
-                # Other modes - use uniform limit
-                discipline_max = max_elements_per_file
-
-            processed, skipped = extract_from_ifc(ifc_path, discipline, conn, max_elements=discipline_max, spatial_filter=spatial_filter)
+            processed, skipped = extract_from_ifc(ifc_path, discipline, conn)
             total_processed += processed
             total_skipped += skipped
-
-            # Record that NO offset was applied (files already coordinated)
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT OR REPLACE INTO file_offsets
-                (filepath, discipline, offset_x, offset_y, offset_z, reference_discipline, notes)
-                VALUES (?, ?, ?, ?, ?, 'NONE', 'IFC files already coordinated by BIM coordinator - no per-file offsets applied')
-            """, (ifc_path, discipline, 0.0, 0.0, 0.0))
-            conn.commit()
 
         # Calculate global offset
         calculate_global_offset(conn)

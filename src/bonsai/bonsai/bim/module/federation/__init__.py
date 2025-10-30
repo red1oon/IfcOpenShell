@@ -37,6 +37,7 @@ classes = (
     operator.AddFederatedFile,
     operator.RemoveFederatedFile,
     operator.SelectFederatedFile,
+    operator.SelectFederatedFolder,
     operator.PreprocessFederatedModels,
     operator.LoadFederationIndex,
     operator.UnloadFederationIndex,
@@ -46,6 +47,8 @@ classes = (
     operator.DetectFederationClashes,
     operator.ReloadFederationViewport,
     operator.UnloadFederationViewport,
+    operator.ExtractSampleDatabase,
+    operator.RedoSampleExtraction,
     ui.BIM_PT_federation,
     ui.BIM_UL_federated_files,
 )

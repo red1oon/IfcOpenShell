@@ -123,6 +123,22 @@ class BIMFederationProperties(PropertyGroup):
         default=False
     )
 
+    # Sample extraction settings
+    sample_anchor_type: EnumProperty(
+        name="Sample Anchor",
+        description="Element type to anchor sampling region (finds densest area around this type)",
+        items=[
+            ('ELEC', 'Electrical', 'Anchor to electrical elements (for conduit routing tests)'),
+            ('ACMV', 'HVAC', 'Anchor to HVAC elements (for duct routing tests)'),
+            ('FP', 'Fire Protection', 'Anchor to fire protection elements'),
+            ('SP', 'Sprinkler', 'Anchor to sprinkler elements'),
+            ('ARC', 'Architecture', 'Anchor to walls/doors (for visual context)'),
+            ('STR', 'Structure', 'Anchor to structural elements'),
+            ('AUTO', 'Auto (Densest MEP)', 'Automatically find densest MEP region'),
+        ],
+        default='ELEC'
+    )
+
     # Visualization mode (for UI control)
     visualization_mode: EnumProperty(
         name="Visualization Mode",

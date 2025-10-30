@@ -123,6 +123,75 @@ class SelectFederatedFile(Operator, ImportHelper):
         return stem[:10]
 
 
+class SelectFederatedFolder(Operator):
+    """Scan a folder and add all IFC files to federation"""
+    bl_idname = "bim.select_federated_folder"
+    bl_label = "Scan Folder for IFC Files"
+    bl_description = "Select a folder and automatically add all IFC files found"
+    bl_options = {"REGISTER", "UNDO"}
+
+    directory: StringProperty(subtype='DIR_PATH')
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+    def execute(self, context):
+        props = context.scene.BIMFederationProperties
+
+        if not self.directory:
+            self.report({'WARNING'}, "No folder selected")
+            return {'CANCELLED'}
+
+        folder_path = Path(self.directory)
+
+        if not folder_path.exists() or not folder_path.is_dir():
+            self.report({'ERROR'}, f"Invalid folder: {folder_path}")
+            return {'CANCELLED'}
+
+        # Scan for IFC files
+        ifc_files = sorted(folder_path.glob("*.ifc")) + sorted(folder_path.glob("*.ifczip"))
+
+        if not ifc_files:
+            self.report({'WARNING'}, f"No IFC files found in {folder_path}")
+            return {'CANCELLED'}
+
+        # Clear existing file list
+        props.federated_files.clear()
+
+        # Add all found IFC files
+        for ifc_path in ifc_files:
+            new_file = props.federated_files.add()
+            new_file.name = str(ifc_path)
+
+            # Auto-detect discipline from filename
+            stem = ifc_path.stem.upper()
+            import re
+            parts = re.split(r'[-_]', stem)
+
+            known_disciplines = [
+                'STR', 'ACMV', 'ARC', 'ELEC', 'FP', 'SP', 'CW',
+                'STRUCT', 'ARCH', 'HVAC', 'MECH', 'PLUMB', 'FIRE', 'LPG'
+            ]
+
+            discipline = ''
+            for part in parts:
+                if part in known_disciplines:
+                    discipline = part
+                    break
+
+            if not discipline:
+                for part in parts:
+                    if 2 <= len(part) <= 4 and part.isalpha():
+                        discipline = part
+                        break
+
+            new_file.discipline = discipline or stem[:10]
+
+        self.report({'INFO'}, f"Added {len(ifc_files)} IFC files from {folder_path.name}")
+        return {'FINISHED'}
+
+
 class PreprocessFederatedModels(Operator):
     """Run preprocessing to extract bounding boxes from all federated files"""
     bl_idname = "bim.preprocess_federated_models"
@@ -1234,9 +1303,20 @@ class ExtractSampleDatabase(bpy.types.Operator):
     bl_options = {'REGISTER'}
 
     def execute(self, context):
-        print("\n" + "="*70)
-        print("SAMPLE DATABASE EXTRACTION")
-        print("="*70)
+        # Setup console log file
+        from datetime import datetime
+        log_file = Path.home() / "Documents" / "bonsai" / "consolelogs" / f"sample_extraction_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+
+        def log_and_print(msg):
+            """Print to console and save to log file"""
+            print(msg)
+            with open(log_file, 'a') as f:
+                f.write(msg + '\n')
+
+        log_and_print("\n" + "="*70)
+        log_and_print("SAMPLE DATABASE EXTRACTION")
+        log_and_print("="*70)
 
         try:
             props = context.scene.BIMFederationProperties
@@ -1249,7 +1329,7 @@ class ExtractSampleDatabase(bpy.types.Operator):
 
             # Get directory from first file
             ifc_dir = Path(ifc_files[0]).parent
-            print(f"IFC directory: {ifc_dir}")
+            log_and_print(f"IFC directory: {ifc_dir}")
 
             # Find scripts directory
             addon_dir = Path(__file__).parent
@@ -1260,27 +1340,40 @@ class ExtractSampleDatabase(bpy.types.Operator):
                 return {'CANCELLED'}
 
             # Step 1: Run IFC analysis to find optimal region
-            print("\n📊 Step 1: Analyzing IFC files for optimal sampling region...")
+            log_and_print("\n📊 Step 1: Analyzing IFC files for optimal sampling region...")
             analyze_script = scripts_dir / "analyze_ifc_for_sampling.py"
 
             if not analyze_script.exists():
                 self.report({'ERROR'}, f"Analysis script not found: {analyze_script}")
                 return {'CANCELLED'}
 
+            # Get anchor type from UI
+            anchor_type = props.sample_anchor_type
+            log_and_print(f"Anchor type: {anchor_type}")
+
+            # Use Blender's Python with PYTHONPATH for ifcopenshell
+            import os
+            env = os.environ.copy()
+            env['PYTHONPATH'] = str(Path.home() / "Projects" / "IfcOpenShell" / "src")
+
+            # Use Blender's Python (same as current process)
+            blender_python = sys.executable
+
             result = subprocess.run(
-                [sys.executable, str(analyze_script), "--ifc-dir", str(ifc_dir)],
+                [blender_python, str(analyze_script), "--ifc-dir", str(ifc_dir), "--anchor-type", anchor_type],
                 capture_output=True,
                 text=True,
-                timeout=120
+                timeout=120,
+                env=env
             )
 
             if result.returncode != 0:
-                print(f"Analysis failed:\n{result.stderr}")
+                log_and_print(f"Analysis failed:\n{result.stderr}")
                 self.report({'ERROR'}, "IFC analysis failed. Check console.")
                 return {'CANCELLED'}
 
-            print(result.stdout)
-            print("✓ Analysis complete")
+            log_and_print(result.stdout)
+            log_and_print("✓ Analysis complete")
 
             # Step 2: Copy suggested config to active config
             suggested_config = scripts_dir / "sample_config_suggested.json"
@@ -1292,11 +1385,12 @@ class ExtractSampleDatabase(bpy.types.Operator):
 
             import shutil
             shutil.copy(suggested_config, active_config)
-            print(f"✓ Copied {suggested_config.name} → {active_config.name}")
+            log_and_print(f"✓ Copied {suggested_config.name} → {active_config.name}")
 
             # Step 3: Run extraction
-            print("\n⚙️  Step 2: Extracting sample database...")
-            extract_script = scripts_dir / "extract_tessellation_to_db_v2.py"
+            log_and_print("\n⚙️  Step 2: Extracting sample database...")
+            # Use extraction script from IfcOpenShell repo (absolute path)
+            extract_script = Path.home() / "Projects" / "IfcOpenShell" / "src" / "bonsai" / "scripts" / "extract_tessellation_to_db_v2.py"
 
             if not extract_script.exists():
                 self.report({'ERROR'}, f"Extraction script not found: {extract_script}")
@@ -1309,7 +1403,7 @@ class ExtractSampleDatabase(bpy.types.Operator):
             else:
                 sample_db = scripts_dir.parent / "DatabaseFiles" / "sample_extraction.db"
 
-            print(f"Output database: {sample_db}")
+            log_and_print(f"Output database: {sample_db}")
 
             result = subprocess.run(
                 [sys.executable, str(extract_script), "--sample", "--output", str(sample_db)],
@@ -1319,15 +1413,15 @@ class ExtractSampleDatabase(bpy.types.Operator):
             )
 
             if result.returncode != 0:
-                print(f"Extraction failed:\n{result.stderr}")
+                log_and_print(f"Extraction failed:\n{result.stderr}")
                 self.report({'ERROR'}, "Sample extraction failed. Check console.")
                 return {'CANCELLED'}
 
-            print(result.stdout)
-            print("✓ Extraction complete")
+            log_and_print(result.stdout)
+            log_and_print("✓ Extraction complete")
 
             # Step 4: Validate sample
-            print("\n✅ Step 3: Validating sample quality...")
+            log_and_print("\n✅ Step 3: Validating sample quality...")
             validate_script = scripts_dir / "validate_sample_quick.py"
 
             validation_summary = "Validation skipped"
@@ -1339,7 +1433,7 @@ class ExtractSampleDatabase(bpy.types.Operator):
                     timeout=30
                 )
 
-                print(result.stdout)
+                log_and_print(result.stdout)
 
                 # Parse validation result for status bar
                 if "SAMPLE READY FOR TESTING" in result.stdout:
@@ -1355,27 +1449,29 @@ class ExtractSampleDatabase(bpy.types.Operator):
                     validation_summary = "Validation completed"
                     self.report({'INFO'}, validation_summary)
             else:
-                print("⚠ Validation script not found, skipping")
+                log_and_print("⚠ Validation script not found, skipping")
                 self.report({'WARNING'}, "Validation script not found")
 
             # Update props to point to sample database
             props.federation_database_path = str(sample_db)
 
-            print(f"\n{'='*70}")
-            print("✅ SAMPLE EXTRACTION COMPLETE")
-            print(f"Database: {sample_db}")
-            print(f"Validation: {validation_summary}")
-            print("Next: Click 'Reload Viewport' to load sample")
-            print(f"{'='*70}\n")
+            log_and_print(f"\n{'='*70}")
+            log_and_print("✅ SAMPLE EXTRACTION COMPLETE")
+            log_and_print(f"Database: {sample_db}")
+            log_and_print(f"Validation: {validation_summary}")
+            log_and_print(f"Log saved to: {log_file}")
+            log_and_print("Next: Click 'Reload Viewport' to load sample")
+            log_and_print(f"{'='*70}\n")
 
             return {'FINISHED'}
 
         except subprocess.TimeoutExpired:
+            log_and_print("\n❌ Extraction timed out (>10 min)")
             self.report({'ERROR'}, "Extraction timed out (>10 min). Try smaller region.")
             return {'CANCELLED'}
 
         except Exception as e:
-            print(f"\n❌ Sample extraction failed: {e}")
+            log_and_print(f"\n❌ Sample extraction failed: {e}")
             import traceback
             traceback.print_exc()
             self.report({'ERROR'}, f"Extraction failed: {str(e)}")
@@ -1438,7 +1534,8 @@ class RedoSampleExtraction(bpy.types.Operator):
 
             # Step 3: Re-run extraction
             print("\n⚙️  Re-extracting sample with new region...")
-            extract_script = scripts_dir / "extract_tessellation_to_db_v2.py"
+            # Use extraction script from IfcOpenShell repo (absolute path)
+            extract_script = Path.home() / "Projects" / "IfcOpenShell" / "src" / "bonsai" / "scripts" / "extract_tessellation_to_db_v2.py"
 
             # Generate new timestamped database name
             from datetime import datetime

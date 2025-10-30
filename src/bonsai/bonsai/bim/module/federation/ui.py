@@ -87,9 +87,10 @@ class BIM_PT_federation(Panel):
         # Federated files section
         box = layout.box()
         box.label(text="Federated IFC Files", icon="OUTLINER_OB_POINTCLOUD")
-        
+
         row = box.row(align=True)
         row.operator("bim.add_federated_file", icon="ADD", text="Add File")
+        row.operator("bim.select_federated_folder", icon="FILEBROWSER", text="Scan Folder")
         
         if props.federated_files:
             # File list
@@ -213,6 +214,9 @@ class BIM_PT_federation(Panel):
         col.label(text="Perfect for testing clash detection and routing")
 
         box.separator()
+
+        # Sample extraction settings
+        box.prop(props, "sample_anchor_type", text="Anchor To")
 
         # Sample extraction buttons
         col = box.column(align=True)
