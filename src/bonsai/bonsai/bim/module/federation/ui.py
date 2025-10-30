@@ -204,11 +204,11 @@ class BIM_PT_federation(Panel):
         box = layout.box()
         row = box.row()
         row.prop(props, "show_help",
-                icon="TRIA_DOWN" if getattr(props, "show_help", False) else "TRIA_RIGHT",
+                icon="TRIA_DOWN" if props.show_help else "TRIA_RIGHT",
                 text="Help & Usage Tips",
                 emboss=False)
 
-        if getattr(props, "show_help", False):
+        if props.show_help:
             col = box.column(align=True)
             col.scale_y = 0.8
             col.label(text="Workflow:")
