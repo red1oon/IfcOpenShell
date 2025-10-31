@@ -606,28 +606,46 @@ class QueryFederationIndex(Operator):
             print(f"✗ FAILED: {e}")
 
     def _test_conduit_routing_integration(self, context, results: dict):
-        """Test 3: Check conduit routing can access federation index"""
-        print("\n[Test 3/5] Conduit Routing Integration")
+        """Test 3: Check conduit routing can access federation index and ELEC elements exist"""
+        print("\n[Test 3/5] Conduit Routing Integration (ELEC Detection)")
         print("-" * 70)
 
         try:
-            # Check if MEP properties exist
-            if not hasattr(context.scene, 'BIMMEPProperties'):
-                print("⚠ SKIPPED: MEP Engineering module not loaded")
-                results['passed'] += 1  # Not a failure, just not applicable
-                return
-
             # Verify index is accessible to routing
             index = bpy.types.WindowManager.federation_index
 
-            # Test: Can routing access obstacle detection?
+            # Test 1: Verify ELEC elements exist in database
+            stats = index.get_statistics()
+            disciplines = stats.get('disciplines', set())
+
+            if 'ELEC' not in disciplines:
+                print("✗ FAILED: No ELEC elements found in federation")
+                print("  • Required for conduit routing tests")
+                print(f"  • Available disciplines: {', '.join(sorted(disciplines))}")
+                results['failed'] += 1
+                results['errors'].append("ELEC discipline not found in federation")
+                return
+
+            # Test 2: Query ELEC elements to verify they're accessible
+            elec_elements = index.query_by_discipline('ELEC')
+
+            if not elec_elements:
+                print("✗ FAILED: ELEC discipline exists but no elements returned")
+                results['failed'] += 1
+                results['errors'].append("ELEC query returned no elements")
+                return
+
+            print(f"✓ PASSED: ELEC detection working")
+            print(f"  • ELEC elements found: {len(elec_elements):,}")
+            print(f"  • Conduit routing can now use ELEC as obstacles")
+
+            # Test 3: Can routing access obstacle detection?
             # This simulates what routing does - query for obstacles in a corridor
             test_corridor = index.query_by_bbox(
                 (-1000, -1000, 0),
                 (1000, 1000, 3000)
             )
 
-            print(f"✓ PASSED: Conduit routing can access index")
             print(f"  • Simulated corridor query: {len(test_corridor)} obstacles")
             results['passed'] += 1
 
@@ -1170,6 +1188,7 @@ class PreviewFederationViewport(bpy.types.Operator):
 
             # Load instant GPU bbox wireframes
             from ..clash import bbox_visualization
+            from . import discipline_legend
 
             success, message = bbox_visualization.enable_bbox_visualization(
                 str(props.federation_database_path)
@@ -1180,11 +1199,15 @@ class PreviewFederationViewport(bpy.types.Operator):
                 logging_utils.stop_file_logging()
                 return {'CANCELLED'}
 
+            # Enable discipline legend overlay (preview mode only)
+            discipline_legend.enable_legend()
+
             print("\n✓ Preview ready - INSTANT GPU bboxes loaded!")
             print("✓ All 49K elements visible - MEP engineers can work immediately!")
+            print("✓ Discipline legend active - click to toggle visibility")
             print("✓ Use 'Load Full Geometry' for detailed tessellation\n")
 
-            self.report({'INFO'}, "Preview ready - instant GPU bboxes")
+            self.report({'INFO'}, "Preview ready - instant GPU bboxes + legend")
             logging_utils.stop_file_logging()
             return {'FINISHED'}
 
@@ -1219,6 +1242,12 @@ class ReloadFederationViewport(bpy.types.Operator):
         print(f"📝 Logging to: {log_path}")
 
         try:
+            # Disable legend when loading full geometry (legend is preview-only)
+            from . import discipline_legend
+            if discipline_legend.is_legend_enabled():
+                discipline_legend.disable_legend()
+                print("  Disabled discipline legend (switching to full geometry mode)")
+
             # CRITICAL: Check tessellation toggle
             if props.use_tessellation:
                 # Use FederationLoader with GPU bbox visualization + tessellation
@@ -1354,6 +1383,16 @@ class UnloadFederationViewport(bpy.types.Operator):
         print(f"📝 Logging to: {log_path}")
 
         try:
+            # Disable legend if active
+            from . import discipline_legend
+            if discipline_legend.is_legend_enabled():
+                discipline_legend.disable_legend()
+
+            # Disable bbox visualization if active
+            from ..clash import bbox_visualization
+            if bbox_visualization.is_bbox_visualization_enabled():
+                bbox_visualization.disable_bbox_visualization()
+
             from .visualization_manager import VisualizationManager
 
             props = context.scene.BIMFederationProperties

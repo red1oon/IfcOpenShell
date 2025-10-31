@@ -189,10 +189,9 @@ def create_tessellated_mesh(guid: str, db_conn: sqlite3.Connection) -> Optional[
     # Create Blender mesh
     mesh = bpy.data.meshes.new(guid[:8])
 
-    # Vertices are stored element-local in millimeters (from IFC tessellation)
-    # Blender expects meters, so we convert: divide by 1000
-    vertices_m = [(x/1000, y/1000, z/1000) for x, y, z in vertices]
-    mesh.from_pydata(vertices_m, [], faces)
+    # Vertices are already in meters (IfcOpenShell auto-applies IfcMapConversion with USE_WORLD_COORDS=True)
+    # Database stores GPS-aligned coordinates in meters - use directly without conversion
+    mesh.from_pydata(vertices, [], faces)
     mesh.update()
 
     return mesh
