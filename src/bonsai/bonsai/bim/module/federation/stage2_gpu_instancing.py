@@ -298,7 +298,7 @@ def calculate_transform_from_bbox(bbox: Tuple[float, float, float, float, float,
     Calculate position, scale, rotation from bounding box.
 
     Args:
-        bbox: (min_x, min_y, min_z, max_x, max_y, max_z) in mm
+        bbox: (min_x, min_y, min_z, max_x, max_y, max_z) in meters (already converted from IFC)
         semantic_type: CYLINDER, BOX, etc.
         ifc_class: IFC class name
         offset: Coordinate offset to center model at origin (in meters)
@@ -308,15 +308,13 @@ def calculate_transform_from_bbox(bbox: Tuple[float, float, float, float, float,
     """
     min_x, min_y, min_z, max_x, max_y, max_z = bbox
 
-    # Calculate dimensions (in mm from database)
+    # Calculate dimensions (already in meters from elements_rtree)
+    # Database stores GPS-aligned coordinates in meters (IfcOpenShell auto-applies IfcMapConversion)
     width = max_x - min_x
     depth = max_y - min_y
     height = max_z - min_z
 
-    # Convert mm to meters for ALL calculations
-    min_x, min_y, min_z = min_x / 1000.0, min_y / 1000.0, min_z / 1000.0
-    max_x, max_y, max_z = max_x / 1000.0, max_y / 1000.0, max_z / 1000.0
-    width, depth, height = width / 1000.0, depth / 1000.0, height / 1000.0
+    # NO conversion needed - coordinates are already in meters!
 
     # Calculate center position (in meters)
     center_x = (min_x + max_x) / 2.0
