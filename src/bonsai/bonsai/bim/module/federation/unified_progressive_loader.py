@@ -26,11 +26,14 @@ from bpy.app.timers import register as timer_register
 
 CONFIG = {
     'idle_threshold': 0.5,      # Seconds of no activity = idle
-    'glass_batch_size': 100,    # Glass hulls per timer tick
-    'full_batch_size': 50,      # Full geometry per tick (when idle)
+    'glass_batch_size': 100,    # Glass hulls per timer tick (small batches for smooth animation)
+    'full_batch_size': 50,      # Full geometry per tick (when idle) - NOT USED
     'subsample_rate': 5,        # Every Nth vertex for glass hull
     'emission_strength': 1.0,   # Glass edge glow strength
     'layer_weight_blend': 0.9,  # Edge visibility (higher = only edges)
+    'skip_full_geometry': True, # Skip Stage 2 (full geometry) - wireframes are sufficient
+    'redraw_every_n_batches': 1,  # Redraw every batch - smooth flowing animation!
+    'preview_time_limit': 20.0,  # Auto-stop preview after N seconds (good enough shape)
 }
 
 # ============================================================================
@@ -211,14 +214,27 @@ class GlassOutlineLoader(bpy.types.Operator):
     _start_time = 0
     _glass_coll = None
     _callback = None
+    _batch_count = 0
 
     def modal(self, context, event):
         if event.type == 'TIMER':
+            # Check time limit - auto-stop after 20 seconds (good enough preview)
+            elapsed = time.time() - self._start_time
+            if elapsed >= CONFIG['preview_time_limit']:
+                print(f"\n⏱️  Preview time limit reached ({elapsed:.1f}s)")
+                print(f"  Loaded {self._index}/{len(self._elements)} glass hulls ({self._index/len(self._elements)*100:.0f}%)")
+                print("  Preview shape is sufficient for MEP work!")
+                print("  Use 'Load Full Geometry' button for complete visualization\n")
+                self.finish(context)
+                return {'FINISHED'}
+
             batch_size = CONFIG['glass_batch_size']
 
+            # Process one batch
             for _ in range(batch_size):
                 if self._index >= len(self._elements):
                     # Stage 1 complete!
+                    print(f"\n✓ All glass hulls loaded in {elapsed:.1f}s")
                     self.finish(context)
                     return {'FINISHED'}
 
@@ -234,20 +250,21 @@ class GlassOutlineLoader(bpy.types.Operator):
                 if obj:
                     self._glass_coll.objects.link(obj)
 
-            # Update progress
-            progress = self._index / len(self._elements)
-            elapsed = time.time() - self._start_time
-            remaining = (elapsed / progress) * (1 - progress) if progress > 0 else 0
+            self._batch_count += 1
 
-            if self._index % 1000 == 0 or self._index == len(self._elements):
+            # Update progress every 500 objects
+            if self._index % 500 == 0 or self._index == len(self._elements):
+                progress = self._index / len(self._elements)
+                remaining = (elapsed / progress) * (1 - progress) if progress > 0 else 0
                 print(f"  Glass: {self._index}/{len(self._elements)} "
-                      f"({progress*100:.0f}%, {remaining:.1f}s remaining)")
+                      f"({progress*100:.0f}%, {elapsed:.1f}s elapsed)")
 
-            # Redraw viewport
-            for area in context.screen.areas:
-                if area.type == 'VIEW_3D':
-                    area.tag_redraw()
-                    break
+            # Redraw every N batches for smooth animation
+            if self._batch_count % CONFIG['redraw_every_n_batches'] == 0 or self._index >= len(self._elements):
+                for area in context.screen.areas:
+                    if area.type == 'VIEW_3D':
+                        area.tag_redraw()
+                        break
 
             return {'RUNNING_MODAL'}
 
@@ -297,9 +314,16 @@ class GlassOutlineLoader(bpy.types.Operator):
         elapsed = time.time() - self._start_time
         print(f"✓ Stage 1 complete: {len(self._elements)} glass outlines in {elapsed:.1f}s")
         print("✓ MEP panel ready - engineers can start work!")
-        print("")
 
-        # Trigger Stage 2
+        # Check if Stage 2 should be skipped
+        if CONFIG.get('skip_full_geometry', False):
+            print("✓ Wireframe loading complete - full geometry stage skipped (as configured)")
+            print("✓ Viewport ready for MEP work with lightweight wireframes")
+            print("")
+            return
+
+        print("")
+        # Trigger Stage 2 (if not skipped)
         bpy.ops.federation.load_full('INVOKE_DEFAULT', db_path=self.db_path)
 
 
@@ -498,6 +522,26 @@ def load_federation_progressive(db_path):
     print("")
     print("="*80)
     print("")
+
+    # Register federation index for conduit routing
+    if not hasattr(bpy.types.WindowManager, 'federation_index'):
+        print("  Registering federation index for routing...")
+        from .spatial_index import FederationIndex
+        index = FederationIndex(db_path)
+        index.build()
+        bpy.types.WindowManager.federation_index = index
+
+        # Update properties
+        if hasattr(bpy.context, 'scene') and hasattr(bpy.context.scene, 'BIMFederationProperties'):
+            props = bpy.context.scene.BIMFederationProperties
+            stats = index.get_statistics()
+            props.index_loaded = True
+            props.total_elements = stats.get('total_elements', 0)
+            props.loaded_disciplines = stats.get('total_disciplines', 0)
+        print(f"  ✓ Federation index registered: {stats.get('total_elements', 0):,} elements")
+        print(f"  ✓ Conduit routing and clash detection now enabled")
+    else:
+        print("  Federation index already registered")
 
     # Register operators if needed
     if not hasattr(bpy.types, 'FEDERATION_OT_load_glass'):

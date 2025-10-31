@@ -29,6 +29,7 @@ import bpy
 from bpy.app.handlers import persistent
 from pathlib import Path
 from . import ui, prop, operator
+from .unified_progressive_loader import GlassOutlineLoader
 
 # Expose classes so main __init__.py can find them
 classes = (
@@ -45,11 +46,13 @@ classes = (
     operator.LoadFederationModel,
     operator.LoadFederationStage2Background,
     operator.DetectFederationClashes,
+    operator.PreviewFederationViewport,
     operator.ReloadFederationViewport,
     operator.UnloadFederationViewport,
     operator.ExtractSampleDatabase,
     operator.ExtractFullDatabase,
     operator.RedoSampleExtraction,
+    GlassOutlineLoader,
     ui.BIM_PT_federation,
     ui.BIM_UL_federated_files,
 )

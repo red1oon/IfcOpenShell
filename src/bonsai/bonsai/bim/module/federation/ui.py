@@ -186,11 +186,20 @@ class BIM_PT_federation(Panel):
 
         box.separator()
 
-        # Action buttons
+        # Action buttons - Two-stage workflow
         col = box.column(align=True)
+
+        # Preview button (fast GPU bboxes)
+        row = col.row(align=True)
+        row.scale_y = 1.5
+        preview_op = row.operator("bim.preview_federation_viewport", icon="HIDE_OFF", text="Preview Viewport")
+
+        # Load Full button (detailed geometry)
         row = col.row(align=True)
         row.scale_y = 1.3
-        row.operator("bim.reload_federation_viewport", icon="FILE_REFRESH", text="Reload Viewport")
+        row.operator("bim.reload_federation_viewport", icon="FILE_REFRESH", text="Load Full Geometry")
+
+        # Unload button
         row = col.row(align=True)
         row.operator("bim.unload_federation_viewport", icon="PANEL_CLOSE", text="Unload All")
 

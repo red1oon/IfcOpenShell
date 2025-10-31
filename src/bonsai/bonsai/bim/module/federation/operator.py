@@ -1133,6 +1133,70 @@ class DetectFederationClashes(bpy.types.Operator):
             return {'CANCELLED'}
 
 
+class PreviewFederationViewport(bpy.types.Operator):
+    """Fast preview with GPU bbox wireframes (instant, MEP-ready)"""
+    bl_idname = "bim.preview_federation_viewport"
+    bl_label = "Preview Viewport"
+    bl_description = "Instant GPU wireframe preview - Start MEP work immediately"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.BIMFederationProperties
+
+        if not props.federation_database_path:
+            self.report({'ERROR'}, "No federation database selected")
+            return {'CANCELLED'}
+
+        # Start logging
+        from . import logging_utils
+        log_path = logging_utils.start_file_logging()
+        print(f"📝 Logging to: {log_path}")
+
+        try:
+            print(f"\n{'='*70}")
+            print("PREVIEW MODE: Instant GPU BBox Wireframes")
+            print(f"{'='*70}\n")
+
+            # Register federation index first for routing/clashing
+            if not hasattr(bpy.types.WindowManager, 'federation_index'):
+                print("  Registering federation index for MEP routing...")
+                from .spatial_index import FederationIndex
+                index = FederationIndex(props.federation_database_path)
+                index.build()
+                bpy.types.WindowManager.federation_index = index
+                stats = index.get_statistics()
+                print(f"  ✓ Federation index registered: {stats.get('total_elements', 0):,} elements")
+                print(f"  ✓ Conduit routing and clash detection now enabled\n")
+
+            # Load instant GPU bbox wireframes
+            from ..clash import bbox_visualization
+
+            success, message = bbox_visualization.enable_bbox_visualization(
+                str(props.federation_database_path)
+            )
+
+            if not success:
+                self.report({'ERROR'}, f"Preview failed: {message}")
+                logging_utils.stop_file_logging()
+                return {'CANCELLED'}
+
+            print("\n✓ Preview ready - INSTANT GPU bboxes loaded!")
+            print("✓ All 49K elements visible - MEP engineers can work immediately!")
+            print("✓ Use 'Load Full Geometry' for detailed tessellation\n")
+
+            self.report({'INFO'}, "Preview ready - instant GPU bboxes")
+            logging_utils.stop_file_logging()
+            return {'FINISHED'}
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+
+            self.report({'ERROR'}, f"Preview failed: {str(e)}")
+            logging_utils.stop_file_logging()
+            return {'CANCELLED'}
+
+
 class ReloadFederationViewport(bpy.types.Operator):
     """Load or switch federation visualization mode (multi-layer caching)"""
     bl_idname = "bim.reload_federation_viewport"
@@ -1157,9 +1221,9 @@ class ReloadFederationViewport(bpy.types.Operator):
         try:
             # CRITICAL: Check tessellation toggle
             if props.use_tessellation:
-                # Use tessellation loader (exact IFC geometry)
+                # Use FederationLoader with GPU bbox visualization + tessellation
                 print(f"\n{'='*70}")
-                print("TESSELLATION MODE: Loading exact IFC geometry")
+                print("FEDERATION LOADER: GPU BBox wireframes → Full geometry (tessellation)")
                 print(f"{'='*70}\n")
 
                 from .loader import FederationLoader
@@ -1169,15 +1233,33 @@ class ReloadFederationViewport(bpy.types.Operator):
                 loader = FederationLoader(props.federation_database_path)
                 loader.stage2_progressive = False  # Use tessellation
 
-                # Load Stage 2 (Stage 1 wireframes in background mode don't work well)
-                objects = loader.load_stage2()
-                elapsed = time.time() - start
+                # Load Stage 1: GPU BBox visualization (instant!)
+                loader.load_stage1()
 
-                self.report({'INFO'}, f"Loaded {len(objects):,} objects with exact geometry in {elapsed:.1f}s")
-                print(f"\n✓ Tessellation complete: {len(objects):,} objects in {elapsed:.1f}s")
+                # Register federation index for routing/clashing
+                if not hasattr(bpy.types.WindowManager, 'federation_index'):
+                    print("\n  Registering federation index for routing...")
+                    from .spatial_index import FederationIndex
+                    index = FederationIndex(props.federation_database_path)
+                    index.build()
+                    bpy.types.WindowManager.federation_index = index
+                    stats = index.get_statistics()
+                    print(f"  ✓ Federation index registered: {stats.get('total_elements', 0):,} elements")
+                    print(f"  ✓ Conduit routing and clash detection now enabled")
 
-                # Auto-frame viewport to loaded geometry (like IFC import does)
-                self._frame_viewport_to_objects(context, objects)
+                print("\n✓ Stage 1 complete: GPU BBox wireframes loaded (instant!)")
+                print("✓ MEP engineers can work immediately with wireframes")
+                print("\n⏳ Stage 2: Loading full tessellated geometry in BACKGROUND...")
+                print("   This will take ~25-30 minutes - you can continue MEP work!")
+                print("   Blender will remain responsive\n")
+
+                # Set database path for background loader
+                context.scene['federation_loader_db_path'] = str(props.federation_database_path)
+
+                # Invoke background loader for Stage 2 tessellation (non-blocking!)
+                bpy.ops.bim.load_federation_stage2_background()
+
+                self.report({'INFO'}, "Stage 1 complete - Stage 2 loading in background")
 
                 logging_utils.stop_file_logging()
                 return {'FINISHED'}

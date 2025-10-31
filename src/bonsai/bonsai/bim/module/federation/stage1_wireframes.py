@@ -70,9 +70,9 @@ def create_wireframe_boxes(db_conn: sqlite3.Connection,
         SELECT
             m.guid,
             m.discipline,
-            r.min_x, r.max_x,
-            r.min_y, r.max_y,
-            r.min_z, r.max_z
+            r.minX, r.maxX,
+            r.minY, r.maxY,
+            r.minZ, r.maxZ
         FROM elements_meta m
         JOIN elements_rtree r ON m.id = r.id
     """)

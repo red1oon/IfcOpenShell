@@ -123,9 +123,9 @@ class ChunkedSemanticLoader:
                 m.guid,
                 m.ifc_class,
                 m.discipline,
-                r.min_x, r.max_x,
-                r.min_y, r.max_y,
-                r.min_z, r.max_z,
+                r.minX, r.maxX,
+                r.minY, r.maxY,
+                r.minZ, r.maxZ,
                 t.pos_x, t.pos_y, t.pos_z,
                 t.rot_x, t.rot_y, t.rot_z,
                 t.scale_x, t.scale_y, t.scale_z

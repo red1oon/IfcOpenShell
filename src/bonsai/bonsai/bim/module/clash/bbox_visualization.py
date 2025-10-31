@@ -167,8 +167,8 @@ def load_federation_bboxes(db_path: str, limit: Optional[int] = None) -> Dict[st
     discipline_bboxes = {}
     for row in rows:
         discipline = row[0]
-        # Convert bbox coordinates from mm to m
-        bbox = tuple(coord / 1000.0 for coord in row[1:7])  # min_x, min_y, min_z, max_x, max_y, max_z (mm → m)
+        # Database already has meters (site-local coordinates), no conversion needed
+        bbox = tuple(row[1:7])  # min_x, min_y, min_z, max_x, max_y, max_z (already in meters)
         guid = row[7]
 
         if discipline not in discipline_bboxes:
@@ -292,9 +292,39 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
     )
     _is_enabled = True
 
-    # NO viewport framing - building already centered by global offset!
-    # Original IFC loading doesn't auto-frame, neither should we.
-    # User can manually zoom/pan as needed (just like with native IFC import).
+    # Auto-frame viewport to show bboxes
+    # Calculate overall bbox from all elements
+    if discipline_bboxes:
+        all_coords = []
+        for bboxes_list in discipline_bboxes.values():
+            for bbox, _ in bboxes_list:
+                # Apply offset
+                all_coords.extend([
+                    (bbox[0] - offset.x, bbox[1] - offset.y, bbox[2] - offset.z),
+                    (bbox[3] - offset.x, bbox[4] - offset.y, bbox[5] - offset.z)
+                ])
+
+        if all_coords:
+            # Calculate center and size
+            import numpy as np
+            coords_array = np.array(all_coords)
+            center = coords_array.mean(axis=0)
+            bbox_size = coords_array.max(axis=0) - coords_array.min(axis=0)
+            max_dim = max(bbox_size)
+
+            # Frame viewport
+            for area in bpy.context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            space = area.spaces[0]
+                            # Set view location and distance
+                            space.region_3d.view_location = center
+                            space.region_3d.view_distance = max_dim * 1.5
+                            break
+
+            print(f"Viewport: Framed to center ({center[0]:.1f}, {center[1]:.1f}, {center[2]:.1f})")
+
     print(f"\n{'='*70}")
     print(f"✅ BBOX VISUALIZATION ENABLED")
     print(f"{'='*70}")

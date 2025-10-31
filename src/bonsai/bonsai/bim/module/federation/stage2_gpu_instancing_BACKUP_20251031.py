@@ -78,16 +78,15 @@ SEMANTIC_MATERIAL_PROPS = {
     'COLUMN': {'base_color': (0.5, 0.5, 0.5), 'metallic': 0.9, 'roughness': 0.2},
 }
 
-# Discipline color overlays (ENHANCED for better visibility)
+# Discipline color overlays (from Three-Stage workflow spec)
 DISCIPLINE_COLORS = {
-    'ACMV': (0.2, 0.7, 1.0),     # Bright cyan (enhanced from muted)
-    'FP': (1.0, 0.1, 0.1),       # Bright red (enhanced from pure red)
-    'ELEC': (1.0, 0.9, 0.0),     # Bright yellow (enhanced)
-    'SP': (0.3, 0.9, 0.4),       # Bright green (enhanced from muted)
-    'ARC': (0.95, 0.95, 0.90),   # Warm white (enhanced from grey)
-    'STR': (0.5, 0.5, 0.55),     # Steel grey (enhanced from flat)
-    'CW': (0.7, 0.5, 0.3),       # Warm brown (enhanced)
-    'LPG': (1.0, 0.6, 0.0),      # Orange (new)
+    'ACMV': (0.0, 0.75, 1.0),   # Cyan
+    'FP': (1.0, 0.0, 0.0),       # Red
+    'ELEC': (1.0, 1.0, 0.0),     # Yellow
+    'SP': (0.5, 1.0, 0.5),       # Green
+    'ARC': (0.9, 0.9, 0.85),     # Light grey
+    'STR': (0.6, 0.6, 0.6),      # Dark grey
+    'CW': (0.8, 0.6, 0.4),       # Brown
 }
 
 
@@ -404,8 +403,8 @@ def create_semantic_shapes_instanced(db_conn: sqlite3.Connection,
             m.guid,
             m.ifc_class,
             m.discipline,
-            r.minX, r.minY, r.minZ,
-            r.maxX, r.maxY, r.maxZ
+            r.min_x, r.min_y, r.min_z,
+            r.max_x, r.max_y, r.max_z
         FROM elements_meta m
         JOIN elements_rtree r ON m.id = r.id
         ORDER BY m.discipline, m.ifc_class

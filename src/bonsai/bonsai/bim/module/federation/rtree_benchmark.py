@@ -123,9 +123,9 @@ def query_sqlite_rtree(db_path, bbox):
         SELECT m.guid, m.discipline, m.ifc_class
         FROM elements_rtree r
         JOIN elements_meta m ON r.id = m.id
-        WHERE r.min_x <= ? AND r.max_x >= ?
-          AND r.min_y <= ? AND r.max_y >= ?
-          AND r.min_z <= ? AND r.max_z >= ?
+        WHERE r.minX <= ? AND r.maxX >= ?
+          AND r.minY <= ? AND r.maxY >= ?
+          AND r.minZ <= ? AND r.maxZ >= ?
     """, (bbox[3], bbox[0], bbox[4], bbox[1], bbox[5], bbox[2]))
     
     results = cursor.fetchall()
