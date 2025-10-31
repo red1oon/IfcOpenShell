@@ -32,6 +32,7 @@ DISCIPLINE_COLORS = {
 _bbox_batches = {}
 _draw_handler = None
 _is_enabled = False
+_discipline_visibility = {}  # Set by legend when disciplines are toggled
 
 
 def create_bbox_edges(bbox: Tuple[float, float, float, float, float, float]) -> List[Vector]:
@@ -219,7 +220,7 @@ def create_discipline_batches(discipline_bboxes: Dict[str, List[Tuple]], offset:
 
 def draw_bboxes():
     """Draw callback function for viewport rendering"""
-    global _bbox_batches, _is_enabled
+    global _bbox_batches, _is_enabled, _discipline_visibility
 
     if not _is_enabled or not _bbox_batches:
         return
@@ -230,8 +231,12 @@ def draw_bboxes():
 
     shader = gpu.shader.from_builtin('UNIFORM_COLOR')
 
-    # Draw each discipline's batch with its color
+    # Draw each discipline's batch with its color (skip hidden ones)
     for discipline, batch in _bbox_batches.items():
+        # Check visibility (default to visible if not set)
+        if not _discipline_visibility.get(discipline, True):
+            continue  # Skip this discipline
+
         color = DISCIPLINE_COLORS.get(discipline, DISCIPLINE_COLORS['DEFAULT'])
         shader.bind()
         shader.uniform_float("color", color)
