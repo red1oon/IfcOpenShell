@@ -1793,7 +1793,7 @@ class BIM_OT_enable_bbox_visualization(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from . import bbox_visualization
+        from ..federation import bbox_visualization
 
         props = tool.Clash.get_clash_props()
         fed_props = context.scene.BIMFederationProperties
@@ -1834,7 +1834,7 @@ class BIM_OT_disable_bbox_visualization(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from . import bbox_visualization
+        from ..federation import bbox_visualization
 
         props = tool.Clash.get_clash_props()
 

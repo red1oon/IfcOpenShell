@@ -14,8 +14,8 @@ import gpu
 from gpu_extras.batch import batch_for_shader
 from mathutils import Vector
 
-# Import discipline colors from bbox_visualization (clash module provides the rendering)
-from ..clash.bbox_visualization import DISCIPLINE_COLORS
+# Import discipline colors from bbox_visualization (now in federation module)
+from .bbox_visualization import DISCIPLINE_COLORS
 
 # Global state
 _legend_handler = None
@@ -31,7 +31,7 @@ def draw_legend():
         return
 
     # Get active disciplines from bbox batches
-    from ..clash import bbox_visualization
+    from . import bbox_visualization
     if not bbox_visualization._bbox_batches:
         return
 
@@ -107,7 +107,7 @@ def enable_legend():
         return  # Already enabled
 
     # Initialize visibility for all disciplines (all visible by default)
-    from ..clash import bbox_visualization
+    from . import bbox_visualization
     if bbox_visualization._bbox_batches:
         for discipline in bbox_visualization._bbox_batches.keys():
             if discipline not in _discipline_visibility:
@@ -153,22 +153,23 @@ def toggle_discipline_visibility(discipline: str):
     """
     Toggle visibility of a discipline.
 
-    This will hide/show the discipline's wireframes by rebuilding GPU batches.
+    Modifies bbox_visualization's drawing to skip hidden disciplines.
     """
     global _discipline_visibility
 
     _discipline_visibility[discipline] = not _discipline_visibility.get(discipline, True)
+    is_visible = _discipline_visibility[discipline]
 
-    # Rebuild GPU batches excluding hidden disciplines
-    from ..clash import bbox_visualization
+    print(f"Toggled {discipline}: {'visible' if is_visible else 'hidden'}")
 
-    # TODO: Implement batch filtering based on visibility
-    # For now, just force redraw - actual filtering needs bbox_visualization changes
+    # Store visibility state in bbox_visualization module
+    from . import bbox_visualization
+    bbox_visualization._discipline_visibility = _discipline_visibility
+
+    # Force viewport redraw
     for area in bpy.context.screen.areas:
         if area.type == 'VIEW_3D':
             area.tag_redraw()
-
-    print(f"Toggled {discipline}: {'visible' if _discipline_visibility[discipline] else 'hidden'}")
 
 
 def is_legend_enabled() -> bool:

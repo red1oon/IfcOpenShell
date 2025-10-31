@@ -139,7 +139,7 @@ class VisualizationManager:
 
         if mode == 'BBOXES':
             # Enable GPU batch visualization, hide semantic objects
-            from ..clash import bbox_visualization
+            from . import bbox_visualization
             bbox_visualization.enable_bbox_visualization(str(self.db_path))
 
             # Hide semantic layer
@@ -150,7 +150,7 @@ class VisualizationManager:
         elif mode in ['SEMANTICS', 'MATERIALS']:
             # Disable GPU batch visualization, show semantic objects
             try:
-                from ..clash import bbox_visualization
+                from . import bbox_visualization
                 bbox_visualization.disable_bbox_visualization()
             except:
                 pass  # GPU batch might not be active
@@ -211,7 +211,7 @@ class VisualizationManager:
 
         # Disable GPU batch visualization
         try:
-            from ..clash import bbox_visualization
+            from . import bbox_visualization
             bbox_visualization.disable_bbox_visualization()
             print("  Disabled GPU batch visualization")
         except:

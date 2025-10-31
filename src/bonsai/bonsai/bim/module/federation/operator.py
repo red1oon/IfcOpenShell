@@ -1024,7 +1024,7 @@ class LoadFederationStage2Background(bpy.types.Operator):
                 # Disable GPU batch wireframes (Stage 1)
                 print(f"  - Disabling Stage 1 GPU wireframes...")
                 try:
-                    from ..clash import bbox_visualization
+                    from . import bbox_visualization
                     success, msg = bbox_visualization.disable_bbox_visualization()
                     if success:
                         print(f"  ✓ GPU wireframes disabled: {msg}")
@@ -1187,8 +1187,7 @@ class PreviewFederationViewport(bpy.types.Operator):
                 print(f"  ✓ Conduit routing and clash detection now enabled\n")
 
             # Load instant GPU bbox wireframes
-            from ..clash import bbox_visualization
-            from . import discipline_legend
+            from . import bbox_visualization, discipline_legend
 
             success, message = bbox_visualization.enable_bbox_visualization(
                 str(props.federation_database_path)
@@ -1389,7 +1388,7 @@ class UnloadFederationViewport(bpy.types.Operator):
                 discipline_legend.disable_legend()
 
             # Disable bbox visualization if active
-            from ..clash import bbox_visualization
+            from . import bbox_visualization
             if bbox_visualization.is_bbox_visualization_enabled():
                 bbox_visualization.disable_bbox_visualization()
 

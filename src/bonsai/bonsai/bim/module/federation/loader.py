@@ -162,8 +162,8 @@ class FederationLoader:
 
         print("Loading Stage 1: GPU batch wireframe visualization...")
 
-        # Use GPU batch drawing from clash module
-        from ..clash import bbox_visualization
+        # Use GPU batch drawing from federation module
+        from . import bbox_visualization
 
         success, message = bbox_visualization.enable_bbox_visualization(str(self.db_path))
 
@@ -244,7 +244,7 @@ class FederationLoader:
 
             # Disable GPU batch visualization (if using GPU approach)
             if self.stage1_gpu_enabled:
-                from ..clash import bbox_visualization
+                from . import bbox_visualization
                 bbox_visualization.disable_bbox_visualization()
                 self.stage1_gpu_enabled = False
                 print("✓ GPU batch visualization disabled, replaced with semantic shapes")

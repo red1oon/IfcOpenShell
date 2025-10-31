@@ -17,7 +17,7 @@
 # along with Bonsai.  If not, see <http://www.gnu.org/licenses/>.
 
 import bpy
-from . import ui, prop, operator, gizmo, bbox_visualization  # Re-enabled with lazy loading
+from . import ui, prop, operator, gizmo  # bbox_visualization moved to federation module
 
 classes = (
     operator.AddClashSet,
