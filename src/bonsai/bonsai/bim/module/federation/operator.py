@@ -1186,6 +1186,9 @@ class PreviewFederationViewport(bpy.types.Operator):
                 print(f"  ✓ Federation index registered: {stats.get('total_elements', 0):,} elements")
                 print(f"  ✓ Conduit routing and clash detection now enabled\n")
 
+                # Mark index as loaded so Test Conduit button lights up
+                props.index_loaded = True
+
             # Load instant GPU bbox wireframes
             from . import bbox_visualization, discipline_legend
 
@@ -1215,6 +1218,160 @@ class PreviewFederationViewport(bpy.types.Operator):
             traceback.print_exc()
 
             self.report({'ERROR'}, f"Preview failed: {str(e)}")
+            logging_utils.stop_file_logging()
+            return {'CANCELLED'}
+
+
+class LoadSolidFederationViewport(bpy.types.Operator):
+    """Load solid procedural boxes (fast, ~5s, colored by discipline)"""
+    bl_idname = "bim.load_solid_federation_viewport"
+    bl_label = "Load Solid Boxes"
+    bl_description = "Load procedural solid boxes with GPU instancing (~5s)\nColored by discipline, faster than full geometry"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.BIMFederationProperties
+
+        if not props.federation_database_path:
+            self.report({'ERROR'}, "No federation database selected")
+            return {'CANCELLED'}
+
+        # Start logging
+        from . import logging_utils
+        log_path = logging_utils.start_file_logging()
+        print(f"📝 Logging to: {log_path}")
+
+        try:
+            print(f"\n{'='*70}")
+            print("SOLID MODE: Procedural GPU-Instanced Boxes")
+            print(f"{'='*70}\n")
+
+            # Disable legend when loading solid geometry (legend is preview-only)
+            from . import discipline_legend
+            if discipline_legend.is_legend_enabled():
+                discipline_legend.disable_legend()
+                print("  Disabled discipline legend (switching to solid geometry mode)")
+
+            # Register federation index first (if not already)
+            if not hasattr(bpy.types.WindowManager, 'federation_index'):
+                print("  Registering federation index for MEP routing...")
+                from .spatial_index import FederationIndex
+                index = FederationIndex(props.federation_database_path)
+                index.build()
+                bpy.types.WindowManager.federation_index = index
+                stats = index.get_statistics()
+                print(f"  ✓ Federation index registered: {stats.get('total_elements', 0):,} elements")
+                print(f"  ✓ Conduit routing and clash detection now enabled")
+
+                # Mark index as loaded
+                props.index_loaded = True
+
+            # Use VisualizationManager to load solid procedural boxes
+            from .visualization_manager import VisualizationManager
+            viz_mgr = VisualizationManager(props.federation_database_path)
+
+            print("\nLoading procedural solid boxes with GPU instancing...")
+            timing = viz_mgr.load_all_layers()
+
+            # Show solid boxes (SEMANTICS mode)
+            viz_mgr.switch_mode('SEMANTICS')
+
+            total_time = sum(timing.values())
+            self.report({'INFO'}, f"Solid boxes loaded in {total_time:.1f}s")
+
+            print(f"\n✓ Solid boxes ready! ({total_time:.1f}s)")
+            print("✓ Colored by discipline, GPU instanced")
+            print("✓ Use 'Load Full Geometry' for exact tessellation\n")
+
+            logging_utils.stop_file_logging()
+            return {'FINISHED'}
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+
+            self.report({'ERROR'}, f"Solid load failed: {str(e)}")
+            logging_utils.stop_file_logging()
+            return {'CANCELLED'}
+
+
+class LoadFullFederationViewport(bpy.types.Operator):
+    """Load exact tessellated IFC geometry (slow, ~27s, 100% accurate)"""
+    bl_idname = "bim.load_full_federation_viewport"
+    bl_label = "Load Full Geometry"
+    bl_description = "Load exact tessellated geometry from IFC (~27s)\n100% accurate mesh, loads in background"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.BIMFederationProperties
+
+        if not props.federation_database_path:
+            self.report({'ERROR'}, "No federation database selected")
+            return {'CANCELLED'}
+
+        # Start logging
+        from . import logging_utils
+        log_path = logging_utils.start_file_logging()
+        print(f"📝 Logging to: {log_path}")
+
+        try:
+            print(f"\n{'='*70}")
+            print("FULL GEOMETRY MODE: Exact Tessellated IFC Mesh")
+            print(f"{'='*70}\n")
+
+            # Disable legend when loading full geometry (legend is preview-only)
+            from . import discipline_legend
+            if discipline_legend.is_legend_enabled():
+                discipline_legend.disable_legend()
+                print("  Disabled discipline legend (switching to full geometry mode)")
+
+            # Use FederationLoader with tessellation
+            from .loader import FederationLoader
+            import time
+
+            start = time.time()
+            loader = FederationLoader(props.federation_database_path)
+            loader.stage2_progressive = False  # Use tessellation, not procedural
+
+            # Load Stage 1: GPU BBox visualization (instant!)
+            loader.load_stage1()
+
+            # Register federation index for routing/clashing
+            if not hasattr(bpy.types.WindowManager, 'federation_index'):
+                print("\n  Registering federation index for routing...")
+                from .spatial_index import FederationIndex
+                index = FederationIndex(props.federation_database_path)
+                index.build()
+                bpy.types.WindowManager.federation_index = index
+                stats = index.get_statistics()
+                print(f"  ✓ Federation index registered: {stats.get('total_elements', 0):,} elements")
+                print(f"  ✓ Conduit routing and clash detection now enabled")
+
+                # Mark index as loaded
+                props.index_loaded = True
+
+            print("\n✓ Stage 1 complete: GPU BBox wireframes loaded (instant!)")
+            print("✓ MEP engineers can work immediately with wireframes")
+            print("\n⏳ Stage 2: Loading full tessellated geometry in BACKGROUND...")
+            print("   This will take ~25-30 minutes - you can continue MEP work!")
+            print("   Blender will remain responsive\n")
+
+            # Set database path for background loader
+            context.scene['federation_loader_db_path'] = str(props.federation_database_path)
+
+            # Invoke background loader for Stage 2 tessellation (non-blocking!)
+            bpy.ops.bim.load_federation_stage2_background()
+
+            self.report({'INFO'}, "Stage 1 complete - Stage 2 loading in background")
+
+            logging_utils.stop_file_logging()
+            return {'FINISHED'}
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+
+            self.report({'ERROR'}, f"Full load failed: {str(e)}")
             logging_utils.stop_file_logging()
             return {'CANCELLED'}
 

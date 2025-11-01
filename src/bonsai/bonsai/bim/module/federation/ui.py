@@ -186,20 +186,21 @@ class BIM_PT_federation(Panel):
 
         box.separator()
 
-        # Action buttons - Two-stage workflow
+        # Action buttons - Three-stage workflow
         col = box.column(align=True)
 
-        # Preview button (fast GPU bboxes)
+        # Row 1: Preview | Solid (fast options side-by-side)
         row = col.row(align=True)
         row.scale_y = 1.5
-        preview_op = row.operator("bim.preview_federation_viewport", icon="HIDE_OFF", text="Preview Viewport")
+        row.operator("bim.preview_federation_viewport", icon="HIDE_OFF", text="Preview")
+        row.operator("bim.load_solid_federation_viewport", icon="MESH_CUBE", text="Solid")
 
-        # Load Full button (detailed geometry)
+        # Row 2: Full Load (slower, exact geometry)
         row = col.row(align=True)
         row.scale_y = 1.3
-        row.operator("bim.reload_federation_viewport", icon="FILE_REFRESH", text="Load Full Geometry")
+        row.operator("bim.load_full_federation_viewport", icon="MESH_DATA", text="Full Load")
 
-        # Unload button
+        # Row 3: Unload button
         row = col.row(align=True)
         row.operator("bim.unload_federation_viewport", icon="PANEL_CLOSE", text="Unload All")
 

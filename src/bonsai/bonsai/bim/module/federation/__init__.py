@@ -47,6 +47,8 @@ classes = (
     operator.LoadFederationStage2Background,
     operator.DetectFederationClashes,
     operator.PreviewFederationViewport,
+    operator.LoadSolidFederationViewport,
+    operator.LoadFullFederationViewport,
     operator.ReloadFederationViewport,
     operator.UnloadFederationViewport,
     operator.ExtractSampleDatabase,
