@@ -1384,16 +1384,7 @@ class LoadFullFederationViewport(bpy.types.Operator):
             print(f"  - Elements: {len(shapes):,}")
             print(f"  - Time: {elapsed:.2f}s")
             print(f"  - Geometry: {'Exact IFC tessellation from database' if not loader.stage2_progressive else 'GPU-instanced procedural shapes'}")
-
-            # Switch viewport to Solid mode to show colors + enable X-ray (Alt+Z)
-            for area in context.screen.areas:
-                if area.type == 'VIEW_3D':
-                    for space in area.spaces:
-                        if space.type == 'VIEW_3D':
-                            space.shading.type = 'SOLID'
-                            space.shading.color_type = 'MATERIAL'  # Show material colors in solid mode
-                            print("  ✓ Switched viewport to Solid mode (X-ray enabled, Alt+Z)")
-                            break
+            print(f"  ✓ Viewport shading unchanged (use whatever mode you prefer)")
 
             self.report({'INFO'}, f"Full load complete: {len(shapes):,} shapes in {elapsed:.2f}s")
 

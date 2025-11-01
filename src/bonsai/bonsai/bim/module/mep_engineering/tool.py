@@ -154,8 +154,7 @@ class InfrastructureDetector:
         try:
             # Expand query bbox to find nearby infrastructure
             buffer = 5.0  # 5m search radius
-            # Use viewport query since start/end are from routing (viewport coords)
-            cable_trays = self.index.query_corridor_viewport(start, end, buffer, ['ACMV'])
+            cable_trays = self.index.query_corridor(start, end, buffer, ['ACMV'])
             infrastructure['cable_trays'] = [obs.bbox for obs in cable_trays if obs.bbox]
         except:
             pass

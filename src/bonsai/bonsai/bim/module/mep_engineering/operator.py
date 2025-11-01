@@ -92,10 +92,12 @@ class RouteMEPConduit(Operator):
             # FP: fire protection (pipes may clash)
             disciplines = ['ARC', 'STR', 'ACMV', 'FP']
 
-            # Use viewport query since start/end are from 3D cursor (viewport coords)
-            obstacles = index.query_corridor_viewport(
-                start_viewport=start,
-                end_viewport=end,
+            # Query using direct coordinates (same space as R-tree - meters from database)
+            # Note: Coordinates from auto-pick come from geometry vertices in database
+            # which are in the same coordinate space as the R-tree
+            obstacles = index.query_corridor(
+                start=start,
+                end=end,
                 buffer=clearance,
                 disciplines=disciplines
             )
@@ -359,10 +361,10 @@ class VisualizeRoutingObstacles(Operator):
                 # Note: these are already bbox tuples, not FederationElement objects
                 print(f"✓ Using stored obstacles from routing: {len(obstacle_bboxes)}")
             else:
-                # Fallback: query again (use viewport query for 3D cursor coords)
-                obstacles = index.query_corridor_viewport(
-                    start_viewport=start,
-                    end_viewport=end,
+                # Fallback: query again (using same coordinate space as routing)
+                obstacles = index.query_corridor(
+                    start=start,
+                    end=end,
                     buffer=clearance,
                     disciplines=disciplines if disciplines else None
                 )
@@ -751,15 +753,15 @@ class AutoPickRoutingEndpoints(Operator):
             cursor = conn.cursor()
 
             # Query elements from specified discipline with geometry
-            # NOTE: Calculating bbox from vertices on-the-fly since elements_rtree is not yet populated
-            # TODO: Once elements_rtree is populated during extraction, switch back to direct bbox query for performance
+            # Use R-tree for bbox centers (same coordinate space as obstacle queries)
             query = """
                 SELECT
                     m.guid,
                     m.ifc_class,
-                    g.vertices
+                    r.minX, r.minY, r.minZ,
+                    r.maxX, r.maxY, r.maxZ
                 FROM elements_meta m
-                JOIN element_geometry g ON m.guid = g.guid
+                JOIN elements_rtree r ON m.id = r.id
                 WHERE m.discipline = ?
                 ORDER BY m.ifc_class, m.guid
                 LIMIT 100
@@ -774,34 +776,16 @@ class AutoPickRoutingEndpoints(Operator):
                 conn.close()
                 return {"CANCELLED"}
 
-            # Calculate bbox centers for all elements by parsing vertex data
+            # Calculate bbox centers from R-tree (in database coordinate space)
             all_endpoints = []
             for row in rows:
-                guid, ifc_class, vertices_blob = row
+                guid, ifc_class, min_x, min_y, min_z, max_x, max_y, max_z = row
 
-                # Parse vertices blob (array of floats)
-                if not vertices_blob or len(vertices_blob) < 12:
-                    continue
-
-                # Unpack all vertices (each vertex is 3 floats: x, y, z)
-                num_floats = len(vertices_blob) // 4
-                vertices = struct.unpack(f'{num_floats}f', vertices_blob)
-
-                # Calculate bbox
-                xs = vertices[0::3]
-                ys = vertices[1::3]
-                zs = vertices[2::3]
-
-                if not xs:
-                    continue
-
-                min_x, max_x = min(xs), max(xs)
-                min_y, max_y = min(ys), max(ys)
-                min_z, max_z = min(zs), max(zs)
-
+                # Calculate center from bbox
                 center_x = (min_x + max_x) / 2
                 center_y = (min_y + max_y) / 2
                 center_z = (min_z + max_z) / 2
+
                 all_endpoints.append({
                     'guid': guid,
                     'class': ifc_class,
