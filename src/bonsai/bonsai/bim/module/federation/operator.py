@@ -1164,8 +1164,8 @@ class PreviewFederationViewport(bpy.types.Operator):
                 print(f"  ✓ Federation index registered: {stats.get('total_elements', 0):,} elements")
                 print(f"  ✓ Conduit routing and clash detection now enabled\n")
 
-                # Mark index as loaded so Test Conduit button lights up
-                props.index_loaded = True
+            # Mark index as loaded so Test Conduit button lights up (always set, even if index already exists)
+            props.index_loaded = True
 
             # Load instant GPU bbox wireframes
             from . import bbox_visualization, discipline_legend

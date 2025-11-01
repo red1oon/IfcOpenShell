@@ -91,10 +91,11 @@ class RouteMEPConduit(Operator):
             # ACMV: mechanical ducts and equipment
             # FP: fire protection (pipes may clash)
             disciplines = ['ARC', 'STR', 'ACMV', 'FP']
-            
-            obstacles = index.query_corridor(
-                start=start,
-                end=end,
+
+            # Use viewport query since start/end are from 3D cursor (viewport coords)
+            obstacles = index.query_corridor_viewport(
+                start_viewport=start,
+                end_viewport=end,
                 buffer=clearance,
                 disciplines=disciplines
             )
@@ -358,14 +359,14 @@ class VisualizeRoutingObstacles(Operator):
                 # Note: these are already bbox tuples, not FederationElement objects
                 print(f"✓ Using stored obstacles from routing: {len(obstacle_bboxes)}")
             else:
-                # Fallback: query again
-                obstacles = index.query_corridor(
-                    start=start,
-                    end=end,
+                # Fallback: query again (use viewport query for 3D cursor coords)
+                obstacles = index.query_corridor_viewport(
+                    start_viewport=start,
+                    end_viewport=end,
                     buffer=clearance,
                     disciplines=disciplines if disciplines else None
                 )
-                obstacle_bboxes = [obs.bbox for obs in obstacles] 
+                obstacle_bboxes = [obs.bbox for obs in obstacles]
                 print(f"⚠️  No stored obstacles, queried: {len(obstacle_bboxes)}")
             self.report({'INFO'}, f"✓ Visualization created: {len(obstacle_bboxes)} obstacles shown") 
             
