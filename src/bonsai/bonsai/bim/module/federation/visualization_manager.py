@@ -87,6 +87,7 @@ class VisualizationManager:
         # Create loader
         fed_loader = loader.FederationLoader(self.db_path)
         fed_loader.stage2_gpu_instancing = True  # Use GPU instancing for speed
+        fed_loader.stage2_progressive = True  # Use procedural shapes, NOT tessellation
 
         # Layer: Semantics (base layer for both SEMANTICS and MATERIALS modes)
         if progress_callback:

@@ -28,7 +28,7 @@ solving spatial hierarchy mismatch problems through coordinate-based queries.
 import bpy
 from bpy.app.handlers import persistent
 from pathlib import Path
-from . import ui, prop, operator
+from . import ui, prop, operator, discipline_legend
 from .unified_progressive_loader import GlassOutlineLoader
 
 # Expose classes so main __init__.py can find them
@@ -54,6 +54,7 @@ classes = (
     operator.ExtractSampleDatabase,
     operator.ExtractFullDatabase,
     operator.RedoSampleExtraction,
+    discipline_legend.FEDERATION_OT_legend_modal,
     GlassOutlineLoader,
     ui.BIM_PT_federation,
     ui.BIM_UL_federated_files,
