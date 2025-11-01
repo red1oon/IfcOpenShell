@@ -903,38 +903,16 @@ class LoadFederationStage2Background(bpy.types.Operator):
                     print("  ✓ Database connected")
 
                     # Get or create Federation collection
+                    # NOTE: Clearing disabled for POC - allows scene bloating for testing
+                    # User can manually restart Blender between tests if needed
                     federation_coll = bpy.data.collections.get("Federation")
                     if not federation_coll:
-                        print("  ⚠ Federation collection not found, creating...")
+                        print("  Creating new Federation collection...")
                         federation_coll = bpy.data.collections.new("Federation")
                         bpy.context.scene.collection.children.link(federation_coll)
                     else:
-                        # CRITICAL: Clear old objects to prevent scene bloat and exponential slowdown!
-                        print("  🧹 Clearing old federation objects (prevents scene bloat)...")
-
-                        # Count objects before cleanup
-                        old_count = 0
-                        for child_coll in list(federation_coll.children):
-                            old_count += len(child_coll.objects)
-                        old_count += len(federation_coll.objects)
-
-                        # Remove all child collections (Discipline_*, etc.)
-                        for child_coll in list(federation_coll.children):
-                            # Remove all objects in child collection
-                            for obj in list(child_coll.objects):
-                                bpy.data.objects.remove(obj, do_unlink=True)
-                            # Remove child collection
-                            bpy.data.collections.remove(child_coll)
-
-                        # Remove any objects directly in Federation collection
-                        for obj in list(federation_coll.objects):
-                            bpy.data.objects.remove(obj, do_unlink=True)
-
-                        # Clear template cache to prevent mesh accumulation
-                        from . import stage2_gpu_instancing
-                        stage2_gpu_instancing.clear_template_cache()
-
-                        print(f"  ✓ Cleared {old_count:,} old objects + template cache (scene is now clean!)")
+                        print("  ⚠ Federation collection exists - scene may bloat (clearing disabled for POC)")
+                        print("     Restart Blender between tests to clear scene")
 
                     # Use NEW NON-BLOCKING progressive GPU instancing loader!
                     print("  ✓ Using NON-BLOCKING PROGRESSIVE GPU INSTANCING (GENERATOR) ⚡")
@@ -1201,13 +1179,13 @@ class PreviewFederationViewport(bpy.types.Operator):
                 logging_utils.stop_file_logging()
                 return {'CANCELLED'}
 
-            # Enable discipline legend overlay (preview mode only)
+            # Enable discipline legend overlay (visual reference only, not clickable)
             discipline_legend.enable_legend()
 
             print("\n✓ Preview ready - INSTANT GPU bboxes loaded!")
             print("✓ All 49K elements visible - MEP engineers can work immediately!")
-            print("✓ Discipline legend active - click to toggle visibility")
-            print("✓ Use 'Load Full Geometry' for detailed tessellation\n")
+            print("✓ Legend shows discipline colors (use Outliner to toggle)")
+            print("✓ Use 'Solid' for colored boxes or 'Full Load' for exact geometry\n")
 
             self.report({'INFO'}, "Preview ready - instant GPU bboxes + legend")
             logging_utils.stop_file_logging()
@@ -1266,6 +1244,32 @@ class LoadSolidFederationViewport(bpy.types.Operator):
                 # Mark index as loaded
                 props.index_loaded = True
 
+            # Clean up any existing federation hierarchies (prevents Outliner duplication)
+            def remove_coll_fast(coll):
+                """Recursively remove collection and all children"""
+                for child in list(coll.children):
+                    remove_coll_fast(child)
+                for obj in list(coll.objects):
+                    bpy.data.objects.remove(obj, do_unlink=True)
+                bpy.data.collections.remove(coll, do_unlink=True)
+
+            # Remove federation parent collections
+            for coll_name in ['Federation', 'Federation_Semantics']:
+                if coll_name in bpy.data.collections:
+                    print(f"  Cleaning up old '{coll_name}' collection...")
+                    remove_coll_fast(bpy.data.collections[coll_name])
+                    print(f"  ✓ Removed {coll_name} hierarchy")
+
+            # Also remove standalone discipline collections (prevents duplication)
+            disciplines = ['ACMV', 'ARC', 'CW', 'ELEC', 'FP', 'SP', 'STR', 'LPG']
+            for disc in disciplines:
+                for pattern in [f'Discipline_{disc}', f'Federation_{disc}']:
+                    if pattern in bpy.data.collections:
+                        print(f"  Cleaning up standalone '{pattern}' collection...")
+                        remove_coll_fast(bpy.data.collections[pattern])
+
+            print("  ✓ All federation collections cleaned up")
+
             # Use VisualizationManager to load solid procedural boxes
             from .visualization_manager import VisualizationManager
             viz_mgr = VisualizationManager(props.federation_database_path)
@@ -1276,12 +1280,28 @@ class LoadSolidFederationViewport(bpy.types.Operator):
             # Show solid boxes (SEMANTICS mode)
             viz_mgr.switch_mode('SEMANTICS')
 
+            # Switch viewport to Solid mode to show colors + enable X-ray (Alt+Z)
+            for area in context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    for space in area.spaces:
+                        if space.type == 'VIEW_3D':
+                            space.shading.type = 'SOLID'
+                            space.shading.color_type = 'MATERIAL'  # Show material colors in solid mode
+                            print("  ✓ Switched viewport to Solid mode (X-ray enabled, Alt+Z)")
+                            break
+
             total_time = sum(timing.values())
             self.report({'INFO'}, f"Solid boxes loaded in {total_time:.1f}s")
 
+            # Mark solid as loaded (prevents re-loading)
+            props.solid_loaded = True
+
             print(f"\n✓ Solid boxes ready! ({total_time:.1f}s)")
             print("✓ Colored by discipline, GPU instanced")
-            print("✓ Use 'Load Full Geometry' for exact tessellation\n")
+            print("✓ Materials visible (viewport in Solid mode)")
+            print("✓ X-ray mode enabled (press Alt+Z to toggle)")
+            print("✓ Solid button now disabled (already loaded)")
+            print("✓ Use 'Full Load' for exact tessellated geometry\n")
 
             logging_utils.stop_file_logging()
             return {'FINISHED'}
@@ -1296,10 +1316,10 @@ class LoadSolidFederationViewport(bpy.types.Operator):
 
 
 class LoadFullFederationViewport(bpy.types.Operator):
-    """Load exact tessellated IFC geometry (slow, ~27s, 100% accurate)"""
+    """Load procedural boxes with real Revit materials (fast, ~5-6s)"""
     bl_idname = "bim.load_full_federation_viewport"
     bl_label = "Load Full Geometry"
-    bl_description = "Load exact tessellated geometry from IFC (~27s)\n100% accurate mesh, loads in background"
+    bl_description = "Load procedural boxes with real Revit materials from database (~5-6s)\nFast GPU instancing with actual material colors"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -1325,21 +1345,14 @@ class LoadFullFederationViewport(bpy.types.Operator):
                 discipline_legend.disable_legend()
                 print("  Disabled discipline legend (switching to full geometry mode)")
 
-            # Use FederationLoader with tessellation
+            # Use FederationLoader with tessellated geometry + DB materials
             from .loader import FederationLoader
             import time
 
             start = time.time()
             loader = FederationLoader(props.federation_database_path)
-            loader.stage2_progressive = False  # Use tessellation, not procedural
-
-            # Load Stage 1: GPU BBox visualization (instant!) - ONLY if not already loaded
-            from . import bbox_visualization
-            if not bbox_visualization.is_bbox_visualization_enabled():
-                print("  Loading Stage 1 wireframes...")
-                loader.load_stage1()
-            else:
-                print("  Stage 1 wireframes already loaded, skipping...")
+            loader.stage2_progressive = False  # Use tessellated geometry (exact IFC shapes from database)
+            loader.use_database_materials = True  # Try DB materials, fallback to discipline colors if NULL
 
             # Register federation index for routing/clashing
             if not hasattr(bpy.types.WindowManager, 'federation_index'):
@@ -1355,19 +1368,34 @@ class LoadFullFederationViewport(bpy.types.Operator):
                 # Mark index as loaded
                 props.index_loaded = True
 
-            print("\n✓ Stage 1 complete: GPU BBox wireframes loaded (instant!)")
-            print("✓ MEP engineers can work immediately with wireframes")
-            print("\n⏳ Stage 2: Loading full tessellated geometry in BACKGROUND...")
-            print("   This will take ~25-30 minutes - you can continue MEP work!")
-            print("   Blender will remain responsive\n")
+            # Load Stage 2: Tessellated geometry (exact IFC shapes)
+            print("\n⏳ Loading exact tessellated geometry with database materials...")
+            print("   (Fallback to discipline colors if DB materials unavailable)")
 
-            # Set database path for background loader
-            context.scene['federation_loader_db_path'] = str(props.federation_database_path)
+            shapes = loader.load_stage2()
+            elapsed = time.time() - start
 
-            # Invoke background loader for Stage 2 tessellation (non-blocking!)
-            bpy.ops.bim.load_federation_stage2_background()
+            # Determine what was actually loaded
+            mode_desc = "Tessellated geometry" if not loader.stage2_progressive else "Procedural boxes"
+            mat_desc = "DB materials" if loader.use_database_materials else "Discipline colors"
 
-            self.report({'INFO'}, "Stage 1 complete - Stage 2 loading in background")
+            print(f"\n✅ FULL LOAD COMPLETE!")
+            print(f"  - Mode: {mode_desc} + {mat_desc}")
+            print(f"  - Elements: {len(shapes):,}")
+            print(f"  - Time: {elapsed:.2f}s")
+            print(f"  - Geometry: {'Exact IFC tessellation from database' if not loader.stage2_progressive else 'GPU-instanced procedural shapes'}")
+
+            # Switch viewport to Solid mode to show colors + enable X-ray (Alt+Z)
+            for area in context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    for space in area.spaces:
+                        if space.type == 'VIEW_3D':
+                            space.shading.type = 'SOLID'
+                            space.shading.color_type = 'MATERIAL'  # Show material colors in solid mode
+                            print("  ✓ Switched viewport to Solid mode (X-ray enabled, Alt+Z)")
+                            break
+
+            self.report({'INFO'}, f"Full load complete: {len(shapes):,} shapes in {elapsed:.2f}s")
 
             logging_utils.stop_file_logging()
             return {'FINISHED'}
@@ -1562,6 +1590,9 @@ class UnloadFederationViewport(bpy.types.Operator):
             # Unload all layers
             print("\n🗑️  Unloading all visualization layers...")
             viz_mgr.unload_all_layers()
+
+            # Reset solid_loaded flag (allows re-loading Solid button)
+            props.solid_loaded = False
 
             self.report({'INFO'}, "Unloaded all visualization layers")
             logging_utils.stop_file_logging()
