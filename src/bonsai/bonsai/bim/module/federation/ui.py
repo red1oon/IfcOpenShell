@@ -112,48 +112,19 @@ class BIM_PT_federation(Panel):
                 op.index = props.active_federated_file_index
         
         layout.separator()
-        
-        # Database path
-        box = layout.box()
-        box.label(text="Federation Database", icon="FILE")
-        box.prop(props, "federation_database_path", text="")
-        
-        # Progress indicator
-        if props.preprocessing_in_progress:
-            box.label(text="Preprocessing in progress...", icon="TIME")
-            if props.progress_json_path:
-                from pathlib import Path
-                box.label(text=f"Progress: {Path(props.progress_json_path).name}")
-        
-        # Database Extraction
-        box.separator()
-        box.label(text="Database Extraction:")
 
-        # Extraction buttons (side-by-side)
-        row = box.row(align=True)
-        row.scale_y = 1.3
-        row.operator("bim.extract_full_database", icon="SEQUENCE", text="Extract Full")
-        row.operator("bim.extract_sample_database", icon="EXPERIMENTAL", text="Extract Sample")
-
-        # Sample settings
-        row = box.row(align=True)
-        row.prop(props, "sample_anchor_type", text="Anchor")
-        row.operator("bim.redo_sample_extraction", icon="FILE_REFRESH", text="Redo")
-
-        layout.separator()
-        
         # Statistics section (collapsible)
         if props.index_loaded:
             box = layout.box()
             row = box.row()
-            row.prop(props, "show_statistics", 
+            row.prop(props, "show_statistics",
                     icon="TRIA_DOWN" if props.show_statistics else "TRIA_RIGHT",
                     text="Federation Statistics",
                     emboss=False)
-            
+
             if props.show_statistics:
                 col = box.column(align=True)
-                
+
                 # File statistics
                 col.label(text="Files in Federation:")
                 for fed_file in props.federated_files:
@@ -162,16 +133,18 @@ class BIM_PT_federation(Panel):
                         row = col.row()
                         row.label(text=f"  {fed_file.discipline}:")
                         row.label(text=f"{fed_file.element_count:,} elements")
-                
+
                 col.separator()
-                
+
                 # Query settings
                 col.label(text="Query Settings:")
                 col.prop(props, "query_buffer_mm")
                 col.prop(props, "filter_by_discipline")
-                
+
                 if props.filter_by_discipline:
                     col.prop(props, "active_disciplines", text="Disciplines")
+
+            layout.separator()
 
         # Viewport Control section
         layout.separator()
@@ -186,6 +159,35 @@ class BIM_PT_federation(Panel):
 
         box.separator()
 
+        # Database path - Positioned just above Preview/Solid buttons
+        inner_box = box.box()
+        inner_box.label(text="Federation Database", icon="FILE")
+        inner_box.prop(props, "federation_database_path", text="")
+
+        # Progress indicator
+        if props.preprocessing_in_progress:
+            inner_box.label(text="Preprocessing in progress...", icon="TIME")
+            if props.progress_json_path:
+                from pathlib import Path
+                inner_box.label(text=f"Progress: {Path(props.progress_json_path).name}")
+
+        # Database Extraction
+        inner_box.separator()
+        inner_box.label(text="Database Extraction:")
+
+        # Extraction buttons (side-by-side)
+        row = inner_box.row(align=True)
+        row.scale_y = 1.3
+        row.operator("bim.extract_full_database", icon="SEQUENCE", text="Extract Full")
+        row.operator("bim.extract_sample_database", icon="EXPERIMENTAL", text="Extract Sample")
+
+        # Sample settings
+        row = inner_box.row(align=True)
+        row.prop(props, "sample_anchor_type", text="Anchor")
+        row.operator("bim.redo_sample_extraction", icon="FILE_REFRESH", text="Redo")
+
+        box.separator()
+
         # Action buttons - Three-stage workflow
         col = box.column(align=True)
 
@@ -193,7 +195,10 @@ class BIM_PT_federation(Panel):
         row = col.row(align=True)
         row.scale_y = 1.5
         row.operator("bim.preview_federation_viewport", icon="HIDE_OFF", text="Preview")
-        row.operator("bim.load_solid_federation_viewport", icon="MESH_CUBE", text="Solid")
+        # Disable Solid button if already loaded (prevents slow re-loading)
+        solid_row = row.row(align=True)
+        solid_row.enabled = not props.solid_loaded
+        solid_row.operator("bim.load_solid_federation_viewport", icon="MESH_CUBE", text="Solid")
 
         # Row 2: Full Load (slower, exact geometry)
         row = col.row(align=True)
