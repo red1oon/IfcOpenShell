@@ -85,16 +85,18 @@ class RouteMEPConduit(Operator):
         
         # Query obstacles along corridor using federation
         try:
-            # Filter to essential blocking disciplines
-            # ARC: walls, slabs, columns (major obstacles)
-            # STR: structural elements (beams, columns) - if available
-            # ACMV: mechanical ducts and equipment
-            # FP: fire protection (pipes may clash)
-            disciplines = ['ARC', 'STR', 'ACMV', 'FP']
+            # Get discipline filter from UI (comma-separated list)
+            # Default: ARC (walls), STR (structure), ACMV (mechanical), FP (fire), SP (sprinklers), CW (casework)
+            disciplines = [d.strip() for d in mep_props.target_disciplines.split(',') if d.strip()]
+
+            if not disciplines:
+                # Fallback to essential blocking disciplines
+                disciplines = ['ARC', 'STR']
+                print(f"  ⚠️  No disciplines specified, using default: {disciplines}")
 
             # Query using direct coordinates (same space as R-tree - meters from database)
-            # Note: Coordinates from auto-pick come from geometry vertices in database
-            # which are in the same coordinate space as the R-tree
+            # Note: Coordinates from auto-pick come from R-tree bbox centers
+            # which are in the same coordinate space as the R-tree obstacle queries
             obstacles = index.query_corridor(
                 start=start,
                 end=end,
@@ -796,20 +798,31 @@ class AutoPickRoutingEndpoints(Operator):
             import math
             import random
 
-            # Calculate distances for all pairs
+            # Calculate distances for all pairs (on same floor only)
             challenging_pairs = []
+            max_z_diff = 2.0  # Maximum 2m vertical difference (same floor)
+
             for i, ep1 in enumerate(all_endpoints):
                 for j, ep2 in enumerate(all_endpoints[i+1:], start=i+1):
+                    # Check if on same floor (Z difference < 2m)
+                    dz = abs(ep2['pos'][2] - ep1['pos'][2])
+                    if dz > max_z_diff:
+                        continue  # Skip pairs on different floors
+
+                    # Calculate horizontal distance
                     dx = ep2['pos'][0] - ep1['pos'][0]
                     dy = ep2['pos'][1] - ep1['pos'][1]
-                    dz = ep2['pos'][2] - ep1['pos'][2]
-                    distance = math.sqrt(dx*dx + dy*dy + dz*dz)
+                    horizontal_dist = math.sqrt(dx*dx + dy*dy)
 
-                    # Only consider pairs with good distance (> 5m for meaningful routing)
-                    if distance > 5.0:
+                    # Only consider pairs with good horizontal distance (> 5m for meaningful routing)
+                    # and small vertical difference (same floor)
+                    if horizontal_dist > 5.0:
+                        total_dist = math.sqrt(dx*dx + dy*dy + dz*dz)
                         challenging_pairs.append({
                             'pair': (ep1, ep2),
-                            'distance': distance
+                            'distance': total_dist,
+                            'horizontal': horizontal_dist,
+                            'vertical': dz
                         })
 
             if not challenging_pairs:
