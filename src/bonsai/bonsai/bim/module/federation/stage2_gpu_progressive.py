@@ -46,6 +46,7 @@ from mathutils import Vector, Euler
 from typing import List, Optional, Callable, Dict, Tuple
 from . import semantic_utils
 from . import stage2_gpu_instancing
+from . import stage2_tessellation_loader  # NEW: For DB materials
 
 # Import GPU instancing functions we'll reuse
 from .stage2_gpu_instancing import (
@@ -73,8 +74,8 @@ def _calculate_coordinate_offset(db_conn: sqlite3.Connection) -> Vector:
     try:
         cursor = db_conn.cursor()
         cursor.execute("""
-            SELECT MIN(min_x), MIN(min_y), MIN(min_z),
-                   MAX(max_x), MAX(max_y), MAX(max_z)
+            SELECT MIN(minX), MIN(minY), MIN(minZ),
+                   MAX(maxX), MAX(maxY), MAX(maxZ)
             FROM elements_rtree
         """)
         bounds = cursor.fetchone()
@@ -157,7 +158,8 @@ def create_semantic_shapes_progressive(db_conn: sqlite3.Connection,
                                        discipline_collections: Dict[str, bpy.types.Collection],
                                        progress_callback: Optional[Callable] = None,
                                        batch_delay: float = 0.05,
-                                       offset: Vector = None) -> List[bpy.types.Object]:
+                                       offset: Vector = None,
+                                       use_database_materials: bool = False) -> List[bpy.types.Object]:
     """
     Create semantic shapes with progressive surface-first loading.
 
@@ -184,6 +186,7 @@ def create_semantic_shapes_progressive(db_conn: sqlite3.Connection,
     print("\n" + "=" * 70)
     print("STAGE 2: PROGRESSIVE GPU INSTANCING (SURFACE-FIRST)")
     print("=" * 70)
+    print(f"DEBUG: use_database_materials = {use_database_materials}")  # DEBUG
 
     start_time = time.time()
 
@@ -194,19 +197,38 @@ def create_semantic_shapes_progressive(db_conn: sqlite3.Connection,
     offset = _calculate_coordinate_offset(db_conn)
     print(f"Using coordinate offset: ({offset.x:.1f}, {offset.y:.1f}, {offset.z:.1f})")
 
-    # Query all elements from database
+    # Query all elements from database (with materials if needed)
     print("\nQuerying database...")
     cursor = db_conn.cursor()
-    cursor.execute("""
-        SELECT
-            m.guid,
-            m.ifc_class,
-            m.discipline,
-            r.minX, r.minY, r.minZ,
-            r.maxX, r.maxY, r.maxZ
-        FROM elements_meta m
-        JOIN elements_rtree r ON m.id = r.id
-    """)
+
+    if use_database_materials:
+        print("  ✓ Querying with Revit material data from database...")
+        cursor.execute("""
+            SELECT
+                m.guid,
+                m.ifc_class,
+                m.discipline,
+                r.minX, r.minY, r.minZ,
+                r.maxX, r.maxY, r.maxZ,
+                m.material_name,
+                m.material_rgba
+            FROM elements_meta m
+            JOIN elements_rtree r ON m.id = r.id
+        """)
+    else:
+        print("  ✓ Using discipline colors (fast mode)...")
+        cursor.execute("""
+            SELECT
+                m.guid,
+                m.ifc_class,
+                m.discipline,
+                r.minX, r.minY, r.minZ,
+                r.maxX, r.maxY, r.maxZ,
+                NULL,
+                NULL
+            FROM elements_meta m
+            JOIN elements_rtree r ON m.id = r.id
+        """)
 
     elements = cursor.fetchall()
     total = len(elements)
@@ -283,14 +305,31 @@ def create_semantic_shapes_progressive(db_conn: sqlite3.Connection,
         for idx, elem in enumerate(batch):
             guid, ifc_class, discipline = elem[0], elem[1], elem[2]
             min_x, min_y, min_z, max_x, max_y, max_z = elem[3:9]
+            material_name, material_rgba = elem[9], elem[10]  # NEW: Material data from DB
             bbox = (min_x, min_y, min_z, max_x, max_y, max_z)
+
+            # DEBUG: Print first few elements to verify discipline + material data
+            if idx < 3:
+                if use_database_materials:
+                    print(f"  DEBUG: Element {idx}: ifc_class={ifc_class}, discipline={discipline}, material={material_name}, rgba={material_rgba}")
+                else:
+                    print(f"  DEBUG: Element {idx}: ifc_class={ifc_class}, discipline={discipline}")
 
             # Infer semantic type
             semantic_type = semantic_utils.get_semantic_type(ifc_class)
 
-            # Get or create template (with material for discipline)
-            template_obj = get_template_object(semantic_type, ifc_class, parent_collection, discipline)
-            templates_used.add(f"{semantic_type}_{ifc_class}_{discipline}")
+            # Get or create template (geometry only - NO materials on template)
+            # Materials will be assigned per instance for variation
+            template_key = f"{semantic_type}_{ifc_class}"
+            if template_key not in _TEMPLATE_OBJECTS:
+                # Don't pass discipline - creates generic template without materials
+                template_obj = stage2_gpu_instancing.get_template_object(
+                    semantic_type, ifc_class, parent_collection, discipline=None
+                )
+                _TEMPLATE_OBJECTS[template_key] = template_obj
+            else:
+                template_obj = _TEMPLATE_OBJECTS[template_key]
+            templates_used.add(template_key)
 
             # Calculate transform (with offset to center model at origin)
             location, scale, rotation = calculate_transform_from_bbox(bbox, semantic_type, ifc_class, offset)
@@ -300,6 +339,23 @@ def create_semantic_shapes_progressive(db_conn: sqlite3.Connection,
             instance.location = location
             instance.scale = scale
             instance.rotation_euler = rotation
+
+            # Assign material to instance (object-level override)
+            if use_database_materials and material_rgba:
+                # Get cached material from database
+                material = stage2_tessellation_loader.get_or_create_db_material(
+                    material_name or "<Unnamed>",
+                    material_rgba,
+                    discipline
+                )
+                # Ensure mesh has at least one material slot
+                if len(instance.data.materials) == 0:
+                    instance.data.materials.append(None)  # Add empty slot
+
+                # Use object-level material override (doesn't affect other instances)
+                if len(instance.material_slots) > 0:
+                    instance.material_slots[0].link = 'OBJECT'
+                    instance.material_slots[0].material = material
 
             # Store metadata
             instance['ifc_class'] = ifc_class

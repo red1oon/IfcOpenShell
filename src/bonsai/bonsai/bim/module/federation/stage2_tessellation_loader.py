@@ -46,6 +46,83 @@ from .stage2_gpu_instancing import (
     _MATERIAL_CACHE
 )
 
+# Material cache for database materials
+_DB_MATERIAL_CACHE = {}
+
+def parse_rgba_string(rgba_str: str) -> Tuple[float, float, float, float]:
+    """Parse comma-separated RGBA string to tuple."""
+    try:
+        parts = rgba_str.split(',')
+        return (float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3]))
+    except:
+        return (0.5, 0.5, 0.5, 1.0)  # Fallback gray
+
+def get_or_create_db_material(material_name: str, rgba_str: str, discipline: str) -> bpy.types.Material:
+    """
+    Get or create material from database RGBA values.
+
+    Uses real Revit material colors from extraction database.
+    Falls back to discipline color if RGBA is missing.
+
+    Args:
+        material_name: Material name from Revit (e.g., "Metal Deck", "Concrete")
+        rgba_str: Comma-separated RGBA string (e.g., "0.5,0.7,0.5,1.0")
+        discipline: Discipline code (fallback if RGBA missing)
+
+    Returns:
+        Blender material with shader setup
+    """
+    # Create cache key (material name + rgba for uniqueness)
+    cache_key = f"{material_name}_{rgba_str}" if rgba_str else f"Discipline_{discipline}"
+
+    # Check cache
+    if cache_key in _DB_MATERIAL_CACHE:
+        return _DB_MATERIAL_CACHE[cache_key]
+
+    # Parse RGBA
+    if rgba_str:
+        rgba = parse_rgba_string(rgba_str)
+        mat_name = f"Revit_{material_name}" if material_name and material_name != "<Unnamed>" else f"Revit_{rgba_str[:15]}"
+    else:
+        # Fallback to discipline color
+        rgba = (*DISCIPLINE_COLORS.get(discipline, (0.5, 0.5, 0.5)), 1.0)
+        mat_name = f"Discipline_{discipline}"
+
+    # Check if material already exists in Blender
+    mat = bpy.data.materials.get(mat_name)
+    if mat:
+        _DB_MATERIAL_CACHE[cache_key] = mat
+        return mat
+
+    # Create new material
+    mat = bpy.data.materials.new(name=mat_name)
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+
+    # Clear default nodes
+    nodes.clear()
+
+    # Add shader nodes
+    output_node = nodes.new(type='ShaderNodeOutputMaterial')
+    output_node.location = (300, 0)
+
+    bsdf_node = nodes.new(type='ShaderNodeBsdfPrincipled')
+    bsdf_node.location = (0, 0)
+
+    # Set material properties from Revit RGBA
+    bsdf_node.inputs['Base Color'].default_value = rgba
+    bsdf_node.inputs['Metallic'].default_value = 0.2  # Slightly metallic
+    bsdf_node.inputs['Roughness'].default_value = 0.5  # Medium roughness
+
+    # Link nodes
+    links.new(bsdf_node.outputs['BSDF'], output_node.inputs['Surface'])
+
+    # Cache it
+    _DB_MATERIAL_CACHE[cache_key] = mat
+
+    return mat
+
 # ============================================================================
 # GEOMETRY UNPACKING (from database BLOBs)
 # ============================================================================
@@ -356,7 +433,7 @@ def load_tessellated_shapes_instanced(db_path: str,
     db_conn = sqlite3.connect(db_path)
     cursor = db_conn.cursor()
 
-    # Query all elements with geometry
+    # Query all elements with geometry AND material data
     print("\nQuerying database...")
     cursor.execute("""
         SELECT
@@ -364,7 +441,9 @@ def load_tessellated_shapes_instanced(db_path: str,
             m.ifc_class,
             m.discipline,
             g.geometry_hash,
-            t.center_x, t.center_y, t.center_z
+            t.center_x, t.center_y, t.center_z,
+            m.material_name,
+            m.material_rgba
         FROM elements_meta m
         JOIN element_geometry g ON m.guid = g.guid
         JOIN element_transforms t ON m.guid = t.guid
@@ -382,9 +461,14 @@ def load_tessellated_shapes_instanced(db_path: str,
 
     # OPTIMIZATION: Pre-create all template meshes in parallel
     # This replaces the on-demand mesh creation with batch parallel creation
-    print(f"\n🚀 OPTIMIZATION: Parallel mesh creation enabled")
+    # Auto-detect CPU cores for optimal performance
+    import os
+    cpu_count = os.cpu_count() or 8
+    max_workers = min(cpu_count, 16)  # Cap at 16 to avoid thread overhead
+
+    print(f"\n🚀 OPTIMIZATION: Parallel mesh creation enabled ({max_workers} workers)")
     mesh_creation_start = time.time()
-    parallel_meshes = create_all_template_meshes_parallel(db_conn, max_workers=8)
+    parallel_meshes = create_all_template_meshes_parallel(db_conn, max_workers=max_workers)
     mesh_creation_elapsed = time.time() - mesh_creation_start
     print(f"✓ Mesh creation complete: {mesh_creation_elapsed:.2f}s ({mesh_creation_elapsed/max(len(parallel_meshes),1)*1000:.2f}ms per mesh)")
 
@@ -398,48 +482,36 @@ def load_tessellated_shapes_instanced(db_path: str,
         parent_collection.children.link(templates_collection)
 
     # OPTIMIZATION: Pre-create all template objects upfront
-    print(f"\n⚡ Pre-creating template objects...")
+    print(f"\n⚡ Creating template objects (geometry only, materials assigned per instance)...")
     template_creation_start = time.time()
 
-    # Query unique (geometry_hash, discipline, ifc_class) combinations
+    # Query unique geometry hashes ONLY
+    # Materials will be assigned to instances, not templates (prevents template explosion)
     cursor.execute("""
-        SELECT DISTINCT g.geometry_hash, m.discipline, m.ifc_class
+        SELECT DISTINCT
+            g.geometry_hash,
+            m.ifc_class
         FROM element_geometry g
         JOIN elements_meta m ON g.guid = m.guid
         WHERE g.geometry_hash IS NOT NULL
+        GROUP BY g.geometry_hash
     """)
     unique_templates = cursor.fetchall()
-    print(f"  Creating {len(unique_templates):,} unique template objects...")
+    print(f"  Creating {len(unique_templates):,} unique template objects (one per geometry)...")
 
     templates_used = {}
-    meshes_with_materials = set()  # Track which meshes already have materials
 
-    for geom_hash, discipline, ifc_class in unique_templates:
-        template_key = f"{geom_hash}_{discipline}"
+    for geom_hash, ifc_class in unique_templates:
+        template_key = geom_hash  # Template key is ONLY geometry hash
 
         # Get mesh from cache (already created)
         if geom_hash not in _TEMPLATE_MESHES:
             continue
         mesh = _TEMPLATE_MESHES[geom_hash]
 
-        # Create template object
-        template_name = f"Template_{ifc_class}_{discipline}_{geom_hash[:8]}"
+        # Create template object (NO materials - those go on instances)
+        template_name = f"Template_{ifc_class}_{geom_hash[:8]}"
         template_obj = bpy.data.objects.new(template_name, mesh)
-
-        # Assign material (only once per mesh to avoid material invalidation)
-        if geom_hash not in meshes_with_materials:
-            semantic_type = semantic_utils.get_semantic_type(ifc_class)
-            try:
-                material = get_or_create_material(semantic_type, discipline)
-                # Safe material assignment
-                if len(mesh.materials) == 0:
-                    mesh.materials.append(material)
-                else:
-                    mesh.materials[0] = material
-                meshes_with_materials.add(geom_hash)
-            except ReferenceError:
-                # Material was removed - skip for now
-                pass
 
         # Link to templates collection
         templates_collection.objects.link(template_obj)
@@ -462,10 +534,10 @@ def load_tessellated_shapes_instanced(db_path: str,
     instances_by_discipline = {}
 
     for idx, elem in enumerate(elements):
-        guid, ifc_class, discipline, geom_hash, center_x, center_y, center_z = elem
+        guid, ifc_class, discipline, geom_hash, center_x, center_y, center_z, material_name, material_rgba = elem
 
-        # Get template (already created!)
-        template_key = f"{geom_hash}_{discipline}"
+        # Get template (template_key is now just geom_hash)
+        template_key = geom_hash
         if template_key not in templates_used:
             # Skip if template not found (shouldn't happen)
             continue
@@ -485,6 +557,23 @@ def load_tessellated_shapes_instanced(db_path: str,
             instance.location = center_m
 
         # No scale/rotation needed - geometry is exact!
+
+        # Assign material to instance (object-level override)
+        # This allows different materials per instance while sharing geometry
+        if material_rgba:
+            material = get_or_create_db_material(
+                material_name or "<Unnamed>",
+                material_rgba,
+                discipline
+            )
+            # Ensure mesh has at least one material slot (can be None)
+            if len(instance.data.materials) == 0:
+                instance.data.materials.append(None)  # Add empty slot to mesh
+
+            # Now override at OBJECT level (doesn't affect other instances)
+            if len(instance.material_slots) > 0:
+                instance.material_slots[0].link = 'OBJECT'
+                instance.material_slots[0].material = material
 
         # Store metadata
         instance['ifc_class'] = ifc_class
