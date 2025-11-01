@@ -1333,8 +1333,13 @@ class LoadFullFederationViewport(bpy.types.Operator):
             loader = FederationLoader(props.federation_database_path)
             loader.stage2_progressive = False  # Use tessellation, not procedural
 
-            # Load Stage 1: GPU BBox visualization (instant!)
-            loader.load_stage1()
+            # Load Stage 1: GPU BBox visualization (instant!) - ONLY if not already loaded
+            from . import bbox_visualization
+            if not bbox_visualization.is_bbox_visualization_enabled():
+                print("  Loading Stage 1 wireframes...")
+                loader.load_stage1()
+            else:
+                print("  Stage 1 wireframes already loaded, skipping...")
 
             # Register federation index for routing/clashing
             if not hasattr(bpy.types.WindowManager, 'federation_index'):

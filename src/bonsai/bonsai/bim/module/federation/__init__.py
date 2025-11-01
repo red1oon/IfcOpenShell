@@ -54,7 +54,7 @@ classes = (
     operator.ExtractSampleDatabase,
     operator.ExtractFullDatabase,
     operator.RedoSampleExtraction,
-    discipline_legend.FEDERATION_OT_legend_modal,
+    # NOTE: Legend modal operator removed - use Outliner for discipline toggling
     GlassOutlineLoader,
     ui.BIM_PT_federation,
     ui.BIM_UL_federated_files,

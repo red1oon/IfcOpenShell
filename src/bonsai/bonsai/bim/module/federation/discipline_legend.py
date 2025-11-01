@@ -100,7 +100,7 @@ def draw_legend():
 
 
 def enable_legend():
-    """Enable the discipline legend overlay"""
+    """Enable the discipline legend overlay (visual reference only)"""
     global _legend_handler, _is_legend_enabled, _discipline_visibility
 
     if _is_legend_enabled:
@@ -119,10 +119,8 @@ def enable_legend():
     )
     _is_legend_enabled = True
 
-    # Start modal operator for click handling
-    bpy.ops.federation.legend_modal('INVOKE_DEFAULT')
-
-    print("✓ Discipline legend enabled (2D overlay + click handler)")
+    # NOTE: Click handling removed - use Outliner for toggling disciplines
+    print("✓ Discipline legend enabled (visual reference - toggle via Outliner)")
 
     # Force viewport redraw
     for area in bpy.context.screen.areas:
@@ -152,77 +150,12 @@ def disable_legend():
             area.tag_redraw()
 
 
-def toggle_discipline_visibility(discipline: str):
-    """
-    Toggle visibility of a discipline.
-
-    Modifies bbox_visualization's drawing to skip hidden disciplines.
-    """
-    global _discipline_visibility
-
-    _discipline_visibility[discipline] = not _discipline_visibility.get(discipline, True)
-    is_visible = _discipline_visibility[discipline]
-
-    print(f"Toggled {discipline}: {'visible' if is_visible else 'hidden'}")
-
-    # Store visibility state in bbox_visualization module
-    from . import bbox_visualization
-    bbox_visualization._discipline_visibility = _discipline_visibility
-
-    # Force viewport redraw
-    for area in bpy.context.screen.areas:
-        if area.type == 'VIEW_3D':
-            area.tag_redraw()
-
-
 def is_legend_enabled() -> bool:
     """Check if legend is currently enabled"""
     global _is_legend_enabled
     return _is_legend_enabled
 
 
-class FEDERATION_OT_legend_modal(bpy.types.Operator):
-    """Modal operator to handle legend clicks for discipline toggling"""
-    bl_idname = "federation.legend_modal"
-    bl_label = "Legend Click Handler"
-    bl_description = "Handle mouse clicks on discipline legend"
-
-    def modal(self, context, event):
-        global _is_legend_enabled, _discipline_visibility
-
-        # Exit if legend was disabled
-        if not _is_legend_enabled:
-            return {'CANCELLED'}
-
-        # Handle left mouse click
-        if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
-            # Get legend position
-            region = context.region
-            x_start = region.width - 200
-            y_start = region.height - 40
-
-            # Check if click is within legend area
-            if x_start - 10 <= event.mouse_region_x <= x_start + 190:
-                from . import bbox_visualization
-                if bbox_visualization._bbox_batches:
-                    disciplines = sorted(bbox_visualization._bbox_batches.keys())
-                    line_height = 25
-                    y_pos = y_start - 30
-
-                    # Check which discipline was clicked
-                    for discipline in disciplines:
-                        y_top = y_pos + 15
-                        y_bottom = y_pos - 10
-
-                        if y_bottom <= event.mouse_region_y <= y_top:
-                            # Toggle this discipline
-                            toggle_discipline_visibility(discipline)
-                            return {'RUNNING_MODAL'}
-
-                        y_pos -= line_height
-
-        return {'PASS_THROUGH'}
-
-    def invoke(self, context, event):
-        context.window_manager.modal_handler_add(self)
-        return {'RUNNING_MODAL'}
+# NOTE: Modal operator and click handling removed
+# Use the Outliner to toggle discipline visibility instead
+# This is safer and doesn't interfere with Bonsai's architecture

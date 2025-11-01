@@ -148,12 +148,12 @@ def get_or_create_material(semantic_type: str, discipline: str) -> bpy.types.Mat
     # Get discipline color
     disc_color = DISCIPLINE_COLORS.get(discipline, (0.8, 0.8, 0.8))
 
-    # Blend material base color with discipline color (70% base, 30% discipline)
+    # Blend material base color with discipline color (20% base, 80% discipline for clear visibility)
     base_color = mat_props['base_color']
     blended_color = (
-        base_color[0] * 0.7 + disc_color[0] * 0.3,
-        base_color[1] * 0.7 + disc_color[1] * 0.3,
-        base_color[2] * 0.7 + disc_color[2] * 0.3,
+        base_color[0] * 0.2 + disc_color[0] * 0.8,
+        base_color[1] * 0.2 + disc_color[1] * 0.8,
+        base_color[2] * 0.2 + disc_color[2] * 0.8,
         1.0
     )
 
@@ -270,6 +270,7 @@ def get_template_object(semantic_type: str, ifc_class: str, parent_collection: b
             mesh.materials[0] = material
         else:
             mesh.materials.append(material)
+        print(f"    ✓ Applied {discipline} material to {semantic_type} template: {material.name}")
 
     # Add to templates collection
     templates_collection = parent_collection.children.get("Templates")
