@@ -58,26 +58,54 @@ class WaypointGraph:
                     self.graph[j].append((i, dist))
                     connections += 1
         # Force-connect start (0) and end (1) to nearest waypoints
+        # Connection points (element centers) can be inside obstacles, so we IGNORE
+        # clearance checks for these connections. The conduit will emerge from the
+        # element at the connection point.
+        #
+        # IMPORTANT: We ALWAYS force-connect, even if endpoints got some connections
+        # during normal graph building, because those connections might lead to
+        # isolated graph components. We need to ensure connectivity.
         for endpoint_idx in [0, 1]:
-            if len(self.graph[endpoint_idx]) == 0:  # No connections yet
-                # Find nearest waypoint with connections
-                nearest = None
-                min_dist = float('inf')
-                
-                for i in range(2, n):  # Skip 0,1 (start/end)
-                    if len(self.graph[i]) > 0:  # Has connections
-                        dist = self._distance(self.waypoints[endpoint_idx], self.waypoints[i])
-                        if dist < min_dist:
-                            min_dist = dist
-                            nearest = i
-                
-                if nearest is not None:
-                    # Connect endpoint to nearest waypoint
-                    self.graph[endpoint_idx].append((nearest, min_dist))
-                    self.graph[nearest].append((endpoint_idx, min_dist))
-                    connections += 1
-                    print(f"    ⚠️  Forced connection: endpoint {endpoint_idx} → waypoint {nearest} ({min_dist:.2f}m)")
-    
+            # Find K nearest waypoints and connect to closest one(s)
+            distances = []
+            for i in range(2, n):  # Skip 0,1 (start/end)
+                dist = self._distance(self.waypoints[endpoint_idx], self.waypoints[i])
+                distances.append((dist, i))
+
+            # Sort by distance
+            distances.sort()
+
+            initial_connections = len(self.graph[endpoint_idx])
+
+            # Always try to add more connections (target: at least 5 for robustness)
+            target_connections = 5
+            added = 0
+            for dist, target_idx in distances[:20]:  # Try up to 20 nearest
+                # Skip if already connected
+                if any(neighbor == target_idx for neighbor, _ in self.graph[endpoint_idx]):
+                    continue
+
+                # Connect WITHOUT clearance check (endpoints are connection points)
+                # This allows routing to/from element centers even if inside obstacle zones
+                self.graph[endpoint_idx].append((target_idx, dist))
+                self.graph[target_idx].append((endpoint_idx, dist))
+                connections += 1
+                added += 1
+                endpoint_name = "start" if endpoint_idx == 0 else "end"
+
+                if initial_connections == 0 or added <= 3:  # Only print first few
+                    print(f"    🔌 Connected {endpoint_name} point → waypoint {target_idx} ({dist:.2f}m, ignoring clearance)")
+
+                # Connect to at least target_connections total
+                if len(self.graph[endpoint_idx]) >= target_connections:
+                    break
+
+            endpoint_name = "start" if endpoint_idx == 0 else "end"
+            if initial_connections == 0 and added == 0:
+                print(f"    ❌ WARNING: Could not connect {endpoint_name} point (no waypoints available)")
+            elif added > 3:
+                print(f"    🔌 Connected {endpoint_name} point to {added} more waypoints (total: {len(self.graph[endpoint_idx])})")
+
         print(f"    ✓ Graph built: {connections} connections")
     
     def _path_clear(self, p1: Tuple[float, float, float], 
@@ -351,7 +379,7 @@ class PathfindingAlgorithm:
         end: Tuple[float, float, float],
         obstacles: List[Tuple[float, float, float, float, float, float]],
         clearance: float,
-        num_samples: int = 200
+        num_samples: int = 500
     ) -> List[Tuple[float, float, float]]:
         """
         Sample free-space points around corridor using rejection sampling
@@ -444,27 +472,39 @@ class PathfindingAlgorithm:
         came_from = {}
         g_score = {i: float('inf') for i in range(len(waypoints))}
         g_score[start_idx] = 0
-        
+        closed_set = set()  # Track visited nodes to avoid reprocessing
+
         iterations = 0
-        
+
         while open_set:
             iterations += 1
             _, current = heapq.heappop(open_set)
-            
+
+            # Skip if already visited (critical fix!)
+            if current in closed_set:
+                continue
+
+            # Mark as visited
+            closed_set.add(current)
+
             if current == end_idx:
                 # Reconstruct path by backtracking
                 path = [current]
                 while current in came_from:
                     current = came_from[current]
                     path.append(current)
-                
+
                 print(f"    A* found path in {iterations} iterations")
                 return list(reversed(path))
-            
+
             # Explore neighbors
             for neighbor, distance in graph[current]:
+                # Skip if already visited
+                if neighbor in closed_set:
+                    continue
+
                 tentative_g = g_score[current] + distance
-                
+
                 if tentative_g < g_score[neighbor]:
                     came_from[neighbor] = current
                     g_score[neighbor] = tentative_g

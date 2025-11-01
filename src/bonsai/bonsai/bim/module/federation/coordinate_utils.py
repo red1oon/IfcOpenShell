@@ -6,12 +6,18 @@ Manages conversions between IFC, database, and viewport coordinate systems.
 
 Coordinate Systems:
   - IFC:      Absolute world coords in METERS (e.g., -50433, 34188, 8)
-  - Database: Absolute world coords in MILLIMETERS (e.g., -50433000, 34188000, 8000)
+  - Database: Offset-relative coords in METERS (e.g., 118, -3, 1) - SAME AS VIEWPORT
   - Viewport: Offset-relative coords in METERS (e.g., 0, 0, 0 at site center)
+
+IMPORTANT (2025-11-01): Database R-tree stores METERS, not millimeters!
+CheatSheet Rule #1: "Store/load meters 1:1. NO /1000 divisions anywhere."
 
 The global offset is stored in the database's `global_offset` table and represents
 the site center point. All viewport coordinates have this offset subtracted to
 center the model at the origin for better navigation in Blender.
+
+Since database now stores offset-relative meters (same as viewport), most conversion
+functions are identity transforms (no scaling needed).
 
 Usage:
     from coordinate_utils import CoordinateSystem
@@ -21,14 +27,8 @@ Usage:
     # User clicks at (50, 30, 12) in viewport
     click_pos = (50, 30, 12)
 
-    # Query R-tree for obstacles (need millimeters)
-    query_bbox_mm = coords.viewport_to_db(click_pos)
-    # Returns absolute coords in mm for database query
-
-    # Convert database result back to viewport
-    db_bbox = (-50383500, 34218100, 20400, -50383000, 34218600, 20900)  # mm
-    viewport_bbox = coords.db_bbox_to_viewport(db_bbox)
-    # Returns offset-relative coords in meters for Blender
+    # Query R-tree - coordinates are ALREADY in viewport space (meters)
+    # No conversion needed! Database uses same coordinate system as viewport.
 """
 
 import sqlite3
@@ -125,74 +125,72 @@ class CoordinateSystem:
         )
 
     # =========================================================================
-    # Viewport ↔ Database Conversions (meters ↔ millimeters)
+    # Viewport ↔ Database Conversions (IDENTITY - both use meters now)
     # =========================================================================
 
     def viewport_to_db(self, xyz: Tuple[float, float, float]) -> Tuple[float, float, float]:
         """
-        Convert viewport (meters) to database R-tree coords (millimeters).
+        Convert viewport (meters) to database R-tree coords (meters).
 
         Args:
             xyz: (x, y, z) in viewport offset-relative meters
 
         Returns:
-            (x, y, z) in database absolute millimeters
+            (x, y, z) in database offset-relative meters (SAME AS INPUT)
+
+        Note: Database now stores meters, not millimeters. This is an identity function.
         """
-        # First convert to IFC absolute meters
-        ifc_coords = self.viewport_to_ifc(xyz)
-        # Then convert to millimeters
-        return (
-            ifc_coords[0] * 1000,
-            ifc_coords[1] * 1000,
-            ifc_coords[2] * 1000
-        )
+        # Database coordinates ARE viewport coordinates (both offset-relative meters)
+        return xyz
 
     def db_to_viewport(self, xyz: Tuple[float, float, float]) -> Tuple[float, float, float]:
         """
-        Convert database R-tree coords (millimeters) to viewport (meters).
+        Convert database R-tree coords (meters) to viewport (meters).
 
         Args:
-            xyz: (x, y, z) in database absolute millimeters
+            xyz: (x, y, z) in database offset-relative meters
 
         Returns:
-            (x, y, z) in viewport offset-relative meters
+            (x, y, z) in viewport offset-relative meters (SAME AS INPUT)
+
+        Note: Database now stores meters, not millimeters. This is an identity function.
         """
-        # First convert to meters
-        ifc_coords = (
-            xyz[0] / 1000,
-            xyz[1] / 1000,
-            xyz[2] / 1000
-        )
-        # Then convert to viewport offset-relative
-        return self.ifc_to_viewport(ifc_coords)
+        # Database coordinates ARE viewport coordinates (both offset-relative meters)
+        return xyz
 
     # =========================================================================
-    # IFC ↔ Database Conversions (meters ↔ millimeters)
+    # IFC ↔ Database Conversions (meters → offset-relative meters)
     # =========================================================================
 
     def ifc_to_db(self, xyz: Tuple[float, float, float]) -> Tuple[float, float, float]:
         """
-        Convert IFC absolute (meters) to database (millimeters).
+        Convert IFC absolute (meters) to database offset-relative (meters).
 
         Args:
             xyz: (x, y, z) in IFC absolute meters
 
         Returns:
-            (x, y, z) in database absolute millimeters
+            (x, y, z) in database offset-relative meters
+
+        Note: Database stores meters with offset applied (same as viewport).
         """
-        return (xyz[0] * 1000, xyz[1] * 1000, xyz[2] * 1000)
+        # Apply offset to convert absolute → offset-relative
+        return self.ifc_to_viewport(xyz)
 
     def db_to_ifc(self, xyz: Tuple[float, float, float]) -> Tuple[float, float, float]:
         """
-        Convert database (millimeters) to IFC absolute (meters).
+        Convert database offset-relative (meters) to IFC absolute (meters).
 
         Args:
-            xyz: (x, y, z) in database absolute millimeters
+            xyz: (x, y, z) in database offset-relative meters
 
         Returns:
             (x, y, z) in IFC absolute meters
+
+        Note: Database stores meters with offset applied (same as viewport).
         """
-        return (xyz[0] / 1000, xyz[1] / 1000, xyz[2] / 1000)
+        # Remove offset to convert offset-relative → absolute
+        return self.viewport_to_ifc(xyz)
 
     # =========================================================================
     # Bounding Box Conversions

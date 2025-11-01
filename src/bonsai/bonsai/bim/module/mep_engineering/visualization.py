@@ -230,13 +230,18 @@ def clear_debug_objects():
     for mesh in bpy.data.meshes:
         if mesh.name.startswith("MEP Debug") and mesh.users == 0:
             bpy.data.meshes.remove(mesh)
-    
+
     for material in bpy.data.materials:
         if material.name.startswith("MEP Debug") and material.users == 0:
             bpy.data.materials.remove(material)
-    
+
     for curve in bpy.data.curves:
         if curve.name.startswith("MEP Debug") and curve.users == 0:
+            bpy.data.curves.remove(curve)
+
+    # Also clean up any leftover curve data
+    for curve in bpy.data.curves:
+        if "MEP Debug" in curve.name and curve.users == 0:
             bpy.data.curves.remove(curve)
     
     print(f"✓ Cleared {len(objects_to_remove)} debug objects")
@@ -468,6 +473,45 @@ def visualize_routing_scenario(
             )
             created_objects['clearances'].append(clear_obj)
     
+    # Waypoint path visualization (NEW!)
+    if waypoints and len(waypoints) > 1:
+        # Apply offset to waypoints
+        offset_waypoints = []
+        for wp in waypoints:
+            offset_wp = (wp[0] - offset_x, wp[1] - offset_y, wp[2] - offset_z)
+            offset_waypoints.append(offset_wp)
+
+        # Create curve object for the path
+        import bpy
+        curve_data = bpy.data.curves.new(name="MEP Debug Path", type='CURVE')
+        curve_data.dimensions = '3D'
+        curve_data.resolution_u = 2
+
+        # Create polyline from waypoints
+        polyline = curve_data.splines.new('POLY')
+        polyline.points.add(len(offset_waypoints) - 1)  # -1 because spline has 1 point by default
+
+        for i, point in enumerate(offset_waypoints):
+            x, y, z = point
+            polyline.points[i].co = (x, y, z, 1.0)  # homogeneous coordinates
+
+        # Create object from curve
+        path_obj = bpy.data.objects.new("MEP Debug Path", curve_data)
+        bpy.context.scene.collection.objects.link(path_obj)
+
+        # Set material (bright cyan for visibility)
+        mat = bpy.data.materials.new(name="MEP Debug Path Material")
+        mat.diffuse_color = (0.0, 1.0, 1.0, 1.0)  # Cyan
+        mat.use_nodes = False
+        path_obj.data.materials.append(mat)
+
+        # Make it thick enough to see
+        curve_data.bevel_depth = 0.05  # 5cm diameter tube
+        curve_data.bevel_resolution = 4
+
+        created_objects['path'] = path_obj
+        print(f"  - Path: {len(waypoints)} waypoints (cyan tube)")
+
     print(f"✓ Visualization created:")
     print(f"  - Start/End points: 2 spheres")
     print(f"  - Obstacles: {len(obstacles)} boxes")
@@ -475,5 +519,5 @@ def visualize_routing_scenario(
         print(f"  - Clearance zones: {len(obstacles)} wireframes")
     if show_corridor:
         print(f"  - Corridor: 1 wireframe box")
-    
+
     return created_objects

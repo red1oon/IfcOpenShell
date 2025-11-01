@@ -106,34 +106,49 @@ class RouteMEPConduit(Operator):
             
             self.report({'INFO'}, f"Found {len(obstacles)} obstacles")
             
-            # DEDUPLICATION CHECK (NEW)
+            # DEDUPLICATION AND FILTERING CHECK
             print(f"\n{'='*70}")
             print(f"OBSTACLE INVENTORY CHECK")
             print(f"{'='*70}")
-            
+
             from collections import defaultdict
             unique_obstacles = []
             seen_bboxes = set()
             duplicates = 0
-            
+            degenerate = 0
+
             for obs in obstacles:
+                # Filter out degenerate bboxes (zero or near-zero size)
+                min_x, min_y, min_z, max_x, max_y, max_z = obs.bbox
+                width = max_x - min_x
+                depth = max_y - min_y
+                height = max_z - min_z
+
+                # Skip if any dimension is less than 1cm (degenerate geometry)
+                if width < 0.01 or depth < 0.01 or height < 0.01:
+                    degenerate += 1
+                    continue
+
                 # Create hashable key from bbox (rounded to 0.01m precision)
                 bbox_key = tuple(round(x, 2) for x in obs.bbox)
-                
+
                 if bbox_key not in seen_bboxes:
                     unique_obstacles.append(obs)
                     seen_bboxes.add(bbox_key)
                 else:
                     duplicates += 1
-            
+
             print(f"Original obstacles: {len(obstacles)}")
-            print(f"Unique obstacles: {len(unique_obstacles)}")
+            print(f"Degenerate obstacles removed: {degenerate}")
             print(f"Duplicates removed: {duplicates}")
-            
-            if duplicates > 0:
-                print(f"  ⚠️  Found duplicates - using deduplicated set")
+            print(f"Valid unique obstacles: {len(unique_obstacles)}")
+
+            if degenerate > 0 or duplicates > 0:
                 obstacles = unique_obstacles
-                print(f"  ℹ️  This likely means elements are in multiple source IFC files")
+                if degenerate > 0:
+                    print(f"  ⚠️  Filtered out {degenerate} degenerate (near-zero size) obstacles")
+                if duplicates > 0:
+                    print(f"  ⚠️  Removed {duplicates} duplicate obstacles (likely in multiple IFC files)")
             
             # Obstacle breakdown by discipline
             from collections import Counter
@@ -176,34 +191,19 @@ class RouteMEPConduit(Operator):
         # CALL TOOL LAYER - Main refactoring change here!
         # Run pathfinding
         try:
-            # Calculate and store offset for visualization (do this ONCE)
-            # Find actual placed geometry (not types at origin or ghost elements)
-            offset_x, offset_y, offset_z = 0.0, 0.0, 0.0
-            
-            for obj in bpy.data.objects:
-                if obj.type == 'MESH' and 'Ifc' in obj.name:
-                    # Skip type/style objects
-                    if 'Style' in obj.name or 'Type' in obj.name:
-                        continue
-                    # Skip objects at or very near origin (ghosts/types)
-                    if abs(obj.location.x) < 1.0 and abs(obj.location.y) < 1.0 and abs(obj.location.z) < 1.0:
-                        continue
-                    # Skip objects that don't have IFC properties
-                    if not hasattr(obj, 'BIMObjectProperties'):
-                        continue
-                    if not obj.BIMObjectProperties.ifc_definition_id:
-                        continue
-                    
-                    # Found real placed IFC geometry!
-                    offset_x = start[0] - obj.location.x
-                    offset_y = start[1] - obj.location.y
-                    offset_z = start[2] - obj.location.z
-                    print(f"📍 Using reference object: {obj.name} at ({obj.location.x:.1f}, {obj.location.y:.1f}, {obj.location.z:.1f})")
-                    break
-            
+            # Get coordinate offset from federation index (uses database global_offset table)
+            # No need to search for IFC objects in scene!
+            if hasattr(index, 'coords') and index.coords:
+                offset = index.coords.get_offset()
+                offset_x, offset_y, offset_z = offset
+                print(f"📍 Using database offset: ({offset_x:.1f}, {offset_y:.1f}, {offset_z:.1f})")
+            else:
+                # Fallback: no offset (database coordinates = viewport coordinates)
+                offset_x, offset_y, offset_z = 0.0, 0.0, 0.0
+                print(f"📍 No coordinate system available, using zero offset")
+
             # Store in scene for reuse
             context.scene["MEP_cached_offset"] = (offset_x, offset_y, offset_z)
-            print(f"📍 Cached offset: ({offset_x:.1f}, {offset_y:.1f}, {offset_z:.1f})")
             
             router = tool.ConduitRouter(federation_index=index)            
             waypoints = router.route(
@@ -212,9 +212,36 @@ class RouteMEPConduit(Operator):
                 obstacles=obstacle_bboxes,
                 clearance=clearance
             )
-            
+
             if not waypoints:
-                self.report({'ERROR'}, "No valid route found. Try adjusting clearance or points.")
+                # No route found - still create debug visualization to show start/end
+                print("  ⚠️  Creating debug visualization to show start/end points...")
+                try:
+                    visualization.clear_debug_objects()
+
+                    # Show start/end points and obstacles even without route
+                    created = visualization.visualize_routing_scenario(
+                        start=start,
+                        end=end,
+                        obstacles=obstacle_bboxes[:200] if len(obstacle_bboxes) > 200 else obstacle_bboxes,
+                        clearance=clearance,
+                        waypoints=None,  # No path found
+                        show_corridor=True
+                    )
+
+                    print(f"  ✓ Debug visualization created: {len(created)} objects")
+                    print(f"    Created objects: {list(created.keys())}")
+
+                    # Navigate viewport to show the route area
+                    visualization.focus_on_obstacles()
+                    visualization.navigate_to_view()
+
+                    self.report({'ERROR'}, "No valid route found. Try adjusting clearance or points. Debug markers shown in viewport.")
+                except Exception as e:
+                    print(f"  ✗ Visualization failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    self.report({'ERROR'}, f"No route found and visualization failed: {e}")
                 return {"CANCELLED"}
             
             self.report({'INFO'}, f"Route found with {len(waypoints)} waypoints")
@@ -404,9 +431,14 @@ class VisualizeRoutingObstacles(Operator):
 
             # Auto-focus on path if it exists, otherwise show obstacles
             if waypoints and len(waypoints) > 2:
-                # Path exists - focus on it
-                visualization.focus_on_path()
-                self.report({'INFO'}, 
+                # Path exists - try to focus on IFC conduits first
+                focused = visualization.focus_on_path()
+                if not focused:
+                    # No IFC conduits (database-only mode) - focus on debug visualization
+                    print("  ℹ️  No IFC conduits found (database-only mode), selecting debug objects...")
+                    visualization.focus_on_obstacles()
+                    visualization.navigate_to_view()
+                self.report({'INFO'},
                            f"✓ Path visualized: {len(waypoints)} waypoints")
             else:
                 # No path - navigate to obstacles
@@ -415,9 +447,9 @@ class VisualizeRoutingObstacles(Operator):
                     (start[1] + end[1]) / 2,
                     (start[2] + end[2]) / 2
                 )
-                visualization.focus_on_obstacles
+                visualization.focus_on_obstacles()  # FIXED: Added missing ()
                 visualization.navigate_to_view()
-                self.report({'INFO'}, 
+                self.report({'INFO'},
                            f"✓ Obstacles shown: {len(obstacle_bboxes)} elements")
             
         except Exception as e:
