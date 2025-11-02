@@ -816,6 +816,31 @@ def refresh_clash_gizmos(context):
     bpy.context.view_layer.update()
     logger.info("  Forced context update")
 
+    # SUPER CRITICAL: Force Blender to re-evaluate ALL gizmo groups
+    # by triggering a workspace update
+    try:
+        # Method 1: Update workspace
+        if hasattr(context, 'workspace'):
+            context.workspace.update_tag()
+            logger.info("  Tagged workspace for update")
+
+        # Method 2: Force area update
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                area.tag_redraw()
+                # Force gizmo system refresh by toggling a setting
+                for space in area.spaces:
+                    if space.type == 'VIEW_3D':
+                        # Toggle show_gizmo to force refresh
+                        old_state = space.show_gizmo
+                        space.show_gizmo = False
+                        space.show_gizmo = True
+                        space.show_gizmo = old_state
+                        logger.info("  Toggled show_gizmo to force gizmo refresh")
+
+    except Exception as e:
+        logger.warning(f"  Could not force workspace update: {e}")
+
 
 def is_gizmo_group_active() -> bool:
     """Check if gizmo visualization is currently enabled"""
