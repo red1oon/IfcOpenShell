@@ -335,7 +335,8 @@ class BIMClashProperties(PropertyGroup):
     gizmo_visualization_enabled: BoolProperty(
         name="Gizmo Visualization Enabled",
         description="Whether clash gizmo markers are displayed in viewport",
-        default=False
+        default=False,
+        options={'SKIP_SAVE'}  # Don't persist across sessions - user must enable manually
     )
 
     # Gizmo navigation
