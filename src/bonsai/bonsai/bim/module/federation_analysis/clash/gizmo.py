@@ -714,8 +714,10 @@ def enable_clash_gizmos(context):
     logger.info("=== enable_clash_gizmos() called ===")
     print("\n=== Enabling Gizmo Visualization ===")
 
-    # Check if property is set
+    # CRITICAL: Set the scene property to True (persists across sessions)
     props = context.scene.BIMClashProperties
+    props.gizmo_visualization_enabled = True
+
     print(f"   gizmo_visualization_enabled: {props.gizmo_visualization_enabled}")
     logger.info(f"  Property state: gizmo_visualization_enabled={props.gizmo_visualization_enabled}")
 
@@ -773,9 +775,13 @@ def enable_clash_gizmos(context):
     logger.info(f"  Tagged {redraw_count} viewports for redraw")
 
 
-def disable_clash_gizmos():
+def disable_clash_gizmos(context):
     """Disable clash marker gizmos"""
     global _gizmo_group_registered
+
+    # CRITICAL: Set the scene property to False (persists across sessions)
+    props = context.scene.BIMClashProperties
+    props.gizmo_visualization_enabled = False
 
     if not _gizmo_group_registered:
         return

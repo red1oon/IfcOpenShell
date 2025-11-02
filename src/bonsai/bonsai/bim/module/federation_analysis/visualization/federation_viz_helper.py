@@ -108,9 +108,8 @@ def create_procedural_shape_from_bbox(
 
     min_x, min_y, min_z, max_x, max_y, max_z = bbox
 
-    # Convert mm to meters
-    min_x, min_y, min_z = min_x / 1000.0, min_y / 1000.0, min_z / 1000.0
-    max_x, max_y, max_z = max_x / 1000.0, max_y / 1000.0, max_z / 1000.0
+    # Database already stores meters (NOT millimeters!)
+    # NO conversion needed - use coordinates as-is
 
     # Calculate dimensions and center
     width = max_x - min_x

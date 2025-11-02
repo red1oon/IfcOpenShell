@@ -459,7 +459,7 @@ class BIM_OT_clear_discipline_clash_visualization(bpy.types.Operator):
         visualization.disable_visualization()
 
         # Clear gizmo visualization
-        gizmo.disable_clash_gizmo()
+        gizmo.disable_clash_gizmos(context)
 
         # Clear old wireframe objects (if any exist)
         for obj in bpy.data.objects:
@@ -556,7 +556,7 @@ class BIM_OT_enable_clash_gizmo_visualization(bpy.types.Operator):
 
         # Enable gizmo visualization
         try:
-            props.gizmo_visualization_enabled = True
+            # Property is set inside enable_clash_gizmos()
             gizmo.enable_clash_gizmos(context)
             self.report({'INFO'}, f"Gizmo visualization enabled for {len(clash_data)} clashes")
         except Exception as e:
@@ -577,8 +577,8 @@ class BIM_OT_disable_clash_gizmo_visualization(bpy.types.Operator):
         from bonsai.bim.module.federation_analysis.clash import gizmo
 
         props = tool.Clash.get_clash_props()
-        props.gizmo_visualization_enabled = False
-        gizmo.disable_clash_gizmos()
+        # Property is set inside disable_clash_gizmos()
+        gizmo.disable_clash_gizmos(context)
 
         self.report({'INFO'}, "Gizmo visualization disabled")
         return {'FINISHED'}
