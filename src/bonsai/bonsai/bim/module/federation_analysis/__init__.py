@@ -30,7 +30,11 @@ from .clash import gizmo
 
 classes = (
     # Properties
-    prop.DisciplineClashCandidate,
+    # NOTE: DisciplineClashCandidate is auto-registered by Blender when
+    # BIMClashProperties (in clash module) is registered, because it's referenced
+    # in CollectionProperty(type=DisciplineClashCandidate). Explicit registration
+    # here causes "already registered" error.
+    # prop.DisciplineClashCandidate,
 
     # Operators - Clash Detection
     operator.BIM_OT_clash_by_discipline,
