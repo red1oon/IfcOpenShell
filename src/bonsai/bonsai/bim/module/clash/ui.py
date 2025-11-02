@@ -155,21 +155,6 @@ class BIM_PT_ifcclash(Panel):
             info_col.label(text="  • Right-click for context menu")
             info_col.label(text="  • Color-coded: Red=New, Orange=Active, Yellow=Reviewed, Green=Resolved")
 
-            # Lazy Geometry Loading - Load only selected clash elements
-            viz_box.separator()
-            geom_row = viz_box.row()
-            geom_row.scale_y = 1.3
-            geom_op = geom_row.operator("bim.load_clash_geometry",
-                                      text="🔍 Load Clash Geometry (Lazy)",
-                                      icon="IMPORT")
-            geom_op.clash_index = props.active_discipline_clash_index
-
-            # Info about lazy loading
-            lazy_info = viz_box.column(align=True)
-            lazy_info.scale_y = 0.6
-            lazy_info.label(text="💡 Loads only 2 elements from source IFCs")
-            lazy_info.label(text="   Previous geometry auto-cleared")
-
             # Show selection limit warning
             if selected_count > 10:
                 warn_row = result_box.row()
