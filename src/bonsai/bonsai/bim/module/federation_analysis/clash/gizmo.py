@@ -449,13 +449,8 @@ class ClashMarkerGizmo(Gizmo):
         self.alpha = 1.0  # Fully opaque for visibility
         self.alpha_highlight = 1.0
 
-        # DIAGNOSTIC: Log first draw call only
-        if not hasattr(self, '_draw_logged'):
-            self._draw_logged = True
-            print(f"🎨 DRAW: color={color}, alpha=1.0, pos={self.matrix_basis.translation}, scale={self.scale_basis}")
-
-        # Draw sphere at matrix_basis position
-        # (matrix_basis is set by GizmoGroup.refresh)
+        # CRITICAL: Actually render the custom shape!
+        self.draw_custom_shape(self.custom_shape)
 
     def invoke(self, context, event):
         """Handle user interaction with gizmo"""
@@ -508,12 +503,17 @@ class ClashMarkerGizmo(Gizmo):
 
         # Set current clash index
         if self.clash_index >= 0 and self.clash_index < len(props.discipline_clash_candidates):
-            props.current_clash_index = self.clash_index
+            # Set the active clash index (operator uses this)
+            props.active_discipline_clash_index = self.clash_index
 
             # Call existing select operator
-            bpy.ops.bim.select_discipline_clash(clash_index=self.clash_index)
+            bpy.ops.bim.select_discipline_clash()
 
             print(f"✓ Jumped to clash {self.clash_index + 1}")
+
+    def draw_select(self, context, select_id):
+        """Draw gizmo for selection pass (enables clicking)"""
+        self.draw_custom_shape(self.custom_shape, select_id=select_id)
 
     def test_select(self, context, location):
         """Enable hover detection"""
@@ -558,36 +558,19 @@ class ClashMarkerGizmoGroup(GizmoGroup):
 
         This is the standard pattern used by working gizmos (ExtrusionWidget, ClippingPlane).
         """
-        # Track if poll is being called at all
-        if not hasattr(cls, '_poll_call_count'):
-            cls._poll_call_count = 0
-
-        cls._poll_call_count += 1
-
-        # Log first few calls only to reduce spam
-        if cls._poll_call_count <= 3:
-            logger.info(f"🎯 poll() called! Count: {cls._poll_call_count}")
-
-        # Check VIEW_3D context and our custom property
-        # IMPORTANT: Access context.active_object to trigger Blender's tracking
+        # Check VIEW_3D context first (fast early return)
         if not (context.area and context.area.type == 'VIEW_3D'):
-            if cls._poll_call_count == 1:
-                print(f"🎯 GIZMO POLL: Not VIEW_3D - gizmos disabled")
             return False
 
         # Check if gizmo visualization is enabled
         props = context.scene.BIMClashProperties
         if not props.gizmo_visualization_enabled:
-            if cls._poll_call_count == 1:
-                print(f"🎯 GIZMO POLL: Visualization disabled")
             return False
 
         # Access active_object to trigger dependency tracking
         # This makes Blender re-evaluate poll() when active object changes
         _ = context.active_object  # Trigger tracking (value doesn't matter)
 
-        if cls._poll_call_count <= 2:
-            print(f"🎯 GIZMO POLL: Enabled - gizmos should be visible")
         return True
 
     def setup(self, context):

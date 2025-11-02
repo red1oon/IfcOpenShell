@@ -221,52 +221,67 @@ class BIM_OT_select_discipline_clash(bpy.types.Operator):
     def execute(self, context):
         props = tool.Clash.get_clash_props()
 
-        if not props.discipline_clash_loaded or not props.discipline_clash_candidates:
-            self.report({'WARNING'}, "No discipline clash candidates loaded")
+        if not props.discipline_clash_loaded:
+            self.report({'WARNING'}, "No discipline clash results loaded")
             return {'CANCELLED'}
 
         if not (0 <= props.active_discipline_clash_index < len(props.discipline_clash_candidates)):
-            self.report({'WARNING'}, "No clash selected")
+            self.report({'WARNING'}, "Invalid clash selection")
             return {'CANCELLED'}
 
         candidate = props.discipline_clash_candidates[props.active_discipline_clash_index]
 
-        # Try to select objects in Blender scene by GUID
-        found_objects = []
-        for obj in context.scene.objects:
-            if obj.BIMObjectProperties.ifc_definition_id:
-                element = tool.Ifc.get().by_id(obj.BIMObjectProperties.ifc_definition_id)
-                if element and hasattr(element, 'GlobalId'):
-                    if element.GlobalId in [candidate.guid_a, candidate.guid_b]:
-                        found_objects.append(obj)
+        # Use federation database for visualization (NO IFC NEEDED!)
+        fed_props = context.scene.BIMFederationProperties
+        db_path = bpy.path.abspath(fed_props.federation_database_path)
 
-        if found_objects:
-            # Select objects
-            bpy.ops.object.select_all(action='DESELECT')
-            for obj in found_objects:
-                obj.select_set(True)
-            context.view_layer.objects.active = found_objects[0]
+        if not db_path or not Path(db_path).exists():
+            self.report({'ERROR'}, "No federation database loaded")
+            return {'CANCELLED'}
 
-            # Zoom to selected
-            for area in context.screen.areas:
-                if area.type == 'VIEW_3D':
-                    for region in area.regions:
-                        if region.type == 'WINDOW':
-                            context_override = {
-                                'area': area,
-                                'region': region,
-                                'edit_object': context.edit_object,
-                                'scene': context.scene,
-                            }
-                            with context.temp_override(**context_override):
-                                bpy.ops.view3d.view_selected()
-                            break
-                    break
+        from .visualization import federation_viz_helper
 
-            self.report({'INFO'}, f"Selected {len(found_objects)} objects")
-        else:
-            self.report({'WARNING'}, f"Objects not found in scene (GUIDs: {candidate.guid_a[:8]}..., {candidate.guid_b[:8]}...)")
+        # Find or create elements from database
+        print(f"Finding clash elements from database (no IFC needed)...")
+        obj_a, obj_b = federation_viz_helper.get_clash_elements_for_visualization(
+            candidate.guid_a,
+            candidate.guid_b,
+            db_path
+        )
 
+        # Report status
+        if not obj_a:
+            self.report({'WARNING'}, f"Element A ({candidate.name_a}) not found in database")
+        if not obj_b:
+            self.report({'WARNING'}, f"Element B ({candidate.name_b}) not found in database")
+
+        if not obj_a and not obj_b:
+            self.report({'ERROR'}, "Neither clash element found in federation database")
+            return {'CANCELLED'}
+
+        # Select objects
+        bpy.ops.object.select_all(action='DESELECT')
+        if obj_a:
+            obj_a.select_set(True)
+        if obj_b:
+            obj_b.select_set(True)
+
+        if obj_a:
+            context.view_layer.objects.active = obj_a
+        elif obj_b:
+            context.view_layer.objects.active = obj_b
+
+        # Zoom to selected
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        override = {'area': area, 'region': region}
+                        with context.temp_override(**override):
+                            bpy.ops.view3d.view_selected()
+                        break
+
+        self.report({'INFO'}, f"Selected clash: {candidate.name_a} vs {candidate.name_b}")
         return {'FINISHED'}
 
 
@@ -441,7 +456,7 @@ class BIM_OT_clear_discipline_clash_visualization(bpy.types.Operator):
         from bonsai.bim.module.federation_analysis.clash import gizmo
 
         # Clear GPU overlays
-        visualization.disable_clash_visualization()
+        visualization.disable_visualization()
 
         # Clear gizmo visualization
         gizmo.disable_clash_gizmo()
@@ -495,7 +510,7 @@ class BIM_OT_disable_clash_gpu_visualization(bpy.types.Operator):
     def execute(self, context):
         from bonsai.bim.module.federation_analysis.clash import visualization
 
-        visualization.disable_clash_visualization()
+        visualization.disable_visualization()
 
         self.report({'INFO'}, "GPU overlay disabled")
         return {'FINISHED'}

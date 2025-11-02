@@ -23,23 +23,24 @@ from . import ui, prop, operator
 classes = (
     operator.AddClashSet,
     operator.AddClashSource,
-    operator.BIM_OT_analyze_bbox_candidates,
-    operator.BIM_OT_clash_by_discipline,
-    operator.BIM_OT_select_discipline_clash,
-    operator.BIM_OT_visualize_selected_discipline_clashes,
-    operator.BIM_OT_deselect_all_clashes,
-    operator.BIM_OT_clear_discipline_clash_visualization,
-    operator.BIM_OT_enable_clash_gpu_visualization,
-    operator.BIM_OT_disable_clash_gpu_visualization,
-    operator.BIM_OT_enable_clash_gizmo_visualization,
-    operator.BIM_OT_disable_clash_gizmo_visualization,
-    operator.BIM_OT_load_clash_geometry,
-    operator.BIM_OT_enable_bbox_visualization,
-    operator.BIM_OT_disable_bbox_visualization,
-    operator.BIM_OT_enable_semantic_proxy_visualization,
-    operator.BIM_OT_disable_semantic_proxy_visualization,
-    operator.BIM_OT_enable_full_geometry_visualization,
-    operator.BIM_OT_disable_full_geometry_visualization,
+    # NOTE: Federation operators moved to federation_analysis module (2025-11-03):
+    # - BIM_OT_analyze_bbox_candidates
+    # - BIM_OT_clash_by_discipline
+    # - BIM_OT_select_discipline_clash
+    # - BIM_OT_visualize_selected_discipline_clashes
+    # - BIM_OT_deselect_all_clashes
+    # - BIM_OT_clear_discipline_clash_visualization
+    # - BIM_OT_enable_clash_gpu_visualization
+    # - BIM_OT_disable_clash_gpu_visualization
+    # - BIM_OT_enable_clash_gizmo_visualization
+    # - BIM_OT_disable_clash_gizmo_visualization
+    # - BIM_OT_load_clash_geometry
+    # - BIM_OT_enable_bbox_visualization
+    # - BIM_OT_disable_bbox_visualization
+    # - BIM_OT_enable_semantic_proxy_visualization
+    # - BIM_OT_disable_semantic_proxy_visualization
+    # - BIM_OT_enable_full_geometry_visualization
+    # - BIM_OT_disable_full_geometry_visualization
     operator.ExecuteIfcClash,
     operator.ExportClashSets,
     operator.ImportClashSets,
