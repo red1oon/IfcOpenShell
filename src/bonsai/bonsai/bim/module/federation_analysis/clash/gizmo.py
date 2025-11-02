@@ -544,44 +544,25 @@ class ClashMarkerGizmoGroup(GizmoGroup):
     def poll(cls, context):
         """Only show in 3D viewport when gizmo visualization is enabled
 
-        NOTE: We check context.active_object even though we don't use it,
-        because Blender only calls poll() when dependencies change.
-        This registers our poll() to be called whenever object selection changes.
-        """
-        # CRITICAL: Reference context.active_object to trigger poll() on selection changes
-        # Without this, Blender won't know when to re-evaluate our poll()
-        _ = context.active_object is not None  # Triggers dependency tracking
+        CRITICAL DISCOVERY: Blender's GizmoGroup poll() is called VERY frequently
+        but only for properties that Blender tracks. Scene properties don't trigger it!
 
+        We MUST return True always and handle visibility in refresh().
+        """
         # Track if poll is being called at all
         if not hasattr(cls, '_poll_call_count'):
             cls._poll_call_count = 0
-            cls._last_poll_state = None
 
         cls._poll_call_count += 1
 
-        # Check area type
-        if not context.area or context.area.type != 'VIEW_3D':
-            if cls._poll_call_count == 1:
-                logger.info(f"poll() called but area type is {context.area.type if context.area else 'None'}")
-            return False
+        # Log every call to see if Blender is calling us
+        if cls._poll_call_count <= 10 or cls._poll_call_count % 100 == 0:
+            logger.info(f"🎯 poll() called! Count: {cls._poll_call_count}")
+            print(f"🎯 GIZMO POLL: Called #{cls._poll_call_count}")
 
-        # Check if property exists and is enabled
-        if not hasattr(context.scene, 'BIMClashProperties'):
-            if cls._poll_call_count == 1:
-                logger.warning("poll() called but BIMClashProperties not found")
-                print("⚠️  GIZMO POLL: BIMClashProperties not found!")
-            return False
-
-        props = context.scene.BIMClashProperties
-        is_enabled = props.gizmo_visualization_enabled
-
-        # Log poll result (only on state change to avoid spam)
-        if cls._last_poll_state != is_enabled:
-            logger.info(f"🎯 GizmoGroup.poll() → {is_enabled} (call #{cls._poll_call_count})")
-            print(f"🎯 GIZMO POLL: enabled={is_enabled} (call #{cls._poll_call_count})")
-            cls._last_poll_state = is_enabled
-
-        return is_enabled
+        # ALWAYS return True - we'll handle visibility in refresh()
+        # Returning False here means Blender never calls setup()/refresh()
+        return context.area and context.area.type == 'VIEW_3D'
 
     def setup(self, context):
         """Initialize gizmo group (called once)"""
@@ -595,8 +576,13 @@ class ClashMarkerGizmoGroup(GizmoGroup):
         """Update gizmos from clash data (called when data changes)"""
         props = context.scene.BIMClashProperties
 
-        # Clear existing gizmos
+        # Clear existing gizmos first
         self.gizmos.clear()
+
+        # Check if gizmo visualization is enabled (property-based visibility)
+        if not props.gizmo_visualization_enabled:
+            logger.info("Gizmo visualization disabled - clearing gizmos")
+            return
 
         # Check if we have clash data
         if not props.discipline_clash_candidates:
