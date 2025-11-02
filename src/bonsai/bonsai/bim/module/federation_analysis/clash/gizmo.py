@@ -404,6 +404,24 @@ class ClashMarkerGizmoGroup(GizmoGroup):
             blender_b = ifc_to_blender_coords(center_b)
             midpoint = (blender_a + blender_b) / 2
 
+            # DIAGNOSTIC: Log coordinate conversion for first gizmo
+            if len(self.gizmos) == 0:
+                offset = get_model_offset()
+                logger.info(f"First gizmo coordinate check:")
+                logger.info(f"  IFC coords A: {center_a}")
+                logger.info(f"  IFC coords B: {center_b}")
+                logger.info(f"  Model offset: {offset}")
+                logger.info(f"  Blender A: {blender_a}")
+                logger.info(f"  Blender B: {blender_b}")
+                logger.info(f"  Midpoint: {midpoint}")
+                logger.info(f"  Gizmo scale: 0.5m diameter")
+                print(f"\n  📍 First gizmo diagnostic:")
+                print(f"     IFC A: ({center_a.x:.2f}, {center_a.y:.2f}, {center_a.z:.2f})")
+                print(f"     IFC B: ({center_b.x:.2f}, {center_b.y:.2f}, {center_b.z:.2f})")
+                print(f"     Offset: ({offset.x:.2f}, {offset.y:.2f}, {offset.z:.2f})")
+                print(f"     Blender midpoint: ({midpoint.x:.2f}, {midpoint.y:.2f}, {midpoint.z:.2f})")
+                print(f"     Scale: 0.5m diameter sphere")
+
             # Get clash ID and status from database
             clash_id = db.get_clash_id(candidate.guid_a, candidate.guid_b)
             db_status = db.get_clash_status(candidate.guid_a, candidate.guid_b)

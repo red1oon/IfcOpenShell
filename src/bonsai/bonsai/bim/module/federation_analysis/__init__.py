@@ -26,6 +26,7 @@ to maintain clean separation and prevent conflicts with upstream updates.
 
 import bpy
 from . import ui, prop, operator
+from .clash import gizmo
 
 classes = (
     # Properties
@@ -66,6 +67,10 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
+    # Register gizmo classes (GizmoGroup uses different registration)
+    bpy.utils.register_class(gizmo.ClashMarkerGizmo)
+    bpy.utils.register_class(gizmo.ClashMarkerGizmoGroup)
+
     # Inject our custom properties into BIMClashProperties
     prop.register_federation_properties()
 
@@ -74,6 +79,10 @@ def unregister():
     """Unregister federation_analysis module classes and remove injected properties"""
     # Remove injected properties from BIMClashProperties
     prop.unregister_federation_properties()
+
+    # Unregister gizmo classes
+    bpy.utils.unregister_class(gizmo.ClashMarkerGizmoGroup)
+    bpy.utils.unregister_class(gizmo.ClashMarkerGizmo)
 
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)

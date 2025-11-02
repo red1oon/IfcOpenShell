@@ -963,7 +963,7 @@ class BIM_OT_select_discipline_clash(bpy.types.Operator):
             self.report({'ERROR'}, "No federation database loaded")
             return {"CANCELLED"}
 
-        from . import federation_viz_helper
+        from ..federation_analysis.visualization import federation_viz_helper
 
         # Find or create elements from database
         print(f"Finding clash elements from database (no IFC needed)...")
@@ -1172,7 +1172,7 @@ class BIM_OT_visualize_selected_discipline_clashes(bpy.types.Operator):
         print(f"Collection: {collection_name}")
 
         # Import gizmo module for DB query helper
-        from . import gizmo
+        from ..federation_analysis.clash import gizmo
 
         # Get federation DB path
         db_path = props.bbox_database_path
@@ -1191,17 +1191,19 @@ class BIM_OT_visualize_selected_discipline_clashes(bpy.types.Operator):
                 print(f"  ⚠️  Skipping clash {idx+1}: bbox not found in federation DB")
                 continue
 
-            # Calculate midpoint between elements
-            midpoint = (
-                (center_a[0] + center_b[0]) / 2,
-                (center_a[1] + center_b[1]) / 2,
-                (center_a[2] + center_b[2]) / 2
-            )
+            # Convert IFC world coords → Blender scene coords (apply offset)
+            from mathutils import Vector
+            blender_a = gizmo.ifc_to_blender_coords(Vector(center_a))
+            blender_b = gizmo.ifc_to_blender_coords(Vector(center_b))
+
+            # Calculate midpoint between elements (in Blender space)
+            midpoint_vec = (blender_a + blender_b) / 2
+            midpoint = tuple(midpoint_vec)
 
             print(f"  Clash {idx+1}: {candidate.ifc_class_a} vs {candidate.ifc_class_b}")
-            print(f"    Center A: ({center_a[0]:.2f}, {center_a[1]:.2f}, {center_a[2]:.2f})")
-            print(f"    Center B: ({center_b[0]:.2f}, {center_b[1]:.2f}, {center_b[2]:.2f})")
-            print(f"    Midpoint: ({midpoint[0]:.2f}, {midpoint[1]:.2f}, {midpoint[2]:.2f})")
+            print(f"    IFC Center A: ({center_a[0]:.2f}, {center_a[1]:.2f}, {center_a[2]:.2f})")
+            print(f"    IFC Center B: ({center_b[0]:.2f}, {center_b[1]:.2f}, {center_b[2]:.2f})")
+            print(f"    Blender Midpoint: ({midpoint[0]:.2f}, {midpoint[1]:.2f}, {midpoint[2]:.2f})")
 
             # Create marker sphere
             sphere_name = f"Clash_{idx+1}_{candidate.ifc_class_a}_vs_{candidate.ifc_class_b}"
@@ -1294,13 +1296,13 @@ class BIM_OT_clear_discipline_clash_visualization(bpy.types.Operator):
         print("\n=== Clearing ALL Clash Visualizations ===")
 
         # 1. Disable GPU overlay visualization
-        from . import visualization
+        from ..federation_analysis.clash import visualization
         if visualization.is_enabled():
             visualization.disable_visualization()
             print("✓ Disabled GPU overlay visualization")
 
         # 2. Disable Gizmo visualization
-        from . import gizmo
+        from ..federation_analysis.clash import gizmo
         props = tool.Clash.get_clash_props()
         if gizmo.is_gizmo_group_active():
             props.gizmo_visualization_enabled = False
@@ -1374,7 +1376,7 @@ class BIM_OT_enable_clash_gpu_visualization(bpy.types.Operator):
     bl_options = {"REGISTER"}
 
     def execute(self, context):
-        from . import visualization
+        from ..federation_analysis.clash import visualization
 
         props = tool.Clash.get_clash_props()
 
@@ -1401,7 +1403,7 @@ class BIM_OT_enable_clash_gpu_visualization(bpy.types.Operator):
 
                 # Found reference - query DB for first clash bbox center as IFC reference
                 if props.discipline_clash_candidates:
-                    from . import gizmo
+                    from ..federation_analysis.clash import gizmo
                     first_clash = props.discipline_clash_candidates[0]
                     db_path = props.bbox_database_path
                     ifc_ref = gizmo.get_element_bbox_center(first_clash.guid_a, db_path)
@@ -1416,7 +1418,7 @@ class BIM_OT_enable_clash_gpu_visualization(bpy.types.Operator):
                     break
 
         # Convert candidates to visualization format (query DB for coords)
-        from . import gizmo
+        from ..federation_analysis.clash import gizmo
         from pathlib import Path
 
         db_path = props.bbox_database_path
@@ -1463,7 +1465,7 @@ class BIM_OT_disable_clash_gpu_visualization(bpy.types.Operator):
     bl_options = {"REGISTER"}
 
     def execute(self, context):
-        from . import visualization
+        from ..federation_analysis.clash import visualization
 
         if not visualization.is_enabled():
             self.report({'INFO'}, "GPU visualization already disabled")
@@ -1483,7 +1485,7 @@ class BIM_OT_enable_clash_gizmo_visualization(bpy.types.Operator):
     bl_options = {"REGISTER"}
 
     def execute(self, context):
-        from . import gizmo
+        from ..federation_analysis.clash import gizmo
 
         props = tool.Clash.get_clash_props()
 
@@ -1516,7 +1518,7 @@ class BIM_OT_enable_clash_gizmo_visualization(bpy.types.Operator):
 
                 # Found reference - query DB for first clash bbox center as IFC reference
                 if props.discipline_clash_candidates:
-                    from . import gizmo
+                    from ..federation_analysis.clash import gizmo
                     first_clash = props.discipline_clash_candidates[0]
                     db_path = props.bbox_database_path
                     ifc_ref = gizmo.get_element_bbox_center(first_clash.guid_a, db_path)
@@ -1551,7 +1553,7 @@ class BIM_OT_disable_clash_gizmo_visualization(bpy.types.Operator):
     bl_options = {"REGISTER"}
 
     def execute(self, context):
-        from . import gizmo
+        from ..federation_analysis.clash import gizmo
 
         props = tool.Clash.get_clash_props()
 
@@ -1859,7 +1861,7 @@ class BIM_OT_enable_semantic_proxy_visualization(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from . import semantic_visualization
+        from ..federation_analysis.visualization import semantic_shapes as semantic_visualization
 
         props = tool.Clash.get_clash_props()
         fed_props = context.scene.BIMFederationProperties
@@ -1904,7 +1906,7 @@ class BIM_OT_disable_semantic_proxy_visualization(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from . import semantic_visualization
+        from ..federation_analysis.visualization import semantic_shapes as semantic_visualization
 
         props = tool.Clash.get_clash_props()
 
@@ -1925,7 +1927,7 @@ class BIM_OT_enable_full_geometry_visualization(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from . import semantic_visualization
+        from ..federation_analysis.visualization import semantic_shapes as semantic_visualization
 
         props = tool.Clash.get_clash_props()
         fed_props = context.scene.BIMFederationProperties
@@ -1970,7 +1972,7 @@ class BIM_OT_disable_full_geometry_visualization(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from . import semantic_visualization
+        from ..federation_analysis.visualization import semantic_shapes as semantic_visualization
 
         props = tool.Clash.get_clash_props()
 
