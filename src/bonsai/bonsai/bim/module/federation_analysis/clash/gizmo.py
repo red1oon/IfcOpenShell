@@ -730,20 +730,26 @@ def enable_clash_gizmos(context):
         refresh_clash_gizmos(context)
         return
 
-    # CRITICAL: Manually instantiate the gizmo group for each 3D view
-    # Blender doesn't auto-activate standalone gizmo groups
-    for window in context.window_manager.windows:
-        for area in window.screen.areas:
-            if area.type == 'VIEW_3D':
-                for space in area.spaces:
-                    if space.type == 'VIEW_3D':
-                        # Check if our gizmo group is in the gizmo_group list
-                        try:
-                            # Force Blender to instantiate gizmo groups for this space
-                            logger.info(f"  Checking space gizmos: {len(space.region_3d.gizmo_groups) if hasattr(space, 'region_3d') else 'N/A'}")
-                            print(f"   Space has {len(space.region_3d.gizmo_groups) if hasattr(space, 'region_3d') else 0} gizmo groups")
-                        except Exception as e:
-                            logger.warning(f"  Could not check gizmo groups: {e}")
+    # CRITICAL: Check if GizmoGroup is actually registered with Blender
+    try:
+        # Try to access our registered GizmoGroup class
+        from bpy.types import GizmoGroup
+        all_gizmo_groups = [cls for cls in GizmoGroup.__subclasses__()]
+        our_group = ClashMarkerGizmoGroup
+
+        is_registered = our_group in all_gizmo_groups
+        logger.info(f"  GizmoGroup registration check: {is_registered}")
+        print(f"   ClashMarkerGizmoGroup registered: {is_registered}")
+        print(f"   Total GizmoGroups: {len(all_gizmo_groups)}")
+        logger.info(f"  Total GizmoGroup subclasses: {len(all_gizmo_groups)}")
+
+        # List all registered gizmo groups
+        for i, grp in enumerate(all_gizmo_groups[:10]):  # First 10
+            logger.info(f"    [{i}] {grp.bl_idname if hasattr(grp, 'bl_idname') else grp.__name__}")
+
+    except Exception as e:
+        logger.error(f"  Failed to check GizmoGroup registration: {e}")
+        print(f"   ✗ Error checking registration: {e}")
 
     _gizmo_group_registered = True
     logger.info("  Marked gizmo group as registered")
