@@ -358,7 +358,7 @@ class ChunkedSemanticLoader:
         mat.use_nodes = True
 
         # Get discipline color
-        from ..clash.shape_templates import DISCIPLINE_COLORS
+        from .bbox_visualization import DISCIPLINE_COLORS
         color = DISCIPLINE_COLORS.get(discipline, DISCIPLINE_COLORS['DEFAULT'])
 
         # Set color in shader

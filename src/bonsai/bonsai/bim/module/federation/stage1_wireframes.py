@@ -22,7 +22,7 @@ import bpy
 import sqlite3
 import time
 from typing import List, Optional, Callable
-from ..clash.shape_templates import DISCIPLINE_COLORS
+from .bbox_visualization import DISCIPLINE_COLORS
 
 
 def create_wireframe_boxes(db_conn: sqlite3.Connection,
