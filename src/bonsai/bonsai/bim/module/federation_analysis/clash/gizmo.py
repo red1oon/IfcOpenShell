@@ -543,6 +543,11 @@ class ClashMarkerGizmoGroup(GizmoGroup):
     @classmethod
     def poll(cls, context):
         """Only show in 3D viewport when gizmo visualization is enabled"""
+        # CRITICAL: Access context.active_object to trigger Blender's poll() re-evaluation
+        # Blender only calls poll() when context changes (object selection, mode switch, etc.)
+        # Without this, poll() would never be called since scene properties don't trigger re-evaluation
+        _ = context.active_object  # Triggers Blender to watch for object selection changes
+
         # Track if poll is being called at all
         if not hasattr(cls, '_poll_call_count'):
             cls._poll_call_count = 0
