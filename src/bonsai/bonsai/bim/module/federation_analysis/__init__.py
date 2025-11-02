@@ -67,7 +67,10 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
-    # Register gizmo classes (GizmoGroup uses different registration)
+    # Register gizmo classes and UI (GizmoGroup uses different registration)
+    bpy.utils.register_class(gizmo.BIM_OT_change_clash_status)
+    bpy.utils.register_class(gizmo.BIM_OT_navigate_clash)
+    bpy.utils.register_class(gizmo.BIM_MT_clash_gizmo_context_menu)
     bpy.utils.register_class(gizmo.ClashMarkerGizmo)
     bpy.utils.register_class(gizmo.ClashMarkerGizmoGroup)
 
@@ -80,9 +83,12 @@ def unregister():
     # Remove injected properties from BIMClashProperties
     prop.unregister_federation_properties()
 
-    # Unregister gizmo classes
+    # Unregister gizmo classes and UI (reverse order)
     bpy.utils.unregister_class(gizmo.ClashMarkerGizmoGroup)
     bpy.utils.unregister_class(gizmo.ClashMarkerGizmo)
+    bpy.utils.unregister_class(gizmo.BIM_MT_clash_gizmo_context_menu)
+    bpy.utils.unregister_class(gizmo.BIM_OT_navigate_clash)
+    bpy.utils.unregister_class(gizmo.BIM_OT_change_clash_status)
 
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)

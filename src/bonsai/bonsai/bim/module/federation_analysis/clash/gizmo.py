@@ -6,7 +6,7 @@ that appear at clash locations. Right-click to change status, left-click to jump
 """
 
 import bpy
-from bpy.types import Gizmo, GizmoGroup
+from bpy.types import Gizmo, GizmoGroup, Operator, Menu
 from mathutils import Vector
 from typing import List, Dict, Optional, Tuple
 from . import database as db
@@ -194,6 +194,151 @@ def get_clash_color(status: str) -> tuple:
 
 
 # ============================================================================
+# CLASH STATUS OPERATORS
+# ============================================================================
+
+class BIM_OT_change_clash_status(Operator):
+    """Change clash status and update gizmo color"""
+    bl_idname = "bim.change_clash_status"
+    bl_label = "Change Clash Status"
+    bl_options = {'INTERNAL'}
+
+    clash_index: bpy.props.IntProperty()
+    guid_a: bpy.props.StringProperty()
+    guid_b: bpy.props.StringProperty()
+    new_status: bpy.props.StringProperty()
+
+    def execute(self, context):
+        # Update database
+        db.set_clash_status(
+            self.guid_a,
+            self.guid_b,
+            status=self.new_status
+        )
+
+        # Refresh gizmos to update colors
+        refresh_clash_gizmos(context)
+
+        status_emoji = {
+            'NEW': '🔴',
+            'ACTIVE': '🟠',
+            'REVIEWED': '🟡',
+            'RESOLVED': '✅'
+        }.get(self.new_status, '⚪')
+
+        self.report({'INFO'}, f"{status_emoji} Clash {self.clash_index + 1} → {self.new_status}")
+        print(f"\n{status_emoji} Clash {self.clash_index + 1} status changed to {self.new_status}")
+
+        return {'FINISHED'}
+
+
+class BIM_OT_navigate_clash(Operator):
+    """Navigate to previous/next clash"""
+    bl_idname = "bim.navigate_clash"
+    bl_label = "Navigate Clash"
+    bl_options = {'INTERNAL'}
+
+    direction: bpy.props.EnumProperty(
+        items=[('PREV', 'Previous', ''), ('NEXT', 'Next', '')]
+    )
+    current_index: bpy.props.IntProperty()
+
+    def execute(self, context):
+        props = context.scene.BIMClashProperties
+
+        # Get all selected clash indices
+        selected_indices = [
+            i for i, candidate in enumerate(props.discipline_clash_candidates)
+            if candidate.selected
+        ]
+
+        if not selected_indices:
+            self.report({'WARNING'}, "No clashes selected")
+            return {'CANCELLED'}
+
+        # Find current position in selected list
+        try:
+            current_pos = selected_indices.index(self.current_index)
+        except ValueError:
+            # Current clash not in selected list, go to first
+            current_pos = 0
+
+        # Navigate
+        if self.direction == 'PREV':
+            new_pos = (current_pos - 1) % len(selected_indices)
+        else:  # NEXT
+            new_pos = (current_pos + 1) % len(selected_indices)
+
+        new_index = selected_indices[new_pos]
+
+        # Jump to clash
+        props.current_clash_index = new_index
+        bpy.ops.bim.select_discipline_clash(clash_index=new_index)
+
+        self.report({'INFO'}, f"Clash {new_index + 1}/{len(props.discipline_clash_candidates)}")
+        print(f"  ➡️  Navigated to clash {new_index + 1}")
+
+        return {'FINISHED'}
+
+
+class BIM_MT_clash_gizmo_context_menu(Menu):
+    """Context menu for clash gizmo"""
+    bl_idname = "BIM_MT_clash_gizmo_context_menu"
+    bl_label = "Clash Actions"
+
+    def draw(self, context):
+        layout = self.layout
+
+        # Get clash data from scene temporary storage
+        clash_index = context.scene.get("_temp_clash_index", 0)
+        guid_a = context.scene.get("_temp_clash_guid_a", "")
+        guid_b = context.scene.get("_temp_clash_guid_b", "")
+        current_status = context.scene.get("_temp_clash_status", "NEW")
+
+        # Status section
+        layout.label(text=f"Current: {current_status}", icon='INFO')
+        layout.separator()
+
+        # Status change options
+        layout.label(text="Change Status:", icon='DECORATE')
+
+        for status, (icon, label) in [
+            ('NEW', ('ERROR', '🔴 New')),
+            ('ACTIVE', ('FUND', '🟠 Active')),
+            ('REVIEWED', ('SEQUENCE_COLOR_04', '🟡 Reviewed')),
+            ('RESOLVED', ('CHECKMARK', '✅ Resolved'))
+        ]:
+            if status != current_status:
+                op = layout.operator(
+                    "bim.change_clash_status",
+                    text=label,
+                    icon=icon
+                )
+                op.clash_index = clash_index
+                op.guid_a = guid_a
+                op.guid_b = guid_b
+                op.new_status = status
+
+        layout.separator()
+
+        # Navigation
+        layout.label(text="Navigate:", icon='RESTRICT_SELECT_OFF')
+
+        op = layout.operator("bim.navigate_clash", text="⬅️ Previous", icon='TRIA_LEFT')
+        op.direction = 'PREV'
+        op.current_index = clash_index
+
+        op = layout.operator("bim.navigate_clash", text="➡️ Next", icon='TRIA_RIGHT')
+        op.direction = 'NEXT'
+        op.current_index = clash_index
+
+        layout.separator()
+
+        # Info
+        layout.label(text=f"Clash #{clash_index + 1}", icon='OUTLINER_OB_LIGHT')
+
+
+# ============================================================================
 # SIMPLE SPHERE GEOMETRY (3 orthogonal discs for 3D appearance)
 # ============================================================================
 
@@ -296,11 +441,19 @@ class ClashMarkerGizmo(Gizmo):
             return {'RUNNING_MODAL'}
 
         elif event.type == 'RIGHTMOUSE' and event.value == 'PRESS':
-            # Right-click: Show context menu (TODO: implement menu)
-            # For now, just print
-            print(f"Right-clicked clash {self.clash_index}: {self.guid_a} ↔ {self.guid_b}")
-            print(f"Current status: {self.status}")
-            # TODO: Open context menu to change status
+            # Right-click: Show context menu
+            print(f"\n🖱️  Right-clicked clash {self.clash_index + 1}: {self.guid_a} ↔ {self.guid_b}")
+            print(f"   Current status: {self.status}")
+
+            # Store clash data in scene for menu access
+            context.scene["_temp_clash_index"] = self.clash_index
+            context.scene["_temp_clash_guid_a"] = self.guid_a
+            context.scene["_temp_clash_guid_b"] = self.guid_b
+            context.scene["_temp_clash_status"] = self.status
+
+            # Show context menu
+            bpy.ops.wm.call_menu(name=BIM_MT_clash_gizmo_context_menu.bl_idname)
+
             return {'RUNNING_MODAL'}
 
         return {'PASS_THROUGH'}
