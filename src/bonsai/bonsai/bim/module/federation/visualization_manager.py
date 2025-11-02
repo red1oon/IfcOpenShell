@@ -218,12 +218,27 @@ class VisualizationManager:
         except:
             pass
 
-        # Remove semantic collections
+        # Remove ALL federation collections (both old and new hierarchies)
         removed_count = 0
+        total_objects = 0
 
+        # Remove "Federation" collection (from Preview/Solid buttons)
+        if 'Federation' in bpy.data.collections:
+            layer_coll = bpy.data.collections['Federation']
+            obj_count = self._count_objects_recursive(layer_coll)
+            total_objects += obj_count
+
+            # Remove all objects
+            self._remove_collection_recursive(layer_coll)
+
+            print(f"  Removed Federation ({obj_count:,} objects)")
+            removed_count += 1
+
+        # Remove "Federation_Semantics" collection (from Full Load)
         if 'Federation_Semantics' in bpy.data.collections:
             layer_coll = bpy.data.collections['Federation_Semantics']
             obj_count = self._count_objects_recursive(layer_coll)
+            total_objects += obj_count
 
             # Remove all objects
             self._remove_collection_recursive(layer_coll)
@@ -236,7 +251,7 @@ class VisualizationManager:
 
         self.loaded_layers.clear()
 
-        print(f"\n✓ Unloaded all visualization layers")
+        print(f"\n✓ Unloaded {removed_count} collection hierarchies ({total_objects:,} total objects)")
         print("="*70)
 
     def _rename_collections_for_layer(self, mode):
@@ -290,43 +305,56 @@ class VisualizationManager:
         return count
 
     def _remove_collection_recursive(self, collection):
-        """Remove collection and all sub-collections"""
-        # Remove child collections first
-        for child in list(collection.children):
-            self._remove_collection_recursive(child)
+        """Remove collection and all sub-collections (ULTRA-FAST batch version)"""
+        # Collect all objects recursively FIRST (avoid repeated traversals)
+        all_objects = []
+        all_collections = []
 
-        # Unlink from all parents
-        for scene in bpy.data.scenes:
-            if collection.name in scene.collection.children:
-                scene.collection.children.unlink(collection)
+        def collect_recursive(coll):
+            all_collections.append(coll)
+            all_objects.extend(coll.objects)
+            for child in coll.children:
+                collect_recursive(child)
 
-        # Unlink from parent collections
-        for parent in bpy.data.collections:
-            if collection.name in parent.children:
-                parent.children.unlink(collection)
+        collect_recursive(collection)
 
-        # Remove all objects
-        for obj in list(collection.objects):
-            bpy.data.objects.remove(obj, do_unlink=True)
+        print(f"    Removing {len(all_objects):,} objects in batch...")
 
-        # Remove collection
-        bpy.data.collections.remove(collection)
+        # BATCH DELETE objects (much faster than one-by-one)
+        # Use bpy.data.batch_remove() if available (Blender 3.0+)
+        import bpy
+        if hasattr(bpy.data, 'batch_remove'):
+            bpy.data.batch_remove(all_objects)
+        else:
+            # Fallback: remove one-by-one but with do_unlink=True
+            for obj in all_objects:
+                bpy.data.objects.remove(obj, do_unlink=True)
+
+        # BATCH DELETE collections (bottom-up to avoid parent issues)
+        for coll in reversed(all_collections):
+            bpy.data.collections.remove(coll, do_unlink=True)
 
     def _cleanup_orphaned_data(self):
-        """Remove orphaned meshes and materials"""
-        # Clean meshes
-        mesh_count = 0
-        for mesh in bpy.data.meshes:
-            if mesh.users == 0:
+        """Remove orphaned meshes and materials (ULTRA-FAST batch version)"""
+        import bpy
+
+        # Collect orphaned data FIRST (single pass)
+        orphaned_meshes = [mesh for mesh in bpy.data.meshes if mesh.users == 0]
+        orphaned_materials = [mat for mat in bpy.data.materials
+                             if 'Federation' in mat.name and mat.users == 0]
+
+        # BATCH REMOVE (much faster than loop)
+        if hasattr(bpy.data, 'batch_remove'):
+            if orphaned_meshes:
+                bpy.data.batch_remove(orphaned_meshes)
+            if orphaned_materials:
+                bpy.data.batch_remove(orphaned_materials)
+        else:
+            # Fallback: remove one-by-one
+            for mesh in orphaned_meshes:
                 bpy.data.meshes.remove(mesh)
-                mesh_count += 1
-
-        # Clean materials
-        mat_count = 0
-        for mat in bpy.data.materials:
-            if 'Federation' in mat.name and mat.users == 0:
+            for mat in orphaned_materials:
                 bpy.data.materials.remove(mat)
-                mat_count += 1
 
-        print(f"  Cleaned {mesh_count:,} orphaned meshes")
-        print(f"  Cleaned {mat_count} orphaned materials")
+        print(f"  Cleaned {len(orphaned_meshes):,} orphaned meshes")
+        print(f"  Cleaned {len(orphaned_materials)} orphaned materials")

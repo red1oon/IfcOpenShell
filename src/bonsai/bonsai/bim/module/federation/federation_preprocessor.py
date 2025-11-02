@@ -556,9 +556,9 @@ def create_federation_database(db_path, elements_data):
     cursor.execute("""
         CREATE VIRTUAL TABLE elements_rtree USING rtree(
             id,
-            min_x, max_x,
-            min_y, max_y,
-            min_z, max_z
+            minX, maxX,
+            minY, maxY,
+            minZ, maxZ
         )
     """)
 
@@ -691,7 +691,7 @@ def create_federation_database(db_path, elements_data):
 
         # Insert into R-tree
         cursor.execute("""
-            INSERT INTO elements_rtree (id, min_x, max_x, min_y, max_y, min_z, max_z)
+            INSERT INTO elements_rtree (id, minX, maxX, minY, maxY, minZ, maxZ)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (elem_id, elem['min_x'], elem['max_x'],
               elem['min_y'], elem['max_y'], elem['min_z'], elem['max_z']))

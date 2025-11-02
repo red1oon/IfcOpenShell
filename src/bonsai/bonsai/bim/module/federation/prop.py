@@ -123,6 +123,12 @@ class BIMFederationProperties(PropertyGroup):
         default=False
     )
 
+    solid_loaded: BoolProperty(
+        name="Solid Loaded",
+        description="Whether solid procedural boxes have been loaded",
+        default=False
+    )
+
     # Sample extraction settings
     sample_anchor_type: EnumProperty(
         name="Sample Anchor",
@@ -240,6 +246,7 @@ class BIMFederationProperties(PropertyGroup):
         active_federated_file_index: int
         federation_database_path: str
         index_loaded: bool
+        solid_loaded: bool
         preprocessing_in_progress: bool
         progress_json_path: str
         total_elements: int

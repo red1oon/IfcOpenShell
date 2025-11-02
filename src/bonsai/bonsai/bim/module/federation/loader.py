@@ -127,6 +127,7 @@ class FederationLoader:
         self.stage2_objects = []  # Semantic shape objects
         self.stage2_gpu_instancing = True  # Use GPU instancing for Stage 2 (30× faster!)
         self.stage2_progressive = False  # DEFAULT: Use tessellation (exact geometry, 27s)
+        self.use_database_materials = False  # NEW: Use real Revit materials from DB (instead of discipline colors)
         self.stage3_enabled = False  # Detailed shapes toggle (default OFF)
 
         # Collections for organization
@@ -218,7 +219,8 @@ class FederationLoader:
                         self.federation_collection,
                         self.discipline_collections,
                         progress_callback,
-                        offset=self.federation_offset
+                        offset=self.federation_offset,
+                        use_database_materials=self.use_database_materials  # NEW: Pass DB materials flag
                     )
                 else:
                     print("  Using tessellated geometry loading (exact IFC shapes!)")

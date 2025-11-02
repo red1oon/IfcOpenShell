@@ -82,9 +82,42 @@ def get_or_create_db_material(material_name: str, rgba_str: str, discipline: str
     # Parse RGBA
     if rgba_str:
         rgba = parse_rgba_string(rgba_str)
-        mat_name = f"Revit_{material_name}" if material_name and material_name != "<Unnamed>" else f"Revit_{rgba_str[:15]}"
+
+        # AMPLIFICATION MODE: Boost subtle color variance in gray materials
+        # Instead of replacing with solid discipline colors, we enhance existing colors
+        # This preserves original design intent while making it more visible
+        import colorsys
+        r, g, b = rgba[:3]
+        is_gray = abs(r - g) < 0.15 and abs(g - b) < 0.15  # Close to grayscale
+
+        if is_gray:
+            # Convert to HSV to manipulate saturation
+            h, s, v = colorsys.rgb_to_hsv(r, g, b)
+
+            # Boost saturation significantly (3× increase, capped at 1.0)
+            s = min(1.0, s * 3.0 + 0.3)  # Add base saturation if near-zero
+
+            # Boost brightness slightly (20% increase, capped at 1.0)
+            v = min(1.0, v * 1.2)
+
+            # If still too gray after boost, tint with discipline color
+            if s < 0.2:
+                disc_color = DISCIPLINE_COLORS.get(discipline, (0.5, 0.5, 0.5))
+                # Blend 30% discipline color with boosted IFC color
+                r_new, g_new, b_new = colorsys.hsv_to_rgb(h, s, v)
+                r = r_new * 0.7 + disc_color[0] * 0.3
+                g = g_new * 0.7 + disc_color[1] * 0.3
+                b = b_new * 0.7 + disc_color[2] * 0.3
+                rgba = (r, g, b, rgba[3])
+            else:
+                rgba = (*colorsys.hsv_to_rgb(h, s, v), rgba[3])
+
+            mat_name = f"Enhanced_{discipline}_{material_name[:20]}" if material_name else f"Enhanced_{discipline}"
+        else:
+            # Keep colorful IFC materials (authentic Revit colors)
+            mat_name = f"Revit_{material_name}" if material_name and material_name != "<Unnamed>" else f"Revit_{rgba_str[:15]}"
     else:
-        # Fallback to discipline color
+        # Fallback to discipline color if no RGBA in database
         rgba = (*DISCIPLINE_COLORS.get(discipline, (0.5, 0.5, 0.5)), 1.0)
         mat_name = f"Discipline_{discipline}"
 
@@ -110,10 +143,15 @@ def get_or_create_db_material(material_name: str, rgba_str: str, discipline: str
     bsdf_node = nodes.new(type='ShaderNodeBsdfPrincipled')
     bsdf_node.location = (0, 0)
 
-    # Set material properties from Revit RGBA
+    # Set material properties from Revit RGBA or discipline override
     bsdf_node.inputs['Base Color'].default_value = rgba
     bsdf_node.inputs['Metallic'].default_value = 0.2  # Slightly metallic
     bsdf_node.inputs['Roughness'].default_value = 0.5  # Medium roughness
+    bsdf_node.inputs['Specular IOR Level'].default_value = 0.5  # Add specular highlights
+
+    # Set blend mode for proper X-ray rendering (Alt+Z)
+    mat.blend_method = 'OPAQUE'
+    mat.shadow_method = 'OPAQUE'
 
     # Link nodes
     links.new(bsdf_node.outputs['BSDF'], output_node.inputs['Surface'])
@@ -527,7 +565,7 @@ def load_tessellated_shapes_instanced(db_path: str,
     template_creation_elapsed = time.time() - template_creation_start
     print(f"  ✓ Created {len(templates_used):,} template objects in {template_creation_elapsed:.2f}s")
 
-    # Create instances
+    # Create instances with INLINE material assignment (fastest approach)
     print(f"\nCreating instances...")
     instance_start = time.time()
     instances = []
@@ -558,8 +596,8 @@ def load_tessellated_shapes_instanced(db_path: str,
 
         # No scale/rotation needed - geometry is exact!
 
-        # Assign material to instance (object-level override)
-        # This allows different materials per instance while sharing geometry
+        # INLINE MATERIAL ASSIGNMENT (best cache locality, fastest overall)
+        # Assign material to instance with hybrid color system
         if material_rgba:
             material = get_or_create_db_material(
                 material_name or "<Unnamed>",
@@ -627,7 +665,7 @@ def load_tessellated_shapes_instanced(db_path: str,
 
     link_elapsed = time.time() - link_start
 
-    # Update scene
+    # Update scene (materials were assigned inline during instance loop)
     print(f"\nUpdating scene...")
     update_start = time.time()
     bpy.context.view_layer.update()

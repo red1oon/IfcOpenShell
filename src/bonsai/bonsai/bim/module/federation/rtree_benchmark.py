@@ -72,9 +72,9 @@ def create_sqlite_rtree_db(elements, output_path):
     cursor.execute("""
         CREATE VIRTUAL TABLE elements_rtree USING rtree(
             id,
-            min_x, max_x,
-            min_y, max_y,
-            min_z, max_z
+            minX, maxX,
+            minY, maxY,
+            minZ, maxZ
         )
     """)
     
@@ -89,7 +89,7 @@ def create_sqlite_rtree_db(elements, output_path):
         bbox = elem['bbox']
         
         cursor.execute("""
-            INSERT INTO elements_rtree (id, min_x, max_x, min_y, max_y, min_z, max_z)
+            INSERT INTO elements_rtree (id, minX, maxX, minY, maxY, minZ, maxZ)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (elem_id, bbox[0], bbox[3], bbox[1], bbox[4], bbox[2], bbox[5]))
     
