@@ -541,7 +541,8 @@ class BIM_OT_enable_clash_gizmo_visualization(bpy.types.Operator):
 
         # Enable gizmo visualization
         try:
-            gizmo.enable_clash_gizmo(clash_data)
+            props.gizmo_visualization_enabled = True
+            gizmo.enable_clash_gizmos(context)
             self.report({'INFO'}, f"Gizmo visualization enabled for {len(clash_data)} clashes")
         except Exception as e:
             self.report({'ERROR'}, f"Failed to enable gizmo: {str(e)}")
@@ -560,7 +561,9 @@ class BIM_OT_disable_clash_gizmo_visualization(bpy.types.Operator):
     def execute(self, context):
         from bonsai.bim.module.federation_analysis.clash import gizmo
 
-        gizmo.disable_clash_gizmo()
+        props = tool.Clash.get_clash_props()
+        props.gizmo_visualization_enabled = False
+        gizmo.disable_clash_gizmos()
 
         self.report({'INFO'}, "Gizmo visualization disabled")
         return {'FINISHED'}
