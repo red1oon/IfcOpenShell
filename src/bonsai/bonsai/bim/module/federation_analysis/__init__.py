@@ -29,47 +29,51 @@ from . import ui, prop, operator
 
 classes = (
     # Properties
-    prop.BIMFederationAnalysisProperties,
+    prop.DisciplineClashCandidate,
 
     # Operators - Clash Detection
     operator.BIM_OT_clash_by_discipline,
     operator.BIM_OT_select_discipline_clash,
+    operator.BIM_OT_analyze_bbox_candidates,
+    operator.BIM_OT_visualize_selected_discipline_clashes,
     operator.BIM_OT_deselect_all_clashes,
     operator.BIM_OT_clear_discipline_clash_visualization,
     operator.BIM_OT_enable_clash_gpu_visualization,
     operator.BIM_OT_disable_clash_gpu_visualization,
     operator.BIM_OT_enable_clash_gizmo_visualization,
     operator.BIM_OT_disable_clash_gizmo_visualization,
+    operator.BIM_OT_load_clash_geometry,
 
     # Operators - Visualization
     operator.BIM_OT_enable_bbox_visualization,
     operator.BIM_OT_disable_bbox_visualization,
     operator.BIM_OT_enable_semantic_proxy_visualization,
     operator.BIM_OT_disable_semantic_proxy_visualization,
-
-    # Operators - MEP Routing
-    operator.BIM_OT_route_conduit,
-    operator.BIM_OT_view_conduit,
-    operator.BIM_OT_clear_conduit_routes,
+    operator.BIM_OT_enable_full_geometry_visualization,
+    operator.BIM_OT_disable_full_geometry_visualization,
 
     # UI Lists
     ui.BIM_UL_discipline_clashes,
 
     # Panels
-    ui.BIM_PT_federation_analysis_clash,
-    ui.BIM_PT_federation_analysis_routing,
+    ui.BIM_PT_federation_clash_detection,
+    ui.BIM_PT_federation_lod_visualization,
 )
 
 
 def register():
+    """Register federation_analysis module classes and inject properties into clash module"""
     for cls in classes:
         bpy.utils.register_class(cls)
-    bpy.types.Scene.BIMFederationAnalysisProperties = bpy.props.PointerProperty(
-        type=prop.BIMFederationAnalysisProperties
-    )
+
+    # Inject our custom properties into BIMClashProperties
+    prop.register_federation_properties()
 
 
 def unregister():
+    """Unregister federation_analysis module classes and remove injected properties"""
+    # Remove injected properties from BIMClashProperties
+    prop.unregister_federation_properties()
+
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
-    del bpy.types.Scene.BIMFederationAnalysisProperties
