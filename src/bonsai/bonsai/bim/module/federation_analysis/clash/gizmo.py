@@ -542,12 +542,13 @@ class ClashMarkerGizmoGroup(GizmoGroup):
 
     @classmethod
     def poll(cls, context):
-        """Only show in 3D viewport when gizmo visualization is enabled
+        """Show gizmos in 3D viewport when visualization is enabled
 
-        CRITICAL DISCOVERY: Blender's GizmoGroup poll() is called VERY frequently
-        but only for properties that Blender tracks. Scene properties don't trigger it!
+        CRITICAL FIX: Blender only calls poll() when tracked properties change.
+        By accessing context.active_object, we trigger Blender's dependency tracking
+        system, causing poll() to be re-evaluated whenever the active object changes.
 
-        We MUST return True always and handle visibility in refresh().
+        This is the standard pattern used by working gizmos (ExtrusionWidget, ClippingPlane).
         """
         # Track if poll is being called at all
         if not hasattr(cls, '_poll_call_count'):
@@ -560,9 +561,21 @@ class ClashMarkerGizmoGroup(GizmoGroup):
             logger.info(f"🎯 poll() called! Count: {cls._poll_call_count}")
             print(f"🎯 GIZMO POLL: Called #{cls._poll_call_count}")
 
-        # ALWAYS return True - we'll handle visibility in refresh()
-        # Returning False here means Blender never calls setup()/refresh()
-        return context.area and context.area.type == 'VIEW_3D'
+        # Check VIEW_3D context and our custom property
+        # IMPORTANT: Access context.active_object to trigger Blender's tracking
+        if not (context.area and context.area.type == 'VIEW_3D'):
+            return False
+
+        # Check if gizmo visualization is enabled
+        props = context.scene.BIMClashProperties
+        if not props.gizmo_visualization_enabled:
+            return False
+
+        # Access active_object to trigger dependency tracking
+        # This makes Blender re-evaluate poll() when active object changes
+        _ = context.active_object  # Trigger tracking (value doesn't matter)
+
+        return True
 
     def setup(self, context):
         """Initialize gizmo group (called once)"""
@@ -579,10 +592,8 @@ class ClashMarkerGizmoGroup(GizmoGroup):
         # Clear existing gizmos first
         self.gizmos.clear()
 
-        # Check if gizmo visualization is enabled (property-based visibility)
-        if not props.gizmo_visualization_enabled:
-            logger.info("Gizmo visualization disabled - clearing gizmos")
-            return
+        # Note: poll() already checked gizmo_visualization_enabled
+        # If we're here, it means poll() returned True
 
         # Check if we have clash data
         if not props.discipline_clash_candidates:
