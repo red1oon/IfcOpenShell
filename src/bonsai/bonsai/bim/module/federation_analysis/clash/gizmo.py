@@ -543,12 +543,27 @@ class ClashMarkerGizmoGroup(GizmoGroup):
     @classmethod
     def poll(cls, context):
         """Only show in 3D viewport when gizmo visualization is enabled"""
-        if context.area.type != 'VIEW_3D':
+        # Check area type
+        if not context.area or context.area.type != 'VIEW_3D':
             return False
 
-        # Only activate gizmos when explicitly enabled by user
+        # Check if property exists and is enabled
+        if not hasattr(context.scene, 'BIMClashProperties'):
+            return False
+
         props = context.scene.BIMClashProperties
-        return props.gizmo_visualization_enabled
+        is_enabled = props.gizmo_visualization_enabled
+
+        # Log poll result (only on state change to avoid spam)
+        if not hasattr(cls, '_last_poll_state'):
+            cls._last_poll_state = None
+
+        if cls._last_poll_state != is_enabled:
+            logger.info(f"🎯 GizmoGroup.poll() → {is_enabled}")
+            print(f"🎯 GIZMO POLL: enabled={is_enabled}")
+            cls._last_poll_state = is_enabled
+
+        return is_enabled
 
     def setup(self, context):
         """Initialize gizmo group (called once)"""
@@ -685,8 +700,23 @@ def enable_clash_gizmos(context):
     """Enable clash marker gizmos in viewport"""
     global _gizmo_group_registered
 
+    logger.info("=== enable_clash_gizmos() called ===")
+    print("\n=== Enabling Gizmo Visualization ===")
+
+    # Check if property is set
+    props = context.scene.BIMClashProperties
+    print(f"   gizmo_visualization_enabled: {props.gizmo_visualization_enabled}")
+    logger.info(f"  Property state: gizmo_visualization_enabled={props.gizmo_visualization_enabled}")
+
+    # Check selected clashes
+    selected_count = sum(1 for c in props.discipline_clash_candidates if c.selected)
+    total_count = len(props.discipline_clash_candidates)
+    print(f"   Selected clashes: {selected_count} / {total_count}")
+    logger.info(f"  Clashes: {selected_count} selected out of {total_count} total")
+
     if _gizmo_group_registered:
         print("  ⚠️  Gizmos already enabled")
+        logger.warning("  Gizmos already marked as registered")
         # Just refresh to update positions
         refresh_clash_gizmos(context)
         return
@@ -694,14 +724,23 @@ def enable_clash_gizmos(context):
     # Gizmo groups are automatically enabled when registered
     # Just trigger a refresh to create gizmos
     _gizmo_group_registered = True
+    logger.info("  Marked gizmo group as registered")
+
+    print(f"   Calling refresh_clash_gizmos()...")
     refresh_clash_gizmos(context)
 
     print("✓ Clash marker gizmos enabled")
+    logger.info("✓ Enable complete")
 
     # Force viewport redraw
+    redraw_count = 0
     for area in context.screen.areas:
         if area.type == 'VIEW_3D':
             area.tag_redraw()
+            redraw_count += 1
+
+    print(f"   Tagged {redraw_count} 3D viewports for redraw")
+    logger.info(f"  Tagged {redraw_count} viewports for redraw")
 
 
 def disable_clash_gizmos():
