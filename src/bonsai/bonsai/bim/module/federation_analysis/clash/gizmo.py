@@ -449,12 +449,10 @@ class ClashMarkerGizmo(Gizmo):
         self.alpha = 1.0  # Fully opaque for visibility
         self.alpha_highlight = 1.0
 
-        # DIAGNOSTIC: Log first few draw calls
-        if not hasattr(draw, '_call_count'):
-            draw._call_count = 0
-        draw._call_count += 1
-        if draw._call_count <= 5:
-            print(f"🎨 DRAW #{draw._call_count}: color={color}, alpha=1.0, matrix={self.matrix_basis.translation}, scale={self.scale_basis}")
+        # DIAGNOSTIC: Log first draw call only
+        if not hasattr(self, '_draw_logged'):
+            self._draw_logged = True
+            print(f"🎨 DRAW: color={color}, alpha=1.0, pos={self.matrix_basis.translation}, scale={self.scale_basis}")
 
         # Draw sphere at matrix_basis position
         # (matrix_basis is set by GizmoGroup.refresh)
@@ -519,7 +517,10 @@ class ClashMarkerGizmo(Gizmo):
 
     def test_select(self, context, location):
         """Enable hover detection"""
-        logger.debug(f"🎯 test_select called for clash {self.clash_index}, location={location}")
+        # Log only first call per gizmo to reduce spam
+        if not hasattr(self, '_test_select_logged'):
+            self._test_select_logged = True
+            logger.debug(f"🎯 test_select called for clash {self.clash_index}, location={location}")
         # Return distance from mouse to gizmo (for hit testing)
         # Blender handles this automatically for standard shapes
         # Return -1 to let Blender calculate distance
@@ -563,31 +564,30 @@ class ClashMarkerGizmoGroup(GizmoGroup):
 
         cls._poll_call_count += 1
 
-        # Log every call to see if Blender is calling us
-        if cls._poll_call_count <= 10 or cls._poll_call_count % 100 == 0:
+        # Log first few calls only to reduce spam
+        if cls._poll_call_count <= 3:
             logger.info(f"🎯 poll() called! Count: {cls._poll_call_count}")
-            print(f"🎯 GIZMO POLL: Called #{cls._poll_call_count}")
 
         # Check VIEW_3D context and our custom property
         # IMPORTANT: Access context.active_object to trigger Blender's tracking
         if not (context.area and context.area.type == 'VIEW_3D'):
-            if cls._poll_call_count <= 3:
-                print(f"   ✗ poll() returning False: not VIEW_3D (area={context.area}, type={context.area.type if context.area else None})")
+            if cls._poll_call_count == 1:
+                print(f"🎯 GIZMO POLL: Not VIEW_3D - gizmos disabled")
             return False
 
         # Check if gizmo visualization is enabled
         props = context.scene.BIMClashProperties
         if not props.gizmo_visualization_enabled:
-            if cls._poll_call_count <= 3:
-                print(f"   ✗ poll() returning False: gizmo_visualization_enabled={props.gizmo_visualization_enabled}")
+            if cls._poll_call_count == 1:
+                print(f"🎯 GIZMO POLL: Visualization disabled")
             return False
 
         # Access active_object to trigger dependency tracking
         # This makes Blender re-evaluate poll() when active object changes
         _ = context.active_object  # Trigger tracking (value doesn't matter)
 
-        if cls._poll_call_count <= 3:
-            print(f"   ✓ poll() returning True! Gizmos should be visible")
+        if cls._poll_call_count <= 2:
+            print(f"🎯 GIZMO POLL: Enabled - gizmos should be visible")
         return True
 
     def setup(self, context):
