@@ -446,8 +446,15 @@ class ClashMarkerGizmo(Gizmo):
         color = get_clash_color(self.status)
         self.color = color
         self.color_highlight = (1.0, 1.0, 1.0)  # White when hovered
-        self.alpha = 0.8
+        self.alpha = 1.0  # Fully opaque for visibility
         self.alpha_highlight = 1.0
+
+        # DIAGNOSTIC: Log first few draw calls
+        if not hasattr(draw, '_call_count'):
+            draw._call_count = 0
+        draw._call_count += 1
+        if draw._call_count <= 5:
+            print(f"🎨 DRAW #{draw._call_count}: color={color}, alpha=1.0, matrix={self.matrix_basis.translation}, scale={self.scale_basis}")
 
         # Draw sphere at matrix_basis position
         # (matrix_basis is set by GizmoGroup.refresh)
@@ -564,17 +571,23 @@ class ClashMarkerGizmoGroup(GizmoGroup):
         # Check VIEW_3D context and our custom property
         # IMPORTANT: Access context.active_object to trigger Blender's tracking
         if not (context.area and context.area.type == 'VIEW_3D'):
+            if cls._poll_call_count <= 3:
+                print(f"   ✗ poll() returning False: not VIEW_3D (area={context.area}, type={context.area.type if context.area else None})")
             return False
 
         # Check if gizmo visualization is enabled
         props = context.scene.BIMClashProperties
         if not props.gizmo_visualization_enabled:
+            if cls._poll_call_count <= 3:
+                print(f"   ✗ poll() returning False: gizmo_visualization_enabled={props.gizmo_visualization_enabled}")
             return False
 
         # Access active_object to trigger dependency tracking
         # This makes Blender re-evaluate poll() when active object changes
         _ = context.active_object  # Trigger tracking (value doesn't matter)
 
+        if cls._poll_call_count <= 3:
+            print(f"   ✓ poll() returning True! Gizmos should be visible")
         return True
 
     def setup(self, context):

@@ -630,11 +630,13 @@ class BIM_PT_tabs(Panel):
 
         row = self.layout.row()
         row.alignment = "CENTER"
+        # Safety check: use 0 if icons not loaded yet
+        icon_value = bonsai.bim.icons[ifc_icon].icon_id if bonsai.bim.icons else 0
         row.operator(
             "bim.set_tab",
             text="",
             emboss=aprops.tab == "PROJECT",
-            icon_value=bonsai.bim.icons[ifc_icon].icon_id,
+            icon_value=icon_value,
         ).tab = "PROJECT"
         self.draw_tab_entry(row, "FILE_3D", "OBJECT", is_ifc_project, aprops.tab == "OBJECT")
         self.draw_tab_entry(row, "MATERIAL", "GEOMETRY", is_ifc_project, aprops.tab == "GEOMETRY")

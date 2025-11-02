@@ -20,6 +20,12 @@ class BIM_PT_mep_engineering(Panel):
     def draw(self, context):
         """Draw the panel UI"""
         layout = self.layout
+
+        # Safety check: MEP properties might not be registered
+        if not hasattr(context.scene, 'BIMmepEngineeringProperties'):
+            layout.label(text="MEP Engineering module not loaded")
+            return
+
         props = context.scene.BIMmepEngineeringProperties
         fed_props = context.scene.BIMFederationProperties
 
