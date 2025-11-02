@@ -287,6 +287,9 @@ class BIM_MT_clash_gizmo_context_menu(Menu):
     bl_label = "Clash Actions"
 
     def draw(self, context):
+        logger.info("📋 Context menu draw() called")
+        print(f"\n📋 CONTEXT MENU DRAWING...")
+
         layout = self.layout
 
         # Get clash data from scene temporary storage
@@ -294,6 +297,10 @@ class BIM_MT_clash_gizmo_context_menu(Menu):
         guid_a = context.scene.get("_temp_clash_guid_a", "")
         guid_b = context.scene.get("_temp_clash_guid_b", "")
         current_status = context.scene.get("_temp_clash_status", "NEW")
+
+        print(f"   Clash data: index={clash_index}, status={current_status}")
+        print(f"   GUID A: {guid_a[:16] if guid_a else 'None'}...")
+        logger.info(f"  Menu data: clash_index={clash_index}, status={current_status}")
 
         # Status section
         layout.label(text=f"Current: {current_status}", icon='INFO')
@@ -417,9 +424,13 @@ class ClashMarkerGizmo(Gizmo):
 
     def setup(self):
         """Initialize gizmo (called once when created)"""
+        logger.info(f"🎯 Gizmo setup called for clash {self.clash_index}")
+        print(f"🎯 GIZMO SETUP: clash_index={self.clash_index}, guid_a={self.guid_a[:8] if self.guid_a else 'None'}...")
+
         # Use simple 3-circle sphere shape (lightweight, lazy loaded)
         if not hasattr(self, "custom_shape"):
             self.custom_shape = self.new_custom_shape('TRIS', get_sphere_geometry())
+            logger.debug(f"  Created custom shape for gizmo {self.clash_index}")
 
     def draw(self, context):
         """Draw the gizmo (called every frame)"""
@@ -435,15 +446,26 @@ class ClashMarkerGizmo(Gizmo):
 
     def invoke(self, context, event):
         """Handle user interaction with gizmo"""
+        logger.info(f"🖱️  GIZMO INVOKE: event.type={event.type}, event.value={event.value}, clash_index={self.clash_index}")
+        print(f"\n🖱️  GIZMO CLICKED!")
+        print(f"   Event type: {event.type}")
+        print(f"   Event value: {event.value}")
+        print(f"   Clash index: {self.clash_index}")
+        print(f"   GUID A: {self.guid_a}")
+        print(f"   GUID B: {self.guid_b}")
+        print(f"   Status: {self.status}")
+
         if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
             # Left-click: Jump to clash
+            print(f"   ➡️  Left-click detected - jumping to clash")
+            logger.info(f"  Left-click on clash {self.clash_index} - jumping")
             self.jump_to_clash(context)
             return {'RUNNING_MODAL'}
 
         elif event.type == 'RIGHTMOUSE' and event.value == 'PRESS':
             # Right-click: Show context menu
-            print(f"\n🖱️  Right-clicked clash {self.clash_index + 1}: {self.guid_a} ↔ {self.guid_b}")
-            print(f"   Current status: {self.status}")
+            print(f"   ➡️  Right-click detected - opening context menu")
+            logger.info(f"  Right-click on clash {self.clash_index} - opening menu")
 
             # Store clash data in scene for menu access
             context.scene["_temp_clash_index"] = self.clash_index
@@ -451,12 +473,21 @@ class ClashMarkerGizmo(Gizmo):
             context.scene["_temp_clash_guid_b"] = self.guid_b
             context.scene["_temp_clash_status"] = self.status
 
+            print(f"   ➡️  Stored clash data in scene, calling menu...")
+
             # Show context menu
-            bpy.ops.wm.call_menu(name=BIM_MT_clash_gizmo_context_menu.bl_idname)
+            try:
+                bpy.ops.wm.call_menu(name=BIM_MT_clash_gizmo_context_menu.bl_idname)
+                print(f"   ✓ Context menu called successfully")
+            except Exception as e:
+                print(f"   ✗ ERROR calling context menu: {e}")
+                logger.error(f"  Failed to call context menu: {e}")
 
             return {'RUNNING_MODAL'}
 
-        return {'PASS_THROUGH'}
+        else:
+            print(f"   ⚠️  Event not handled: {event.type} {event.value}")
+            return {'PASS_THROUGH'}
 
     def jump_to_clash(self, context):
         """Jump viewport to this clash (reuse existing operator)"""
@@ -473,9 +504,11 @@ class ClashMarkerGizmo(Gizmo):
 
     def test_select(self, context, location):
         """Enable hover detection"""
+        logger.debug(f"🎯 test_select called for clash {self.clash_index}, location={location}")
         # Return distance from mouse to gizmo (for hit testing)
         # Blender handles this automatically for standard shapes
-        return 0
+        # Return -1 to let Blender calculate distance
+        return -1
 
 
 # ============================================================================
@@ -503,7 +536,10 @@ class ClashMarkerGizmoGroup(GizmoGroup):
 
     def setup(self, context):
         """Initialize gizmo group (called once)"""
+        logger.info("🎯 ClashMarkerGizmoGroup.setup() called")
         print("🎯 Clash marker gizmo group setup")
+        print(f"   Context: {context}")
+        print(f"   Area type: {context.area.type if context.area else 'None'}")
         # Gizmos will be created in refresh()
 
     def refresh(self, context):
@@ -614,8 +650,13 @@ class ClashMarkerGizmoGroup(GizmoGroup):
             # Enable interaction
             gz.use_draw_modal = True
             gz.use_event_handle_all = True
+            gz.use_select_background = True  # Allow selection even if behind other objects
+
+            logger.info(f"  Created gizmo {len(self.gizmos)}: clash_index={i}, status={status}, use_draw_modal={gz.use_draw_modal}")
+            print(f"    Gizmo {len(self.gizmos)}: clash_index={i}, status={status}, interactive={gz.use_draw_modal}")
 
         print(f"  ✓ Created {len(self.gizmos)} clash marker gizmos from {len(selected_candidates)} selected clashes")
+        logger.info(f"✓ Refresh complete: {len(self.gizmos)} gizmos created")
 
 
 # ============================================================================
