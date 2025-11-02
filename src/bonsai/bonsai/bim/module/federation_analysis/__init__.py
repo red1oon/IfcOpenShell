@@ -53,6 +53,15 @@ classes = (
     operator.BIM_OT_enable_full_geometry_visualization,
     operator.BIM_OT_disable_full_geometry_visualization,
 
+    # Gizmo operators and menu
+    gizmo.BIM_OT_change_clash_status,
+    gizmo.BIM_OT_navigate_clash,
+    gizmo.BIM_MT_clash_gizmo_context_menu,
+
+    # Gizmos (MUST be in classes tuple for Blender to monitor poll())
+    gizmo.ClashMarkerGizmo,
+    gizmo.ClashMarkerGizmoGroup,
+
     # UI Lists
     ui.BIM_UL_discipline_clashes,
 
@@ -66,23 +75,10 @@ def register():
     """Register federation_analysis module classes and inject properties into clash module"""
     print("\n🔧 Registering federation_analysis module...")
 
+    # Register all classes including gizmos (standard Blender registration)
     for cls in classes:
         bpy.utils.register_class(cls)
-
-    # Register gizmo classes and UI (GizmoGroup uses different registration)
-    print("   📝 Registering gizmo operators and menu...")
-    bpy.utils.register_class(gizmo.BIM_OT_change_clash_status)
-    print(f"      ✓ {gizmo.BIM_OT_change_clash_status.bl_idname}")
-    bpy.utils.register_class(gizmo.BIM_OT_navigate_clash)
-    print(f"      ✓ {gizmo.BIM_OT_navigate_clash.bl_idname}")
-    bpy.utils.register_class(gizmo.BIM_MT_clash_gizmo_context_menu)
-    print(f"      ✓ {gizmo.BIM_MT_clash_gizmo_context_menu.bl_idname}")
-
-    print("   🎯 Registering gizmo classes...")
-    bpy.utils.register_class(gizmo.ClashMarkerGizmo)
-    print(f"      ✓ {gizmo.ClashMarkerGizmo.bl_idname}")
-    bpy.utils.register_class(gizmo.ClashMarkerGizmoGroup)
-    print(f"      ✓ {gizmo.ClashMarkerGizmoGroup.bl_idname}")
+        print(f"   ✓ {cls.__name__}")
 
     # Inject our custom properties into BIMClashProperties
     prop.register_federation_properties()
@@ -94,12 +90,6 @@ def unregister():
     # Remove injected properties from BIMClashProperties
     prop.unregister_federation_properties()
 
-    # Unregister gizmo classes and UI (reverse order)
-    bpy.utils.unregister_class(gizmo.ClashMarkerGizmoGroup)
-    bpy.utils.unregister_class(gizmo.ClashMarkerGizmo)
-    bpy.utils.unregister_class(gizmo.BIM_MT_clash_gizmo_context_menu)
-    bpy.utils.unregister_class(gizmo.BIM_OT_navigate_clash)
-    bpy.utils.unregister_class(gizmo.BIM_OT_change_clash_status)
-
+    # Unregister all classes in reverse order (standard Blender unregistration)
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
