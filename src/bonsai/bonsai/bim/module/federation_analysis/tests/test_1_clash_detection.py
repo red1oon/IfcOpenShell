@@ -12,8 +12,12 @@ from pathlib import Path
 def test_clash_detector_import(db_path):
     """Verify clash detector module can be imported"""
     try:
-        sys.path.insert(0, str(Path.home() / "Projects/IfcOpenShell/src"))
-        from bonsai.bim.module.federation_analysis.clash import detector
+        # Try importing from parent directory structure
+        test_dir = Path(__file__).parent
+        module_dir = test_dir.parent
+        sys.path.insert(0, str(module_dir))
+
+        from clash import detector
         return True, "Clash detector module imports successfully"
     except ImportError as e:
         return False, f"Cannot import clash detector: {e}"
