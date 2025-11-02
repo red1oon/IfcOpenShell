@@ -543,24 +543,33 @@ class ClashMarkerGizmoGroup(GizmoGroup):
     @classmethod
     def poll(cls, context):
         """Only show in 3D viewport when gizmo visualization is enabled"""
+        # Track if poll is being called at all
+        if not hasattr(cls, '_poll_call_count'):
+            cls._poll_call_count = 0
+            cls._last_poll_state = None
+
+        cls._poll_call_count += 1
+
         # Check area type
         if not context.area or context.area.type != 'VIEW_3D':
+            if cls._poll_call_count == 1:
+                logger.info(f"poll() called but area type is {context.area.type if context.area else 'None'}")
             return False
 
         # Check if property exists and is enabled
         if not hasattr(context.scene, 'BIMClashProperties'):
+            if cls._poll_call_count == 1:
+                logger.warning("poll() called but BIMClashProperties not found")
+                print("⚠️  GIZMO POLL: BIMClashProperties not found!")
             return False
 
         props = context.scene.BIMClashProperties
         is_enabled = props.gizmo_visualization_enabled
 
         # Log poll result (only on state change to avoid spam)
-        if not hasattr(cls, '_last_poll_state'):
-            cls._last_poll_state = None
-
         if cls._last_poll_state != is_enabled:
-            logger.info(f"🎯 GizmoGroup.poll() → {is_enabled}")
-            print(f"🎯 GIZMO POLL: enabled={is_enabled}")
+            logger.info(f"🎯 GizmoGroup.poll() → {is_enabled} (call #{cls._poll_call_count})")
+            print(f"🎯 GIZMO POLL: enabled={is_enabled} (call #{cls._poll_call_count})")
             cls._last_poll_state = is_enabled
 
         return is_enabled
@@ -764,16 +773,29 @@ def disable_clash_gizmos():
 
 def refresh_clash_gizmos(context):
     """Refresh all gizmo positions and colors"""
-    # Trigger gizmo group refresh
-    # Blender automatically calls GizmoGroup.refresh() when we tag for update
+    logger.info("refresh_clash_gizmos() called")
+    print("  🔄 Gizmo refresh triggered")
 
+    # Force Blender to re-evaluate gizmo groups by updating the space
+    redraw_count = 0
     for area in context.screen.areas:
         if area.type == 'VIEW_3D':
+            for space in area.spaces:
+                if space.type == 'VIEW_3D':
+                    # Force gizmo system update
+                    space.show_gizmo = True
+                    logger.info(f"  Enabled gizmo display for space")
+
             for region in area.regions:
                 if region.type == 'WINDOW':
                     region.tag_redraw()
+                    redraw_count += 1
 
-    print("  🔄 Gizmo refresh triggered")
+    logger.info(f"  Tagged {redraw_count} regions for redraw")
+
+    # CRITICAL: Force context update so poll() gets called
+    bpy.context.view_layer.update()
+    logger.info("  Forced context update")
 
 
 def is_gizmo_group_active() -> bool:
