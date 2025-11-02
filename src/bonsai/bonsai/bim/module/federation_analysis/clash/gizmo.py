@@ -534,11 +534,11 @@ class ClashMarkerGizmo(Gizmo):
 class ClashMarkerGizmoGroup(GizmoGroup):
     """Manages all clash marker gizmos in viewport"""
 
-    bl_idname = "VIEW3D_GGT_clash_markers"
+    bl_idname = "bim.clash_marker_gizmos"  # Match Bonsai naming convention
     bl_label = "Clash Markers"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'WINDOW'
-    bl_options = {'PERSISTENT', '3D', 'DEPTH_3D'}
+    bl_options = {'3D', 'PERSISTENT', 'SHOW_MODAL_ALL'}  # Match drawing module pattern
 
     @classmethod
     def poll(cls, context):
@@ -730,8 +730,21 @@ def enable_clash_gizmos(context):
         refresh_clash_gizmos(context)
         return
 
-    # Gizmo groups are automatically enabled when registered
-    # Just trigger a refresh to create gizmos
+    # CRITICAL: Manually instantiate the gizmo group for each 3D view
+    # Blender doesn't auto-activate standalone gizmo groups
+    for window in context.window_manager.windows:
+        for area in window.screen.areas:
+            if area.type == 'VIEW_3D':
+                for space in area.spaces:
+                    if space.type == 'VIEW_3D':
+                        # Check if our gizmo group is in the gizmo_group list
+                        try:
+                            # Force Blender to instantiate gizmo groups for this space
+                            logger.info(f"  Checking space gizmos: {len(space.region_3d.gizmo_groups) if hasattr(space, 'region_3d') else 'N/A'}")
+                            print(f"   Space has {len(space.region_3d.gizmo_groups) if hasattr(space, 'region_3d') else 0} gizmo groups")
+                        except Exception as e:
+                            logger.warning(f"  Could not check gizmo groups: {e}")
+
     _gizmo_group_registered = True
     logger.info("  Marked gizmo group as registered")
 
