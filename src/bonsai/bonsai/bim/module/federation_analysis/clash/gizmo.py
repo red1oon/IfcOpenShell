@@ -20,7 +20,7 @@ from datetime import datetime
 # ============================================================================
 
 def setup_gizmo_logging():
-    """Setup dual logging to bonsai.log and ERROR.log"""
+    """Setup logging to consolelogs with timestamp"""
     logger = logging.getLogger('bonsai.clash.gizmo')
     logger.setLevel(logging.DEBUG)
 
@@ -28,24 +28,29 @@ def setup_gizmo_logging():
     if logger.handlers:
         return logger
 
-    # Handler 1: bonsai.log (all messages)
-    bonsai_log = Path.home() / "Documents/bonsai/bonsai.log"
-    bonsai_log.parent.mkdir(parents=True, exist_ok=True)
+    # Handler: consolelogs/gizmo_interactions_TIMESTAMP.log
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    consolelogs_dir = Path.home() / "Documents/bonsai/consolelogs"
+    consolelogs_dir.mkdir(parents=True, exist_ok=True)
 
-    file_handler = logging.FileHandler(bonsai_log)
-    file_handler.setLevel(logging.INFO)
-    file_formatter = logging.Formatter('%(asctime)s [%(name)s] %(levelname)s: %(message)s')
+    log_file = consolelogs_dir / f"gizmo_interactions_{timestamp}.log"
+
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.DEBUG)
+    file_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
     file_handler.setFormatter(file_formatter)
     logger.addHandler(file_handler)
 
-    # Handler 2: ERROR.log (errors only)
-    error_log = Path.home() / "Documents/bonsai/ERROR.log"
+    # Also add console handler for Blender system console
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_formatter = logging.Formatter('🎯 GIZMO: %(message)s')
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(console_handler)
 
-    error_handler = logging.FileHandler(error_log)
-    error_handler.setLevel(logging.ERROR)
-    error_formatter = logging.Formatter('%(asctime)s [%(name)s] ERROR: %(message)s\n%(pathname)s:%(lineno)d\n')
-    error_handler.setFormatter(error_formatter)
-    logger.addHandler(error_handler)
+    logger.info(f"=== Gizmo logging initialized: {log_file} ===")
+    print(f"\n🎯 GIZMO LOGGING: {log_file}\n")
 
     return logger
 
@@ -415,6 +420,9 @@ class ClashMarkerGizmo(Gizmo):
 
     bl_idname = "VIEW3D_GT_clash_marker"
 
+    # CRITICAL: This makes the gizmo interactive and selectable
+    bl_target_properties = ()
+
     # Custom properties for this gizmo instance
     clash_id: str = None
     clash_index: int = -1
@@ -509,6 +517,14 @@ class ClashMarkerGizmo(Gizmo):
         # Blender handles this automatically for standard shapes
         # Return -1 to let Blender calculate distance
         return -1
+
+    def modal(self, context, event, tweak):
+        """Handle modal interaction (required for clickable gizmos)"""
+        logger.info(f"🖱️  MODAL: event={event.type}, value={event.value}, clash={self.clash_index}")
+        print(f"🖱️  GIZMO MODAL: event={event.type}, value={event.value}")
+
+        # Call invoke() for actual handling
+        return self.invoke(context, event)
 
 
 # ============================================================================
