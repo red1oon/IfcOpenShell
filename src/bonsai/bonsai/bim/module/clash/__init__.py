@@ -17,7 +17,8 @@
 # along with Bonsai.  If not, see <http://www.gnu.org/licenses/>.
 
 import bpy
-from . import ui, prop, operator, gizmo  # bbox_visualization moved to federation module
+from . import ui, prop, operator
+# Note: gizmo, visualization, database moved to federation_analysis module (2025-11-02)
 
 classes = (
     operator.AddClashSet,
@@ -64,8 +65,7 @@ classes = (
     ui.BIM_UL_clash_sets,
     ui.BIM_UL_discipline_clashes,
     ui.BIM_UL_smart_groups,
-    gizmo.ClashMarkerGizmo,
-    gizmo.ClashMarkerGizmoGroup,
+    # Note: ClashMarkerGizmo and ClashMarkerGizmoGroup moved to federation_analysis module
 )
 
 
