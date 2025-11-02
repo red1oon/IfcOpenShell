@@ -1070,7 +1070,7 @@ class DetectFederationClashes(bpy.types.Operator):
     )
 
     def execute(self, context):
-        from ..clash import bbox_clash_detector
+        from ..federation_analysis.clash import detector as bbox_clash_detector
         import time
 
         props = context.scene.BIMFederationProperties

@@ -25,7 +25,7 @@ import time
 from mathutils import Vector, Euler
 from typing import List, Optional, Callable, Dict
 from . import semantic_utils
-from ..clash import shape_templates
+from ..federation_analysis.visualization import shape_templates
 
 
 def create_simple_box_fast(width: float, height: float, depth: float) -> bpy.types.Mesh:

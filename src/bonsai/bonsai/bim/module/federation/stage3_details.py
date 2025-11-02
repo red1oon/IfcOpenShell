@@ -31,7 +31,7 @@ import bmesh
 from mathutils import Vector
 from typing import List, Optional
 from . import semantic_utils
-from ..clash import shape_templates
+from ..federation_analysis.visualization import shape_templates
 
 
 def upgrade_to_detailed_shapes(objects: List[bpy.types.Object],
