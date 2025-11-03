@@ -463,17 +463,11 @@ class ClashMarkerGizmo(Gizmo):
         print(f"   GUID B: {self.guid_b}")
         print(f"   Status: {self.status}")
 
-        if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
-            # Left-click: Jump to clash
-            print(f"   ➡️  Left-click detected - jumping to clash")
-            logger.info(f"  Left-click on clash {self.clash_index} - jumping")
-            self.jump_to_clash(context)
-            return {'RUNNING_MODAL'}
-
-        elif event.type == 'RIGHTMOUSE' and event.value == 'PRESS':
-            # Right-click: Show context menu
-            print(f"   ➡️  Right-click detected - opening context menu")
-            logger.info(f"  Right-click on clash {self.clash_index} - opening menu")
+        # Check for Ctrl+Click to show menu
+        if event.type == 'LEFTMOUSE' and event.value == 'PRESS' and event.ctrl:
+            # Ctrl+Left-click: Show context menu
+            print(f"   ➡️  Ctrl+Click detected - opening context menu")
+            logger.info(f"  Ctrl+Click on clash {self.clash_index} - opening menu")
 
             # Store clash data in scene for menu access
             context.scene["_temp_clash_index"] = self.clash_index
@@ -491,6 +485,13 @@ class ClashMarkerGizmo(Gizmo):
                 print(f"   ✗ ERROR calling context menu: {e}")
                 logger.error(f"  Failed to call context menu: {e}")
 
+            return {'RUNNING_MODAL'}
+
+        elif event.type == 'LEFTMOUSE' and event.value == 'PRESS':
+            # Plain left-click: Jump to clash
+            print(f"   ➡️  Left-click detected - jumping to clash")
+            logger.info(f"  Left-click on clash {self.clash_index} - jumping")
+            self.jump_to_clash(context)
             return {'RUNNING_MODAL'}
 
         else:
