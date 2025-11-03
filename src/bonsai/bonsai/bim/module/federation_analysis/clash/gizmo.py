@@ -500,17 +500,25 @@ class ClashMarkerGizmo(Gizmo):
 
     def jump_to_clash(self, context):
         """Jump viewport to this clash (reuse existing operator)"""
-        props = context.scene.BIMClashProperties
+        try:
+            props = context.scene.BIMClashProperties
 
-        # Set current clash index
-        if self.clash_index >= 0 and self.clash_index < len(props.discipline_clash_candidates):
-            # Set the active clash index (operator uses this)
+            # Validate clash index
+            if self.clash_index < 0 or self.clash_index >= len(props.discipline_clash_candidates):
+                logger.warning(f"Invalid clash index: {self.clash_index}")
+                return
+
+            # Check if operator is already running (prevent re-entrancy)
+            if hasattr(context.scene, '_clash_viz_processing'):
+                return
+
+            # Set the active clash index and call operator
             props.active_discipline_clash_index = self.clash_index
-
-            # Call existing select operator
             bpy.ops.bim.select_discipline_clash()
+            logger.info(f"Selected clash {self.clash_index + 1}")
 
-            print(f"✓ Jumped to clash {self.clash_index + 1}")
+        except Exception as e:
+            logger.error(f"Gizmo click failed: {e}", exc_info=True)
 
     def draw_select(self, context, select_id):
         """Draw gizmo for selection pass (enables clicking)"""
