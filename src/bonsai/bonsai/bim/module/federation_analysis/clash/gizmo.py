@@ -442,6 +442,11 @@ class ClashMarkerGizmo(Gizmo):
 
     def draw(self, context):
         """Draw the gizmo (called every frame)"""
+        # CRITICAL: Defensive check - ensure custom_shape still valid
+        if not hasattr(self, "custom_shape") or self.custom_shape is None:
+            logger.warning(f"Gizmo {self.clash_index} has no custom_shape in draw()")
+            return
+
         # Set color based on status
         color = get_clash_color(self.status)
         self.color = color
@@ -450,7 +455,12 @@ class ClashMarkerGizmo(Gizmo):
         self.alpha_highlight = 1.0
 
         # CRITICAL: Actually render the custom shape!
-        self.draw_custom_shape(self.custom_shape)
+        try:
+            self.draw_custom_shape(self.custom_shape)
+        except Exception as e:
+            # Graceful failure if shape becomes invalid
+            logger.error(f"Failed to draw gizmo {self.clash_index}: {e}")
+            return
 
     def invoke(self, context, event):
         """Handle user interaction with gizmo"""
@@ -521,7 +531,15 @@ class ClashMarkerGizmo(Gizmo):
 
     def draw_select(self, context, select_id):
         """Draw gizmo for selection pass (enables clicking)"""
-        self.draw_custom_shape(self.custom_shape, select_id=select_id)
+        # CRITICAL: Defensive check - ensure custom_shape still valid
+        if not hasattr(self, "custom_shape") or self.custom_shape is None:
+            return
+
+        try:
+            self.draw_custom_shape(self.custom_shape, select_id=select_id)
+        except Exception as e:
+            logger.error(f"Failed to draw_select gizmo {self.clash_index}: {e}")
+            return
 
     def test_select(self, context, location):
         """Enable hover detection"""
@@ -582,30 +600,43 @@ class ClashMarkerGizmoGroup(GizmoGroup):
         return True
 
     def setup(self, context):
-        """Initialize gizmo group (called once)"""
+        """Initialize gizmo group (called once)
+
+        CRITICAL: Industry standard pattern from Bonsai gizmos.
+        - Store gizmo list as instance variable for persistence
+        - Never clear during modal operations
+        - Let refresh() update existing gizmos, not recreate them
+        """
         logger.info("🎯 ClashMarkerGizmoGroup.setup() called")
         print("🎯 Clash marker gizmo group setup")
         print(f"   Context: {context}")
         print(f"   Area type: {context.area.type if context.area else 'None'}")
-        # Gizmos will be created in refresh()
+
+        # CRITICAL: Track gizmo state for safe updates
+        self._gizmo_cache = {}  # Maps clash_index -> gizmo instance
+        self._last_clash_data = None  # Track when to recreate vs update
 
     def refresh(self, context):
-        """Update gizmos from clash data (called when data changes)"""
+        """Update gizmos from clash data (called when data changes)
+
+        CRITICAL: Industry standard pattern - NEVER clear() during modal operations.
+        - Compare current data with cached state
+        - Update existing gizmos in place when possible
+        - Only recreate when selection changes (safe time to clear)
+        """
         props = context.scene.BIMClashProperties
-
-        # Clear existing gizmos first
-        self.gizmos.clear()
-
-        # Note: poll() already checked gizmo_visualization_enabled
-        # If we're here, it means poll() returned True
 
         # Check if we have clash data
         if not props.discipline_clash_candidates:
             logger.info("No clash candidates to visualize")
-            print("  ⚠️  No clash candidates to visualize")
+            # Clear gizmos only when no data (safe - user action)
+            if self._gizmo_cache:
+                self.gizmos.clear()
+                self._gizmo_cache.clear()
+                self._last_clash_data = None
             return
 
-        # Filter to only selected clashes (user must select which ones to visualize)
+        # Filter to only selected clashes
         selected_candidates = [
             (i, candidate) for i, candidate in enumerate(props.discipline_clash_candidates)
             if candidate.selected
@@ -613,101 +644,113 @@ class ClashMarkerGizmoGroup(GizmoGroup):
 
         if not selected_candidates:
             logger.info("No clashes selected for visualization")
-            print("  ⚠️  No clashes selected for visualization")
+            # Clear gizmos only when selection empty (safe - user action)
+            if self._gizmo_cache:
+                self.gizmos.clear()
+                self._gizmo_cache.clear()
+                self._last_clash_data = None
             return
-
-        logger.info(f"Creating gizmos for {len(selected_candidates)} selected clashes (out of {len(props.discipline_clash_candidates)} total)")
-        print(f"  🔄 Creating gizmos for {len(selected_candidates)} selected clashes (out of {len(props.discipline_clash_candidates)} total)")
 
         # Get federation DB path
-        db_path = props.bbox_database_path
+        fed_props = context.scene.BIMFederationProperties
+        db_path = fed_props.federation_database_path
         if not db_path:
-            print("  ⚠️  No federation database path set - cannot query bbox coords")
+            logger.warning("No federation database path set")
             return
 
-        # Create one gizmo per selected clash
-        for i, candidate in selected_candidates:
-            # Query federation DB for bbox centers (lazy loading)
-            center_a, center_b = get_clash_bbox_centers(
-                candidate.guid_a,
-                candidate.guid_b,
-                db_path
-            )
+        # Build current clash data fingerprint (for change detection)
+        current_data = tuple((i, candidate.guid_a, candidate.guid_b, candidate.selected)
+                            for i, candidate in enumerate(props.discipline_clash_candidates))
 
-            if not center_a or not center_b:
-                print(f"  ⚠️  Skipping clash {i}: bbox not found in DB")
-                continue
+        # CRITICAL: Only recreate gizmos if selection changed
+        # This prevents clearing gizmos during modal operations
+        if current_data != self._last_clash_data:
+            logger.info(f"Clash selection changed - rebuilding {len(selected_candidates)} gizmos")
+            print(f"  🔄 Rebuilding gizmos for {len(selected_candidates)} selected clashes")
 
-            # Convert to Blender coords
-            blender_a = ifc_to_blender_coords(center_a)
-            blender_b = ifc_to_blender_coords(center_b)
-            midpoint = (blender_a + blender_b) / 2
+            # SAFE to clear: selection changed (not during modal)
+            self.gizmos.clear()
+            self._gizmo_cache.clear()
 
-            # DIAGNOSTIC: Log coordinate conversion for first gizmo
-            if len(self.gizmos) == 0:
-                offset = get_model_offset()
-                logger.info(f"First gizmo coordinate check:")
-                logger.info(f"  IFC coords A: {center_a}")
-                logger.info(f"  IFC coords B: {center_b}")
-                logger.info(f"  Model offset: {offset}")
-                logger.info(f"  Blender A: {blender_a}")
-                logger.info(f"  Blender B: {blender_b}")
-                logger.info(f"  Midpoint: {midpoint}")
-                logger.info(f"  Gizmo scale: 0.5m diameter")
-                print(f"\n  📍 First gizmo diagnostic:")
-                print(f"     IFC A: ({center_a.x:.2f}, {center_a.y:.2f}, {center_a.z:.2f})")
-                print(f"     IFC B: ({center_b.x:.2f}, {center_b.y:.2f}, {center_b.z:.2f})")
-                print(f"     Offset: ({offset.x:.2f}, {offset.y:.2f}, {offset.z:.2f})")
-                print(f"     Blender midpoint: ({midpoint.x:.2f}, {midpoint.y:.2f}, {midpoint.z:.2f})")
-                print(f"     Scale: 0.5m diameter sphere")
-
-            # Get clash ID and status from database
-            clash_id = db.get_clash_id(candidate.guid_a, candidate.guid_b)
-            db_status = db.get_clash_status(candidate.guid_a, candidate.guid_b)
-
-            if db_status:
-                status = db_status['status']
-            else:
-                # New clash - default to NEW
-                status = 'NEW'
-                # Insert into database
-                db.set_clash_status(
-                    candidate.guid_a,
-                    candidate.guid_b,
-                    status='NEW',
-                    distance=candidate.distance,
-                    ifc_class_a=candidate.ifc_class_a,
-                    ifc_class_b=candidate.ifc_class_b
+            # Create gizmos for selected clashes
+            for i, candidate in selected_candidates:
+                # Query federation DB for bbox centers
+                center_a, center_b = get_clash_bbox_centers(
+                    candidate.guid_a, candidate.guid_b, db_path
                 )
 
-            # Create gizmo
-            gz = self.gizmos.new(ClashMarkerGizmo.bl_idname)
+                if not center_a or not center_b:
+                    logger.warning(f"Skipping clash {i}: bbox not found in DB")
+                    continue
 
-            # Set gizmo position (world space)
-            from mathutils import Matrix
-            gz.matrix_basis = Matrix.Translation(midpoint)
+                # Convert to Blender coords
+                blender_a = ifc_to_blender_coords(center_a)
+                blender_b = ifc_to_blender_coords(center_b)
+                midpoint = (blender_a + blender_b) / 2
 
-            # Set gizmo scale (real-world size: 0.5m diameter sphere)
-            gz.scale_basis = 0.5
+                # Get clash status from database
+                clash_id = db.get_clash_id(candidate.guid_a, candidate.guid_b)
+                db_status = db.get_clash_status(candidate.guid_a, candidate.guid_b)
 
-            # Store clash data in gizmo
-            gz.clash_id = clash_id
-            gz.clash_index = i
-            gz.guid_a = candidate.guid_a
-            gz.guid_b = candidate.guid_b
-            gz.status = status
+                if db_status:
+                    status = db_status['status']
+                else:
+                    # New clash - default to NEW
+                    status = 'NEW'
+                    db.set_clash_status(
+                        candidate.guid_a, candidate.guid_b,
+                        status='NEW',
+                        distance=candidate.distance,
+                        ifc_class_a=candidate.ifc_class_a,
+                        ifc_class_b=candidate.ifc_class_b
+                    )
 
-            # Enable interaction
-            gz.use_draw_modal = True
-            gz.use_event_handle_all = False  # Only handle click events, not all mouse movement
-            gz.use_select_background = True  # Allow selection even if behind other objects
-            gz.use_grab_cursor = False  # Don't grab cursor on interaction
+                # Create gizmo
+                gz = self.gizmos.new(ClashMarkerGizmo.bl_idname)
 
-            logger.info(f"  Created gizmo {len(self.gizmos)}: clash_index={i}, status={status}, use_draw_modal={gz.use_draw_modal}")
-            print(f"    Gizmo {len(self.gizmos)}: clash_index={i}, status={status}, interactive={gz.use_draw_modal}")
+                # Set gizmo position (world space)
+                from mathutils import Matrix
+                gz.matrix_basis = Matrix.Translation(midpoint)
+                gz.scale_basis = 0.5  # 0.5m diameter sphere
 
-        print(f"  ✓ Created {len(self.gizmos)} clash marker gizmos from {len(selected_candidates)} selected clashes")
-        logger.info(f"✓ Refresh complete: {len(self.gizmos)} gizmos created")
+                # Store clash data in gizmo
+                gz.clash_id = clash_id
+                gz.clash_index = i
+                gz.guid_a = candidate.guid_a
+                gz.guid_b = candidate.guid_b
+                gz.status = status
+
+                # Enable interaction (industry standard settings)
+                gz.use_draw_modal = True
+                gz.use_event_handle_all = False
+                gz.use_select_background = True
+                gz.use_grab_cursor = False
+
+                # Cache gizmo reference (prevent GC)
+                self._gizmo_cache[i] = gz
+
+                logger.debug(f"  Created gizmo for clash {i}, status={status}")
+
+            logger.info(f"✓ Created {len(self._gizmo_cache)} gizmos")
+            print(f"  ✓ Created {len(self._gizmo_cache)} clash gizmos")
+            self._last_clash_data = current_data
+
+        else:
+            # SAFE UPDATE PATH: Just update colors for existing gizmos
+            # No clear(), no recreate - gizmos stay alive during modal
+            logger.debug("Updating existing gizmo colors (no recreate)")
+
+            for i, candidate in selected_candidates:
+                if i in self._gizmo_cache:
+                    gz = self._gizmo_cache[i]
+
+                    # Update status from database (may have changed via context menu)
+                    db_status = db.get_clash_status(candidate.guid_a, candidate.guid_b)
+                    if db_status and db_status['status'] != gz.status:
+                        gz.status = db_status['status']
+                        logger.info(f"  Updated clash {i} status: {gz.status}")
+
+            logger.debug(f"✓ Updated {len(self._gizmo_cache)} gizmo colors")
 
 
 # ============================================================================
@@ -808,55 +851,26 @@ def disable_clash_gizmos(context):
 
 
 def refresh_clash_gizmos(context):
-    """Refresh all gizmo positions and colors"""
-    logger.info("refresh_clash_gizmos() called")
-    print("  🔄 Gizmo refresh triggered")
+    """Refresh all gizmo positions and colors
 
-    # Force Blender to re-evaluate gizmo groups by updating the space
+    CRITICAL: Industry standard pattern - gentle refresh, not forced recreation.
+    - Tag areas for redraw (Blender calls refresh() at safe time)
+    - NEVER force immediate clear/recreate during modal operations
+    - Let Blender's gizmo system handle the timing
+    """
+    logger.info("refresh_clash_gizmos() called")
+    print("  🔄 Gizmo refresh requested")
+
+    # Gentle approach: Just tag areas for redraw
+    # Blender will call GizmoGroup.refresh() at a safe time
     redraw_count = 0
     for area in context.screen.areas:
         if area.type == 'VIEW_3D':
-            for space in area.spaces:
-                if space.type == 'VIEW_3D':
-                    # Force gizmo system update
-                    space.show_gizmo = True
-                    logger.info(f"  Enabled gizmo display for space")
+            area.tag_redraw()
+            redraw_count += 1
 
-            for region in area.regions:
-                if region.type == 'WINDOW':
-                    region.tag_redraw()
-                    redraw_count += 1
-
-    logger.info(f"  Tagged {redraw_count} regions for redraw")
-
-    # CRITICAL: Force context update so poll() gets called
-    bpy.context.view_layer.update()
-    logger.info("  Forced context update")
-
-    # SUPER CRITICAL: Force Blender to re-evaluate ALL gizmo groups
-    # by triggering a workspace update
-    try:
-        # Method 1: Update workspace
-        if hasattr(context, 'workspace'):
-            context.workspace.update_tag()
-            logger.info("  Tagged workspace for update")
-
-        # Method 2: Force area update
-        for area in context.screen.areas:
-            if area.type == 'VIEW_3D':
-                area.tag_redraw()
-                # Force gizmo system refresh by toggling a setting
-                for space in area.spaces:
-                    if space.type == 'VIEW_3D':
-                        # Toggle show_gizmo to force refresh
-                        old_state = space.show_gizmo
-                        space.show_gizmo = False
-                        space.show_gizmo = True
-                        space.show_gizmo = old_state
-                        logger.info("  Toggled show_gizmo to force gizmo refresh")
-
-    except Exception as e:
-        logger.warning(f"  Could not force workspace update: {e}")
+    logger.info(f"  Tagged {redraw_count} viewports for redraw (refresh will happen at safe time)")
+    print(f"  ✓ Tagged {redraw_count} viewports for refresh")
 
 
 def is_gizmo_group_active() -> bool:

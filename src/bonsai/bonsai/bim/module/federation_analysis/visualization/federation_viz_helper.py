@@ -104,7 +104,7 @@ def create_procedural_shape_from_bbox(
     Returns:
         Blender object with procedural shape
     """
-    from ..federation import semantic_utils
+    from bonsai.bim.module.federation import semantic_utils
     from . import shape_templates
 
     min_x, min_y, min_z, max_x, max_y, max_z = bbox

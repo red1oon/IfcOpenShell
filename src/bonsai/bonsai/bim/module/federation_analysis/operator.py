@@ -101,16 +101,14 @@ class BIM_OT_clash_by_discipline(bpy.types.Operator):
         candidates = []
 
         try:
-            # Connect to database and load spatial index
-            from bonsai.bim.module.federation.spatial_index import FederationIndex
+            # Import clash detector
+            from .clash.detector import detect_clashes_from_database
 
-            logger.info("Building spatial index from database...")
-            start_time = __import__('time').time()
-            index = FederationIndex(db_path)
-            index.build()
-            build_time = __import__('time').time() - start_time
-            logger.info(f"✓ Spatial index built in {build_time:.2f}s")
-            logger.info(f"  Total elements indexed: {index.stats.get('total_elements', 0)}")
+            logger.info("Starting database clash detection...")
+            logger.info(f"  Database: {db_path}")
+            logger.info(f"  Tolerance: {tolerance}mm")
+            logger.info(f"  Disciplines A: {disciplines_a}")
+            logger.info(f"  Disciplines B: {disciplines_b}")
 
             # Run clash detection for all discipline combinations
             for disc_a in disciplines_a:
@@ -122,8 +120,21 @@ class BIM_OT_clash_by_discipline(bpy.types.Operator):
                     logger.info(f"\nDetecting clashes: {disc_a} vs {disc_b}...")
                     start_time = __import__('time').time()
 
-                    # Query database for clash candidates
-                    clashes = index.find_clashes(disc_a, disc_b, tolerance=tolerance)
+                    # Query database for clash candidates using detector
+                    # Filter to only these two disciplines
+                    disc_filter = [disc_a, disc_b]
+                    all_clashes = detect_clashes_from_database(
+                        db_path,
+                        tolerance_mm=tolerance,
+                        disciplines=disc_filter
+                    )
+
+                    # Filter to only clashes between disc_a and disc_b
+                    clashes = [
+                        c for c in all_clashes
+                        if (c['elem_a_discipline'] == disc_a and c['elem_b_discipline'] == disc_b) or
+                           (c['elem_a_discipline'] == disc_b and c['elem_b_discipline'] == disc_a)
+                    ]
 
                     query_time = __import__('time').time() - start_time
                     logger.info(f"  Found {len(clashes)} clashes in {query_time:.2f}s")
@@ -131,16 +142,17 @@ class BIM_OT_clash_by_discipline(bpy.types.Operator):
                     # Format candidates for UI
                     for clash in clashes:
                         candidates.append({
-                            'guid_a': clash['guid_a'],
-                            'guid_b': clash['guid_b'],
-                            'name_a': clash.get('name_a', 'Unknown'),
-                            'name_b': clash.get('name_b', 'Unknown'),
-                            'ifc_class_a': clash.get('ifc_class_a', 'Unknown'),
-                            'ifc_class_b': clash.get('ifc_class_b', 'Unknown'),
-                            'discipline_a': disc_a,
-                            'discipline_b': disc_b,
-                            'bbox_a': clash.get('bbox_a'),
-                            'bbox_b': clash.get('bbox_b')
+                            'guid_a': clash['elem_a_guid'],
+                            'guid_b': clash['elem_b_guid'],
+                            'name_a': clash['elem_a_guid'][:8],  # Use GUID prefix as name
+                            'name_b': clash['elem_b_guid'][:8],
+                            'ifc_class_a': clash['elem_a_ifc_class'],
+                            'ifc_class_b': clash['elem_b_ifc_class'],
+                            'discipline_a': clash['elem_a_discipline'],
+                            'discipline_b': clash['elem_b_discipline'],
+                            'distance': abs(clash.get('clearance', 0)),  # Use clearance as distance (mm)
+                            'bbox_a': None,  # Will be queried from DB when needed by gizmos
+                            'bbox_b': None
                         })
 
             logger.info("\n" + "="*70)
