@@ -15,6 +15,40 @@ import sqlite3
 import math
 
 
+def get_model_offset() -> Vector:
+    """
+    Get model offset to convert IFC coords to Blender coords.
+
+    Uses cached offset from MEP routing if available, otherwise falls back
+    to Bonsai georeference properties.
+
+    Returns:
+        Vector with (x, y, z) offset in meters
+    """
+    # Try MEP cached offset first (most reliable)
+    cached = bpy.context.scene.get("MEP_cached_offset")
+    if cached:
+        return Vector(cached)
+
+    # Fallback to georeference properties
+    try:
+        props = bpy.context.scene.BIMGeoreferenceProperties
+        offset = Vector((
+            props.model_offset_x or 0.0,
+            props.model_offset_y or 0.0,
+            props.model_offset_z or 0.0
+        ))
+        # Check if offset is actually set (not all zeros)
+        if offset.length > 0.01:
+            return offset
+    except Exception:
+        pass
+
+    # No offset available - assume zero (objects at IFC world coords)
+    print("⚠️  Warning: No coordinate offset available - using IFC world coordinates")
+    return Vector((0, 0, 0))
+
+
 def find_or_create_element_from_database(
     guid: str,
     db_path: str,
@@ -98,7 +132,7 @@ def create_procedural_shape_from_bbox(
         guid: Element GUID
         ifc_class: IFC class name
         discipline: Discipline name
-        bbox: (min_x, min_y, min_z, max_x, max_y, max_z) in mm
+        bbox: (min_x, min_y, min_z, max_x, max_y, max_z) in meters (IFC world coords)
         collection: Collection to add object to
 
     Returns:
@@ -109,16 +143,25 @@ def create_procedural_shape_from_bbox(
 
     min_x, min_y, min_z, max_x, max_y, max_z = bbox
 
-    # Database already stores meters (NOT millimeters!)
-    # NO conversion needed - use coordinates as-is
+    # Database stores meters in IFC world coordinates (GPS space)
+    # We need to apply coordinate offset to convert to Blender scene space
 
-    # Calculate dimensions and center
+    # Calculate dimensions (these don't change with offset)
     width = max_x - min_x
     depth = max_y - min_y
     height = max_z - min_z
-    center_x = (min_x + max_x) / 2.0
-    center_y = (min_y + max_y) / 2.0
-    center_z = (min_z + max_z) / 2.0
+
+    # Calculate center in IFC world coordinates
+    ifc_center_x = (min_x + max_x) / 2.0
+    ifc_center_y = (min_y + max_y) / 2.0
+    ifc_center_z = (min_z + max_z) / 2.0
+
+    # CRITICAL: Apply coordinate offset to convert IFC coords to Blender coords
+    # This matches the gizmo coordinate conversion pattern
+    offset = get_model_offset()
+    center_x = ifc_center_x - offset.x
+    center_y = ifc_center_y - offset.y
+    center_z = ifc_center_z - offset.z
 
     # CRITICAL: Validate bbox dimensions to prevent degenerate geometry
     min_dim = 0.01  # 1cm minimum

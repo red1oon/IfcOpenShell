@@ -297,6 +297,7 @@ class BIM_OT_select_discipline_clash(bpy.types.Operator):
             context.view_layer.objects.active = obj_b
 
         # Zoom to selected (safely handle gizmo context)
+        zoom_success = False
         try:
             for area in context.screen.areas:
                 if area.type == 'VIEW_3D':
@@ -306,13 +307,20 @@ class BIM_OT_select_discipline_clash(bpy.types.Operator):
                                 override = {'area': area, 'region': region}
                                 with context.temp_override(**override):
                                     bpy.ops.view3d.view_selected()
+                                zoom_success = True
+                                logger.info("✓ Zoom to clash successful")
                                 break
-                            except (TypeError, AttributeError, RuntimeError):
+                            except (TypeError, AttributeError, RuntimeError) as e:
                                 # Context doesn't support override (gizmo modal state)
-                                # Objects are selected, user can manually zoom if needed
-                                break
+                                logger.debug(f"  Zoom failed for area (trying next): {e}")
+                                continue
+                    if zoom_success:
+                        break
         except Exception as e:
             logger.warning(f"Zoom operation failed: {e}")
+
+        if not zoom_success:
+            logger.info("⚠ Zoom failed - objects selected, user can manually zoom (F key)")
 
         self.report({'INFO'}, f"Selected clash: {candidate.name_a} vs {candidate.name_b}")
         return {'FINISHED'}
