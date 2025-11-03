@@ -691,8 +691,9 @@ class ClashMarkerGizmoGroup(GizmoGroup):
 
             # Enable interaction
             gz.use_draw_modal = True
-            gz.use_event_handle_all = True
+            gz.use_event_handle_all = False  # Only handle click events, not all mouse movement
             gz.use_select_background = True  # Allow selection even if behind other objects
+            gz.use_grab_cursor = False  # Don't grab cursor on interaction
 
             logger.info(f"  Created gizmo {len(self.gizmos)}: clash_index={i}, status={status}, use_draw_modal={gz.use_draw_modal}")
             print(f"    Gizmo {len(self.gizmos)}: clash_index={i}, status={status}, interactive={gz.use_draw_modal}")

@@ -241,13 +241,26 @@ class BIM_OT_select_discipline_clash(bpy.types.Operator):
 
         from .visualization import federation_viz_helper
 
-        # Find or create elements from database
-        print(f"Finding clash elements from database (no IFC needed)...")
-        obj_a, obj_b = federation_viz_helper.get_clash_elements_for_visualization(
-            candidate.guid_a,
-            candidate.guid_b,
-            db_path
-        )
+        # CRITICAL: Prevent re-entrancy crash on double-click
+        # Check if we're already processing this operation
+        if hasattr(context.scene, '_clash_viz_processing'):
+            print("⚠️  Already processing clash visualization - ignoring duplicate call")
+            return {'CANCELLED'}
+
+        try:
+            context.scene['_clash_viz_processing'] = True
+
+            # Find or create elements from database
+            print(f"Finding clash elements from database (no IFC needed)...")
+            obj_a, obj_b = federation_viz_helper.get_clash_elements_for_visualization(
+                candidate.guid_a,
+                candidate.guid_b,
+                db_path
+            )
+        finally:
+            # Always clear the lock
+            if '_clash_viz_processing' in context.scene:
+                del context.scene['_clash_viz_processing']
 
         # Report status
         if not obj_a:
