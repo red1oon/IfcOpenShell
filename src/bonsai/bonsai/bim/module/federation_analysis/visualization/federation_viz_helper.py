@@ -12,6 +12,7 @@ import bmesh
 from mathutils import Vector, Euler
 from typing import Optional, Tuple
 import sqlite3
+import math
 
 
 def find_or_create_element_from_database(
@@ -119,34 +120,62 @@ def create_procedural_shape_from_bbox(
     center_y = (min_y + max_y) / 2.0
     center_z = (min_z + max_z) / 2.0
 
-    # Infer semantic type
-    semantic_type = semantic_utils.get_semantic_type(ifc_class)
+    # CRITICAL: Validate bbox dimensions to prevent degenerate geometry
+    min_dim = 0.01  # 1cm minimum
+    if width < min_dim or depth < min_dim or height < min_dim:
+        print(f"⚠️  Warning: Small bbox for {guid}: {width:.3f}x{depth:.3f}x{height:.3f}")
+        width = max(width, min_dim)
+        depth = max(depth, min_dim)
+        height = max(height, min_dim)
 
-    # Create appropriate shape
-    bm = None
+    # Validate center coordinates (catch NaN/Inf)
+    if not (math.isfinite(center_x) and math.isfinite(center_y) and math.isfinite(center_z)):
+        print(f"✗ ERROR: Invalid center coords for {guid}: ({center_x}, {center_y}, {center_z})")
+        return None
 
-    if semantic_type in ['pipe', 'conduit']:
-        # Cylinder
-        radius = max(width, depth) / 2.0
-        bm = shape_templates.create_cylinder_basic(
-            radius=max(radius, 0.01),
-            length=max(height, 0.01),
-            segments=8
-        )
-    else:
-        # Box (walls, ducts, beams, equipment, etc.)
-        bm = shape_templates.create_box_basic(
-            width=max(width, 0.01),
-            height=max(depth, 0.01),
-            length=max(height, 0.01)
-        )
+    try:
+        # Infer semantic type
+        semantic_type = semantic_utils.get_semantic_type(ifc_class)
 
-    # Convert BMesh to mesh
-    mesh = shape_templates.bmesh_to_mesh(bm, name=f"Viz_{guid}")
+        # Create appropriate shape
+        bm = None
 
-    # Create object
-    obj = bpy.data.objects.new(guid, mesh)
-    obj.location = Vector((center_x, center_y, center_z))
+        if semantic_type in ['pipe', 'conduit']:
+            # Cylinder
+            radius = max(width, depth) / 2.0
+            bm = shape_templates.create_cylinder_basic(
+                radius=max(radius, min_dim),
+                length=max(height, min_dim),
+                segments=8
+            )
+        else:
+            # Box (walls, ducts, beams, equipment, etc.)
+            bm = shape_templates.create_box_basic(
+                width=max(width, min_dim),
+                height=max(depth, min_dim),
+                length=max(height, min_dim)
+            )
+
+        # Convert BMesh to mesh
+        if bm is None:
+            print(f"✗ ERROR: Failed to create bmesh for {guid}")
+            return None
+
+        mesh = shape_templates.bmesh_to_mesh(bm, name=f"Viz_{guid}")
+
+        if mesh is None:
+            print(f"✗ ERROR: Failed to convert bmesh to mesh for {guid}")
+            return None
+
+        # Create object
+        obj = bpy.data.objects.new(guid, mesh)
+        obj.location = Vector((center_x, center_y, center_z))
+
+    except Exception as e:
+        print(f"✗ ERROR: Failed to create object for {guid}: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
     # Store metadata
     obj["federation_guid"] = guid

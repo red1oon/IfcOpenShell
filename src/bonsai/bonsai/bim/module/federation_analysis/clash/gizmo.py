@@ -455,48 +455,47 @@ class ClashMarkerGizmo(Gizmo):
     def invoke(self, context, event):
         """Handle user interaction with gizmo"""
         logger.info(f"🖱️  GIZMO INVOKE: event.type={event.type}, event.value={event.value}, clash_index={self.clash_index}")
-        print(f"\n🖱️  GIZMO CLICKED!")
-        print(f"   Event type: {event.type}")
-        print(f"   Event value: {event.value}")
-        print(f"   Clash index: {self.clash_index}")
-        print(f"   GUID A: {self.guid_a}")
-        print(f"   GUID B: {self.guid_b}")
-        print(f"   Status: {self.status}")
 
-        # Check for Ctrl+Click to show menu
-        if event.type == 'LEFTMOUSE' and event.value == 'PRESS' and event.ctrl:
-            # Ctrl+Left-click: Show context menu
-            print(f"   ➡️  Ctrl+Click detected - opening context menu")
-            logger.info(f"  Ctrl+Click on clash {self.clash_index} - opening menu")
+        # Double-click detection: Check time between clicks
+        import time
+        current_time = time.time()
 
-            # Store clash data in scene for menu access
-            context.scene["_temp_clash_index"] = self.clash_index
-            context.scene["_temp_clash_guid_a"] = self.guid_a
-            context.scene["_temp_clash_guid_b"] = self.guid_b
-            context.scene["_temp_clash_status"] = self.status
+        # Store last click time per gizmo
+        last_click_key = f"_last_click_{self.clash_index}"
+        last_click_time = context.scene.get(last_click_key, 0.0)
+        time_since_last = current_time - last_click_time
 
-            print(f"   ➡️  Stored clash data in scene, calling menu...")
+        # Double-click threshold: 0.3 seconds
+        is_double_click = time_since_last < 0.3
 
-            # Show context menu
-            try:
-                bpy.ops.wm.call_menu(name=BIM_MT_clash_gizmo_context_menu.bl_idname)
-                print(f"   ✓ Context menu called successfully")
-            except Exception as e:
-                print(f"   ✗ ERROR calling context menu: {e}")
-                logger.error(f"  Failed to call context menu: {e}")
+        # Update last click time
+        context.scene[last_click_key] = current_time
 
-            return {'RUNNING_MODAL'}
+        if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
+            if is_double_click:
+                # Double-click: Show context menu
+                logger.info(f"  Double-click on clash {self.clash_index} - opening menu")
 
-        elif event.type == 'LEFTMOUSE' and event.value == 'PRESS':
-            # Plain left-click: Jump to clash
-            print(f"   ➡️  Left-click detected - jumping to clash")
-            logger.info(f"  Left-click on clash {self.clash_index} - jumping")
-            self.jump_to_clash(context)
-            return {'RUNNING_MODAL'}
+                # Store clash data in scene for menu access
+                context.scene["_temp_clash_index"] = self.clash_index
+                context.scene["_temp_clash_guid_a"] = self.guid_a
+                context.scene["_temp_clash_guid_b"] = self.guid_b
+                context.scene["_temp_clash_status"] = self.status
 
-        else:
-            print(f"   ⚠️  Event not handled: {event.type} {event.value}")
-            return {'PASS_THROUGH'}
+                # Show context menu
+                try:
+                    bpy.ops.wm.call_menu(name=BIM_MT_clash_gizmo_context_menu.bl_idname)
+                except Exception as e:
+                    logger.error(f"  Failed to call context menu: {e}")
+
+                return {'RUNNING_MODAL'}
+            else:
+                # Single click: Jump to clash
+                logger.info(f"  Single-click on clash {self.clash_index} - jumping")
+                self.jump_to_clash(context)
+                return {'RUNNING_MODAL'}
+
+        return {'PASS_THROUGH'}
 
     def jump_to_clash(self, context):
         """Jump viewport to this clash (reuse existing operator)"""
