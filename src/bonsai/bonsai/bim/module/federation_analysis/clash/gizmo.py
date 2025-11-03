@@ -463,28 +463,22 @@ class ClashMarkerGizmo(Gizmo):
             return
 
     def invoke(self, context, event):
-        """Handle user interaction with gizmo"""
+        """Handle user interaction with gizmo
+
+        NOTE: Double-click doesn't work reliably with gizmos because:
+        - First click triggers jump_to_clash() which changes viewport
+        - Viewport change can cause gizmo to lose focus
+        - Second click might not reach the same gizmo
+
+        Alternative: Use Ctrl+Click for context menu (more reliable)
+        """
         logger.info(f"🖱️  GIZMO INVOKE: event.type={event.type}, event.value={event.value}, clash_index={self.clash_index}")
 
-        # Double-click detection: Check time between clicks
-        import time
-        current_time = time.time()
-
-        # Store last click time per gizmo
-        last_click_key = f"_last_click_{self.clash_index}"
-        last_click_time = context.scene.get(last_click_key, 0.0)
-        time_since_last = current_time - last_click_time
-
-        # Double-click threshold: 0.3 seconds
-        is_double_click = time_since_last < 0.3
-
-        # Update last click time
-        context.scene[last_click_key] = current_time
-
         if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
-            if is_double_click:
-                # Double-click: Show context menu
-                logger.info(f"  Double-click on clash {self.clash_index} - opening menu")
+            # Check for modifier key (Ctrl+Click) for context menu
+            if event.ctrl:
+                # Ctrl+Click: Show context menu
+                logger.info(f"  Ctrl+Click on clash {self.clash_index} - opening menu")
 
                 # Store clash data in scene for menu access
                 context.scene["_temp_clash_index"] = self.clash_index
@@ -495,12 +489,13 @@ class ClashMarkerGizmo(Gizmo):
                 # Show context menu
                 try:
                     bpy.ops.wm.call_menu(name=BIM_MT_clash_gizmo_context_menu.bl_idname)
+                    logger.info(f"  ✓ Context menu opened successfully")
                 except Exception as e:
-                    logger.error(f"  Failed to call context menu: {e}")
+                    logger.error(f"  ✗ Failed to call context menu: {e}")
 
                 return {'RUNNING_MODAL'}
             else:
-                # Single click: Jump to clash
+                # Normal click: Jump to clash
                 logger.info(f"  Single-click on clash {self.clash_index} - jumping")
                 self.jump_to_clash(context)
                 return {'RUNNING_MODAL'}
