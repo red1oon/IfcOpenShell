@@ -495,6 +495,7 @@ class BIM_OT_clear_discipline_clash_visualization(bpy.types.Operator):
     def execute(self, context):
         from bonsai.bim.module.federation_analysis.clash import visualization
         from bonsai.bim.module.federation_analysis.clash import gizmo
+        from bonsai.bim.module.federation_analysis.visualization import federation_viz_helper
 
         # Clear GPU overlays
         visualization.disable_visualization()
@@ -502,10 +503,8 @@ class BIM_OT_clear_discipline_clash_visualization(bpy.types.Operator):
         # Clear gizmo visualization
         gizmo.disable_clash_gizmos(context)
 
-        # Clear old wireframe objects (if any exist)
-        for obj in bpy.data.objects:
-            if obj.name.startswith("Clash_"):
-                bpy.data.objects.remove(obj, do_unlink=True)
+        # Clear temp visualization objects AND the Clash_Visualization collection
+        federation_viz_helper.cleanup_temp_visualization_objects()
 
         self.report({'INFO'}, "Cleared all clash visualizations")
         return {'FINISHED'}

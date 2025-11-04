@@ -275,11 +275,14 @@ def cleanup_temp_visualization_objects():
     if viz_coll_name in bpy.data.collections:
         viz_coll = bpy.data.collections[viz_coll_name]
 
-        # Remove all objects marked as temporary
+        # Remove all objects in the collection (regardless of property)
         for obj in list(viz_coll.objects):
-            if obj.get("federation_viz_temp"):
-                bpy.data.objects.remove(obj, do_unlink=True)
+            bpy.data.objects.remove(obj, do_unlink=True)
 
-        # Remove collection if empty
-        if len(viz_coll.objects) == 0:
-            bpy.data.collections.remove(viz_coll)
+        # Remove the collection itself
+        bpy.data.collections.remove(viz_coll)
+
+    # Also remove any stray objects with "Clash_" prefix not in collection
+    for obj in list(bpy.data.objects):
+        if obj.name.startswith("Clash_"):
+            bpy.data.objects.remove(obj, do_unlink=True)
