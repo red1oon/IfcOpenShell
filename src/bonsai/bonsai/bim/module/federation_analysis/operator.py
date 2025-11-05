@@ -1205,9 +1205,9 @@ class BIM_OT_preview_resolution(bpy.types.Operator):
             """, (group_id,))
 
             elem_row = cursor.fetchone()
-            conn.close()
 
             if not elem_row:
+                conn.close()
                 self.report({'ERROR'}, f"Element bbox not found for group {group_id}")
                 return {'CANCELLED'}
 
@@ -1219,6 +1219,36 @@ class BIM_OT_preview_resolution(bpy.types.Operator):
                 'maxX': max_x, 'maxY': max_y, 'maxZ': max_z
             }
 
+            # NEW: Query all clashing elements in this group
+            # Schema: clash_group_members (group_id, clash_id) → clash_status (clash_id, guid_a, guid_b)
+            cursor.execute("""
+                SELECT DISTINCT
+                    em.guid,
+                    em.discipline,
+                    rt.minX, rt.minY, rt.minZ,
+                    rt.maxX, rt.maxY, rt.maxZ
+                FROM clash_group_members cgm
+                JOIN clash_status cs ON cgm.clash_id = cs.clash_id
+                JOIN elements_meta em ON (cs.guid_a = em.guid OR cs.guid_b = em.guid)
+                JOIN elements_rtree rt ON em.id = rt.id
+                WHERE cgm.group_id = ?
+                  AND em.guid != (SELECT cascade_element_guid FROM clash_groups WHERE group_id = ?)
+            """, (group_id, group_id))
+
+            clashing_elements = []
+            for row in cursor.fetchall():
+                guid, disc, cx_min, cy_min, cz_min, cx_max, cy_max, cz_max = row
+                clashing_elements.append({
+                    'guid': guid,
+                    'discipline': disc,
+                    'bbox': {
+                        'minX': cx_min, 'minY': cy_min, 'minZ': cz_min,
+                        'maxX': cx_max, 'maxY': cy_max, 'maxZ': cz_max
+                    }
+                })
+
+            conn.close()
+
             # Get coordinate offset for GPS coordinates
             coord_offset = federation_viz_helper.get_model_offset()
             if coord_offset is None:
@@ -1228,13 +1258,25 @@ class BIM_OT_preview_resolution(bpy.types.Operator):
             # TODO: Calculate actual movement offset based on resolution type
             movement_offset = [0.0, 0.0, 2.0]  # Move 2m up as visual indicator
 
-            # Create preview visualization
+            # Debug logging
+            print(f"\n=== PREVIEW DEBUG ===")
+            print(f"Current bbox: minZ={bbox['minZ']:.2f}, maxZ={bbox['maxZ']:.2f}")
+            print(f"Movement offset: {movement_offset}")
+            print(f"Proposed bbox: minZ={bbox['minZ']+movement_offset[2]:.2f}, maxZ={bbox['maxZ']+movement_offset[2]:.2f}")
+            print(f"Coordinate offset: {coord_offset}")
+            print(f"Clashing elements: {len(clashing_elements)}")
+
+            # Create preview visualization with all affected elements
             preview_objects = visualization_3d.create_resolution_preview(
                 bbox=bbox,
                 offset=movement_offset,
                 clash_points=None,
-                coordinate_offset=coord_offset
+                coordinate_offset=coord_offset,
+                clashing_elements=clashing_elements  # NEW: Show all affected elements
             )
+
+            print(f"Preview objects created: {list(preview_objects.keys())}")
+            print("===================\n")
 
             if preview_objects:
                 # Zoom to preview - pass list of objects
@@ -1315,10 +1357,11 @@ class BIM_OT_apply_resolution(bpy.types.Operator):
             # Show feedback panel
             props.show_feedback_panel = True
 
-            self.report({'INFO'}, f"Applied {res_type} resolution. Please provide feedback when complete.")
+            # Clear preview but KEEP the green box to show resolved state
+            from .clash import visualization_3d
+            visualization_3d.clear_preview_objects(keep_resolved=True)
 
-            # Clear preview
-            bpy.ops.bim.clear_preview()
+            self.report({'INFO'}, f"✓ Applied {res_type}. Green box shows resolved position. Provide feedback when done.")
 
             return {'FINISHED'}
 

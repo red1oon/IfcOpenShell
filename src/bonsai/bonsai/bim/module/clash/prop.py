@@ -561,7 +561,7 @@ class BIMClashProperties(PropertyGroup):
             cursor = conn.cursor()
 
             cursor.execute("""
-                SELECT
+                SELECT DISTINCT
                     ro.option_id,
                     ro.group_id,
                     ro.option_type,
