@@ -29,6 +29,56 @@ class ResolutionDatabase:
         """
         self.db_path = db_path
 
+    def verify_schema(self) -> bool:
+        """
+        Verify that required database tables exist.
+
+        Returns:
+            True if schema is valid, False otherwise
+
+        Note:
+            Database schema should be initialized manually using:
+            sqlite3 database.db < Scripts/initialize_clash_database.sql
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        required_tables = [
+            'clash_status',
+            'clash_groups',
+            'clash_group_members',
+            'resolution_options',
+            'design_effort_estimates',
+            'discipline_rates'
+        ]
+
+        try:
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            existing_tables = {row[0] for row in cursor.fetchall()}
+
+            missing_tables = set(required_tables) - existing_tables
+
+            if missing_tables:
+                print(f"❌ Missing database tables: {', '.join(missing_tables)}")
+                print(f"   Please run: sqlite3 {self.db_path} < Scripts/initialize_clash_database.sql")
+                return False
+
+            # Verify clash_status has correct schema (clash_id, not id)
+            cursor.execute("PRAGMA table_info(clash_status)")
+            columns = {row[1] for row in cursor.fetchall()}
+
+            required_columns = {'clash_id', 'discipline_a', 'discipline_b'}
+            if not required_columns.issubset(columns):
+                print(f"❌ clash_status table has outdated schema")
+                print(f"   Missing columns: {required_columns - columns}")
+                print(f"   Please reinitialize: sqlite3 {self.db_path} < Scripts/initialize_clash_database.sql")
+                return False
+
+            return True
+
+        finally:
+            conn.close()
+
     def create_schema(self) -> None:
         """
         Create resolution system tables in clash database.

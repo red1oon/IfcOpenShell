@@ -66,12 +66,20 @@ classes = (
     gizmo.ClashMarkerGizmo,
     gizmo.ClashMarkerGizmoGroup,
 
+    # Clash Adjustment operators
+    operator.BIM_OT_analyze_clash_groups,
+    operator.BIM_OT_suggest_resolutions,
+    operator.BIM_OT_select_resolution_option,
+
     # UI Lists
     ui.BIM_UL_discipline_clashes,
+    # Note: BIM_UL_clash_groups and BIM_UL_resolution_options not used in POC
+    # POC reads directly from database, no collection properties needed
 
     # Panels
     ui.BIM_PT_federation_clash_detection,
     ui.BIM_PT_federation_lod_visualization,
+    ui.BIM_PT_clash_adjustment,
 )
 
 

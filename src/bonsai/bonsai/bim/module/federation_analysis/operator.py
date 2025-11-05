@@ -864,3 +864,314 @@ class BIM_OT_disable_full_geometry_visualization(bpy.types.Operator):
 
         self.report({'INFO'}, message)
         return {'FINISHED'}
+
+
+# ================================================================
+# CLASH ADJUSTMENT OPERATORS
+# ================================================================
+
+
+class BIM_OT_analyze_clash_groups(bpy.types.Operator):
+    """Analyze clashes and identify cascade groups (elements with 3+ clashes)"""
+    bl_idname = "bim.analyze_clash_groups"
+    bl_label = "Analyze Clash Groups"
+    bl_description = "Group clashes by common elements (cascade detection)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        from bonsai.bim.module.federation_analysis.clash import clash_grouping
+
+        props = tool.Clash.get_clash_props()
+
+        # Check if we have clash data
+        if not props.discipline_clash_loaded or not props.discipline_clash_candidates:
+            self.report({'ERROR'}, "No clash data available. Run clash detection first.")
+            return {'CANCELLED'}
+
+        # Get database path
+        fed_props = context.scene.BIMFederationProperties
+        db_path = fed_props.federation_database_path
+        if not db_path or not os.path.exists(db_path):
+            self.report({'ERROR'}, "Federation database not found")
+            return {'CANCELLED'}
+
+        try:
+            # Verify database schema exists (must be initialized manually)
+            from bonsai.bim.module.federation_analysis.clash import resolution_database
+            db_manager = resolution_database.ResolutionDatabase(db_path)
+
+            if not db_manager.verify_schema():
+                self.report({'ERROR'}, "Database schema not initialized. See console for instructions.")
+                return {'CANCELLED'}
+
+            # Open connection for data sync
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+
+            # Sync clashes from in-memory candidates to database
+            # Preserve existing status for clashes that already exist
+            new_count = 0
+            updated_count = 0
+
+            for clash in props.discipline_clash_candidates:
+                # Lookup disciplines from elements_meta
+                cursor.execute("SELECT discipline FROM elements_meta WHERE guid = ?", (clash.guid_a,))
+                row_a = cursor.fetchone()
+                discipline_a = row_a[0] if row_a else None
+
+                cursor.execute("SELECT discipline FROM elements_meta WHERE guid = ?", (clash.guid_b,))
+                row_b = cursor.fetchone()
+                discipline_b = row_b[0] if row_b else None
+
+                # Check if clash already exists
+                cursor.execute("""
+                    SELECT clash_id, status FROM clash_status
+                    WHERE guid_a = ? AND guid_b = ?
+                """, (clash.guid_a, clash.guid_b))
+                existing = cursor.fetchone()
+
+                if existing:
+                    # Update existing clash (preserve status, update other fields)
+                    cursor.execute("""
+                        UPDATE clash_status
+                        SET name_a = ?, name_b = ?,
+                            ifc_class_a = ?, ifc_class_b = ?,
+                            discipline_a = ?, discipline_b = ?,
+                            distance = ?
+                        WHERE clash_id = ?
+                    """, (
+                        clash.name_a, clash.name_b,
+                        clash.ifc_class_a, clash.ifc_class_b,
+                        discipline_a, discipline_b,
+                        clash.distance,
+                        existing[0]
+                    ))
+                    updated_count += 1
+
+                    # Sync status back to in-memory property
+                    clash.status = existing[1]
+                else:
+                    # Insert new clash
+                    cursor.execute("""
+                        INSERT INTO clash_status
+                        (guid_a, guid_b, name_a, name_b, ifc_class_a, ifc_class_b,
+                         discipline_a, discipline_b, status, distance)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        clash.guid_a, clash.guid_b,
+                        clash.name_a, clash.name_b,
+                        clash.ifc_class_a, clash.ifc_class_b,
+                        discipline_a, discipline_b,
+                        clash.status,
+                        clash.distance
+                    ))
+                    new_count += 1
+
+            conn.commit()
+            conn.close()
+
+            print(f"✓ Synced clash_status: {new_count} new, {updated_count} updated (status preserved)")
+
+            # Create grouping analyzer
+            analyzer = clash_grouping.ClashGroupAnalyzer(db_path)
+
+            # Analyze clash groups (find cascade patterns)
+            groups = analyzer.find_cascade_groups()
+
+            # Store results in database
+            analyzer.export_groups_to_database(groups)
+
+            # Get summary for console output
+            summary = analyzer.get_group_summary(groups)
+
+            # Set flag
+            props.clash_groups_analyzed = True
+
+            # Report results using summary
+            print(f"\n{'='*60}")
+            print(f"CLASH GROUPING ANALYSIS COMPLETE")
+            print(f"{'='*60}")
+            print(f"Total Groups Found: {summary['total_groups']}")
+            print(f"Clashes Grouped: {summary['total_grouped_clashes']}/{len(props.discipline_clash_candidates)} ({summary['grouping_efficiency']:.1f}%)")
+            print(f"\nGroup Details:")
+            for i, group in enumerate(groups, 1):
+                print(f"  Group {i}: {group.cascade_element_guid} ({group.cascade_element_class})")
+                print(f"    Discipline: {group.cascade_element_discipline}")
+                print(f"    Clashes: {group.total_clashes}, Severity: {group.severity}")
+                print(f"    Affected Disciplines: {', '.join(group.affected_disciplines)}")
+                print(f"    Status: {', '.join(f'{k}={v}' for k, v in group.status_summary.items())}")
+            print(f"{'='*60}\n")
+
+            self.report({'INFO'}, f"Found {len(groups)} cascade groups ({summary['grouping_efficiency']:.1f}% efficiency)")
+            return {'FINISHED'}
+
+        except Exception as e:
+            logger.exception("Clash grouping analysis failed")
+            self.report({'ERROR'}, f"Grouping failed: {str(e)}")
+            return {'CANCELLED'}
+
+
+class BIM_OT_suggest_resolutions(bpy.types.Operator):
+    """Generate resolution suggestions for all clash groups"""
+    bl_idname = "bim.suggest_resolutions"
+    bl_label = "Suggest Resolutions"
+    bl_description = "Generate ranked resolution options with cost/effort estimates"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        from bonsai.bim.module.federation_analysis.clash import resolution_engine
+
+        props = tool.Clash.get_clash_props()
+
+        # Check if grouping was done
+        if not props.clash_groups_analyzed:
+            self.report({'ERROR'}, "Run clash grouping analysis first")
+            return {'CANCELLED'}
+
+        # Get database path
+        fed_props = context.scene.BIMFederationProperties
+        db_path = fed_props.federation_database_path
+        if not db_path or not os.path.exists(db_path):
+            self.report({'ERROR'}, "Federation database not found")
+            return {'CANCELLED'}
+
+        try:
+            # Create resolution engine
+            engine = resolution_engine.ResolutionEngine(db_path)
+
+            # Get all group IDs from database
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, cascade_element_guid FROM clash_groups ORDER BY id")
+            group_rows = cursor.fetchall()
+            conn.close()
+
+            if not group_rows:
+                self.report({'WARNING'}, "No clash groups found. Run grouping analysis first.")
+                return {'CANCELLED'}
+
+            # Generate resolutions for all groups
+            all_resolutions = {}
+            for group_id, element_guid in group_rows:
+                options = engine.analyze_group(group_id)
+                if options:
+                    engine.save_options_to_database(group_id, options)
+                    all_resolutions[group_id] = options
+
+            engine.close()
+
+            # Set flag
+            props.resolutions_generated = True
+
+            # Report results
+            print(f"\n{'='*60}")
+            print(f"RESOLUTION SUGGESTIONS GENERATED")
+            print(f"{'='*60}")
+            print(f"Groups Analyzed: {len(all_resolutions)}")
+            print(f"\nResolution Options:")
+
+            for group_id, resolutions in all_resolutions.items():
+                print(f"\n  Group {group_id}:")
+                for i, res in enumerate(resolutions, 1):
+                    print(f"    Option {i}: {res.option_type}")
+                    print(f"      Design Effort: {res.total_design_hours:.1f}h (${res.total_design_cost:,.0f})")
+                    print(f"      Schedule: {res.calendar_days:.0f} days")
+                    print(f"      Risk: {res.risk_category} (score: {res.risk_score}/100)")
+                    print(f"      Resolves: {res.clashes_resolved} clashes")
+                    if i == 1:
+                        print(f"      ✓ RECOMMENDED")
+
+            print(f"{'='*60}\n")
+
+            total_options = sum(len(r) for r in all_resolutions.values())
+            self.report({'INFO'}, f"Generated {total_options} resolution options for {len(all_resolutions)} groups")
+            return {'FINISHED'}
+
+        except Exception as e:
+            logger.exception("Resolution generation failed")
+            self.report({'ERROR'}, f"Resolution generation failed: {str(e)}")
+            return {'CANCELLED'}
+
+
+class BIM_OT_select_resolution_option(bpy.types.Operator):
+    """View and select resolution options"""
+    bl_idname = "bim.select_resolution_option"
+    bl_label = "View Resolution Options"
+    bl_description = "Display resolution options for selection"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = tool.Clash.get_clash_props()
+
+        # Check if resolutions were generated
+        if not props.resolutions_generated:
+            self.report({'ERROR'}, "Generate resolution suggestions first")
+            return {'CANCELLED'}
+
+        # Get database path
+        fed_props = context.scene.BIMFederationProperties
+        db_path = fed_props.federation_database_path
+        if not db_path or not os.path.exists(db_path):
+            self.report({'ERROR'}, "Federation database not found")
+            return {'CANCELLED'}
+
+        try:
+            # Query resolution options from database
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT
+                    ro.id,
+                    ro.group_id,
+                    ro.resolution_type,
+                    ro.effort_hours,
+                    ro.cost,
+                    ro.schedule_days,
+                    ro.risk_level,
+                    ro.risk_score,
+                    cg.element_name,
+                    cg.clash_count
+                FROM resolution_options ro
+                JOIN clash_groups cg ON ro.group_id = cg.id
+                ORDER BY ro.group_id, ro.rank
+            """)
+
+            rows = cursor.fetchall()
+            conn.close()
+
+            if not rows:
+                self.report({'WARNING'}, "No resolution options found in database")
+                return {'CANCELLED'}
+
+            # Format and display results
+            print(f"\n{'='*70}")
+            print(f"RESOLUTION OPTIONS VIEWER")
+            print(f"{'='*70}")
+
+            current_group = None
+            for row in rows:
+                option_id, group_id, res_type, effort, cost, days, risk_level, risk_score, elem_name, clash_count = row
+
+                if group_id != current_group:
+                    current_group = group_id
+                    print(f"\n📦 GROUP {group_id}: {elem_name} ({clash_count} clashes)")
+                    print(f"{'─'*70}")
+
+                rank_indicator = "✓ RECOMMENDED" if rows.index(row) == 0 or (current_group and row[1] != rows[rows.index(row)-1][1]) else ""
+                print(f"  Option {option_id}: {res_type} {rank_indicator}")
+                print(f"    💰 Cost: ${cost:,.0f} ({effort:.1f} hours)")
+                print(f"    📅 Schedule: {days} days")
+                print(f"    ⚠️  Risk: {risk_level} (score: {risk_score}/100)")
+
+            print(f"{'='*70}\n")
+            print("💡 Tip: Use these options to inform your coordination decisions")
+            print("   Future: Click to apply resolution and update IFC model\n")
+
+            self.report({'INFO'}, f"Displaying {len(rows)} resolution options")
+            return {'FINISHED'}
+
+        except Exception as e:
+            logger.exception("Failed to view resolution options")
+            self.report({'ERROR'}, f"Failed to view options: {str(e)}")
+            return {'CANCELLED'}

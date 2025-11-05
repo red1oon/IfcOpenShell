@@ -1983,3 +1983,191 @@ class BIM_OT_disable_full_geometry_visualization(bpy.types.Operator):
 
         self.report({'INFO'}, message)
         return {'FINISHED'}
+
+# ============================================================================
+# INTELLIGENT CLASH GROUPING & RESOLUTION OPERATORS (POC)
+# ============================================================================
+
+class BIM_OT_analyze_clash_groups(bpy.types.Operator):
+    """Analyze clashes and group by cascade detection"""
+    bl_idname = "bim.analyze_clash_groups"
+    bl_label = "Analyze & Group Clashes"
+    bl_description = "Detect cascade clash patterns (elements with 3+ clashes)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        from ..federation_analysis.clash import clash_grouping
+        from pathlib import Path
+
+        props = tool.Clash.get_clash_props()
+        fed_props = context.scene.BIMFederationProperties
+
+        # Get database path
+        db_path = fed_props.federation_database_path
+        if not db_path:
+            self.report({'ERROR'}, "Please load Federation Database first")
+            return {'CANCELLED'}
+
+        db_path = Path(bpy.path.abspath(db_path))
+        if not db_path.exists():
+            self.report({'ERROR'}, f"Database not found: {db_path}")
+            return {'CANCELLED'}
+
+        # Check if clashes are loaded
+        if not props.discipline_clash_loaded or not props.discipline_clash_candidates:
+            self.report({'ERROR'}, "Run clash detection first")
+            return {'CANCELLED'}
+
+        # Initialize grouping analyzer
+        analyzer = clash_grouping.ClashGroupAnalyzer(str(db_path))
+
+        # Convert discipline clash candidates to format expected by analyzer
+        # (list of tuples: (clash_id, element1_guid, element2_guid))
+        clashes = []
+        for idx, candidate in enumerate(props.discipline_clash_candidates):
+            clashes.append((idx, candidate.guid_a, candidate.guid_b))
+
+        self.report({'INFO'}, f"Analyzing {len(clashes)} clashes for grouping...")
+
+        # Analyze and create groups
+        groups = analyzer.group_clashes(clashes, cascade_threshold=3)
+
+        # Clear existing groups
+        props.clash_groups.clear()
+
+        # Populate clash groups property collection
+        for group_data in groups:
+            group = props.clash_groups.add()
+            group.group_id = group_data['group_id']
+            group.element_guid = group_data['element_guid']
+            group.element_name = group_data['element_name']
+            group.ifc_class = group_data['ifc_class']
+            group.discipline = group_data['discipline']
+            group.clash_count = group_data['clash_count']
+            group.severity = group_data['severity']
+            group.member_clash_ids = ','.join(str(cid) for cid in group_data['member_clash_ids'])
+
+        props.clash_groups_loaded = True
+        props.active_clash_group_index = 0
+
+        self.report({'INFO'}, f"Found {len(groups)} clash groups")
+        return {'FINISHED'}
+
+
+class BIM_OT_suggest_resolutions(bpy.types.Operator):
+    """Generate resolution options for selected clash group"""
+    bl_idname = "bim.suggest_resolutions"
+    bl_label = "Suggest Resolutions"
+    bl_description = "Generate ranked resolution options with cost/effort estimates"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        from ..federation_analysis.clash import resolution_engine
+        from pathlib import Path
+
+        props = tool.Clash.get_clash_props()
+        fed_props = context.scene.BIMFederationProperties
+
+        # Get database path
+        db_path = fed_props.federation_database_path
+        if not db_path:
+            self.report({'ERROR'}, "Please load Federation Database first")
+            return {'CANCELLED'}
+
+        db_path = Path(bpy.path.abspath(db_path))
+        if not db_path.exists():
+            self.report({'ERROR'}, f"Database not found: {db_path}")
+            return {'CANCELLED'}
+
+        # Check if groups are loaded
+        if not props.clash_groups_loaded or not props.clash_groups:
+            self.report({'ERROR'}, "Run clash grouping first")
+            return {'CANCELLED'}
+
+        # Get active group
+        if props.active_clash_group_index < 0 or props.active_clash_group_index >= len(props.clash_groups):
+            self.report({'ERROR'}, "No clash group selected")
+            return {'CANCELLED'}
+
+        group = props.clash_groups[props.active_clash_group_index]
+
+        # Initialize resolution engine
+        engine = resolution_engine.ResolutionEngine(str(db_path))
+
+        self.report({'INFO'}, f"Generating resolutions for {group.element_name}...")
+
+        # Generate resolution options
+        options = engine.generate_resolution_options(
+            group_id=group.group_id,
+            element_guid=group.element_guid,
+            clash_count=group.clash_count,
+            discipline=group.discipline
+        )
+
+        # Clear existing options
+        props.resolution_options.clear()
+
+        # Populate resolution options property collection
+        for opt_data in options:
+            option = props.resolution_options.add()
+            option.option_id = opt_data['option_id']
+            option.description = opt_data['description']
+            option.total_hours = opt_data['total_hours']
+            option.total_cost = opt_data['total_cost']
+            option.risk_level = opt_data['risk_level']
+            option.clashes_resolved = opt_data['clashes_resolved']
+            option.schedule_days = opt_data['schedule_days']
+            option.recommended = opt_data.get('recommended', False)
+
+        props.active_resolution_option_index = 0
+
+        self.report({'INFO'}, f"Generated {len(options)} resolution options")
+        return {'FINISHED'}
+
+
+class BIM_OT_select_resolution_option(bpy.types.Operator):
+    """Select and track resolution option choice"""
+    bl_idname = "bim.select_resolution_option"
+    bl_label = "Select Resolution"
+    bl_description = "Choose this resolution option and track in database"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    option_index: bpy.props.IntProperty(name="Option Index", default=0)
+
+    def execute(self, context):
+        from ..federation_analysis.clash import resolution_engine
+        from pathlib import Path
+
+        props = tool.Clash.get_clash_props()
+        fed_props = context.scene.BIMFederationProperties
+
+        # Get database path
+        db_path = fed_props.federation_database_path
+        if not db_path:
+            self.report({'ERROR'}, "Please load Federation Database first")
+            return {'CANCELLED'}
+
+        db_path = Path(bpy.path.abspath(db_path))
+
+        # Get selected option
+        if self.option_index < 0 or self.option_index >= len(props.resolution_options):
+            self.report({'ERROR'}, "Invalid option selected")
+            return {'CANCELLED'}
+
+        option = props.resolution_options[self.option_index]
+        group = props.clash_groups[props.active_clash_group_index]
+
+        # Initialize engine and track selection
+        engine = resolution_engine.ResolutionEngine(str(db_path))
+
+        # Track user selection in database (for Phase 2 learning)
+        engine.track_user_selection(
+            group_id=group.group_id,
+            option_id=option.option_id,
+            selected_description=option.description,
+            estimated_hours=option.total_hours,
+            estimated_cost=option.total_cost
+        )
+
+        self.report({'INFO'}, f"Selected: {option.description} (${option.total_cost:.0f}, {option.total_hours:.1f} hrs)")
+        return {'FINISHED'}

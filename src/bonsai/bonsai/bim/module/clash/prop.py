@@ -193,6 +193,120 @@ class DisciplineClashCandidate(PropertyGroup):
         status: Literal["NEW", "ACTIVE", "REVIEWED", "RESOLVED"]
 
 
+class ClashGroup(PropertyGroup):
+    """Clash group from cascade detection (element with 3+ clashes)"""
+    group_id: IntProperty(
+        name="Group ID",
+        description="Unique identifier for this clash group"
+    )
+    element_guid: StringProperty(
+        name="Central Element GUID",
+        description="GUID of the element causing multiple clashes"
+    )
+    element_name: StringProperty(
+        name="Central Element Name",
+        description="Name of the central element"
+    )
+    ifc_class: StringProperty(
+        name="IFC Class",
+        description="IFC class of the central element"
+    )
+    discipline: StringProperty(
+        name="Discipline",
+        description="Discipline of the central element"
+    )
+    clash_count: IntProperty(
+        name="Clash Count",
+        description="Number of clashes this element is involved in",
+        default=0
+    )
+    severity: EnumProperty(
+        name="Severity",
+        description="Clash group severity based on count and disciplines",
+        items=[
+            ('LOW', 'Low', 'Low severity (3-5 clashes)'),
+            ('MEDIUM', 'Medium', 'Medium severity (6-10 clashes)'),
+            ('HIGH', 'High', 'High severity (11-20 clashes)'),
+            ('CRITICAL', 'Critical', 'Critical severity (20+ clashes)'),
+        ],
+        default='LOW'
+    )
+    member_clash_ids: StringProperty(
+        name="Member Clash IDs",
+        description="Comma-separated clash IDs that belong to this group",
+        default=""
+    )
+
+    if TYPE_CHECKING:
+        group_id: int
+        element_guid: str
+        element_name: str
+        ifc_class: str
+        discipline: str
+        clash_count: int
+        severity: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+        member_clash_ids: str
+
+
+class ResolutionOption(PropertyGroup):
+    """Single resolution option with cost and risk estimates"""
+    option_id: IntProperty(
+        name="Option ID",
+        description="Unique identifier for this resolution option"
+    )
+    description: StringProperty(
+        name="Description",
+        description="Human-readable description of the resolution approach"
+    )
+    total_hours: FloatProperty(
+        name="Total Design Effort (hours)",
+        description="Total estimated person-hours",
+        default=0.0
+    )
+    total_cost: FloatProperty(
+        name="Total Cost",
+        description="Total estimated cost in dollars",
+        default=0.0,
+        subtype='UNSIGNED'
+    )
+    risk_level: EnumProperty(
+        name="Risk Level",
+        description="Risk assessment for this resolution approach",
+        items=[
+            ('LOW', 'Low', 'Low risk - straightforward implementation'),
+            ('MEDIUM', 'Medium', 'Medium risk - some coordination needed'),
+            ('HIGH', 'High', 'High risk - complex coordination'),
+            ('CRITICAL', 'Critical', 'Critical risk - major schedule/budget impact'),
+        ],
+        default='LOW'
+    )
+    clashes_resolved: IntProperty(
+        name="Clashes Resolved",
+        description="Number of clashes this option will resolve",
+        default=0
+    )
+    schedule_days: FloatProperty(
+        name="Schedule Impact (days)",
+        description="Estimated schedule impact in working days",
+        default=0.0
+    )
+    recommended: BoolProperty(
+        name="Recommended",
+        description="Whether this is the recommended option",
+        default=False
+    )
+
+    if TYPE_CHECKING:
+        option_id: int
+        description: str
+        total_hours: float
+        total_cost: float
+        risk_level: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+        clashes_resolved: int
+        schedule_days: float
+        recommended: bool
+
+
 class BIMClashProperties(PropertyGroup):
     blender_clash_set_a: CollectionProperty(name="Blender Clash Set A", type=StrProperty)
     blender_clash_set_b: CollectionProperty(name="Blender Clash Set B", type=StrProperty)
@@ -331,6 +445,18 @@ class BIMClashProperties(PropertyGroup):
         default=False
     )
 
+    # Clash Adjustment workflow tracking
+    clash_groups_analyzed: BoolProperty(
+        name="Clash Groups Analyzed",
+        description="Whether clash grouping analysis has been performed",
+        default=False
+    )
+    resolutions_generated: BoolProperty(
+        name="Resolutions Generated",
+        description="Whether resolution suggestions have been generated",
+        default=False
+    )
+
     # Gizmo visualization control
     gizmo_visualization_enabled: BoolProperty(
         name="Gizmo Visualization Enabled",
@@ -378,3 +504,9 @@ class BIMClashProperties(PropertyGroup):
         description="Display LOD statistics in viewport (element count, memory, FPS)",
         default=True
     )
+
+    # ================================================================
+    # INTELLIGENT CLASH GROUPING & RESOLUTION (POC)
+    # ================================================================
+    # Note: Clash groups and resolution options are stored in database
+    # UI reads directly from database queries (no need for collection properties in POC)

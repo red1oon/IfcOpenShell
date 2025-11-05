@@ -369,3 +369,171 @@ class BIM_UL_discipline_clashes(UIList):
                     flt_flags[idx] &= ~self.bitflag_filter_item  # Hide this item
 
         return flt_flags, flt_neworder
+
+
+class BIM_PT_clash_adjustment(Panel):
+    """Panel for intelligent clash grouping and resolution suggestions"""
+    bl_label = "Intelligent Clash Adjustment"
+    bl_idname = "BIM_PT_clash_adjustment"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "scene"
+    bl_parent_id = "BIM_PT_tab_clash_detection"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context):
+        assert self.layout
+        layout = self.layout
+        props = tool.Clash.get_clash_props()
+
+        # Check if we have clashes loaded
+        if not props.discipline_clash_loaded or not props.discipline_clash_candidates:
+            info_box = layout.box()
+            info_box.label(text="⚠ Run clash detection first", icon='INFO')
+            info_box.label(text="  (Use 'Quick Clash by Discipline' above)")
+            return
+
+        # ================================================================
+        # CLASH GROUPING
+        # ================================================================
+        grouping_box = layout.box()
+        grouping_box.label(text="Step 1: Group Cascade Clashes", icon="GROUP")
+
+        # Info about grouping
+        info_col = grouping_box.column(align=True)
+        info_col.scale_y = 0.7
+        info_col.label(text="💡 Groups elements with 3+ clashes:")
+        info_col.label(text="  Example: 1 duct causing 11 clashes → 1 group")
+
+        # Analyze button
+        row = grouping_box.row()
+        row.scale_y = 1.5
+        row.operator("bim.analyze_clash_groups",
+                     text="Analyze Clash Groups",
+                     icon="AUTO")
+
+        # Show grouping results if available
+        if hasattr(props, 'clash_groups_analyzed') and props.clash_groups_analyzed:
+            # TODO: Add property to track number of groups found
+            # For now, show placeholder
+            result_box = layout.box()
+            result_box.label(text="Grouping Results:", icon="CHECKMARK")
+            result_box.label(text="  (Check Blender console for details)")
+
+            # ================================================================
+            # RESOLUTION SUGGESTIONS
+            # ================================================================
+            layout.separator()
+            resolution_box = layout.box()
+            resolution_box.label(text="Step 2: Get Resolution Suggestions", icon="OUTLINER_DATA_LIGHTPROBE")
+
+            # Info about resolutions
+            info_col = resolution_box.column(align=True)
+            info_col.scale_y = 0.7
+            info_col.label(text="💡 Generates ranked options with:")
+            info_col.label(text="  • Design effort estimates (hours)")
+            info_col.label(text="  • Cost breakdown by discipline")
+            info_col.label(text="  • Risk assessment")
+
+            # Suggest resolutions button
+            row = resolution_box.row()
+            row.scale_y = 1.5
+            row.operator("bim.suggest_resolutions",
+                         text="Suggest Resolutions for All Groups",
+                         icon="EXPERIMENTAL")
+
+            # Show resolution results if available
+            if hasattr(props, 'resolutions_generated') and props.resolutions_generated:
+                result_box = layout.box()
+                result_box.label(text="Resolution Options Available:", icon="CHECKMARK")
+                result_box.label(text="  (Check Blender console for ranked options)")
+
+                # Add button to view/select resolution options
+                row = result_box.row()
+                row.operator("bim.select_resolution_option",
+                             text="View Resolution Options",
+                             icon="PRESET")
+
+
+class BIM_UL_clash_groups(UIList):
+    """UIList for displaying clash groups"""
+
+    def draw_item(
+        self,
+        context,
+        layout: bpy.types.UILayout,
+        data,
+        item,
+        icon,
+        active_data,
+        active_propname,
+        index,
+        fit_flag,
+    ) -> None:
+        if item:
+            row = layout.row(align=True)
+
+            # Group number
+            row.label(text=f"Group {index + 1}", icon="GROUP")
+
+            # Severity indicator
+            severity_icons = {
+                'CRITICAL': 'ERROR',
+                'HIGH': 'ERROR',
+                'MEDIUM': 'INFO',
+                'LOW': 'CHECKMARK'
+            }
+            severity = getattr(item, 'severity', 'MEDIUM')
+            row.label(text=severity, icon=severity_icons.get(severity, 'INFO'))
+
+            # Clash count
+            clash_count = getattr(item, 'clash_count', 0)
+            row.label(text=f"{clash_count} clashes")
+        else:
+            layout.label(text="", translate=False)
+
+
+class BIM_UL_resolution_options(UIList):
+    """UIList for displaying resolution options"""
+
+    def draw_item(
+        self,
+        context,
+        layout: bpy.types.UILayout,
+        data,
+        item,
+        icon,
+        active_data,
+        active_propname,
+        index,
+        fit_flag,
+    ) -> None:
+        if item:
+            row = layout.row(align=True)
+
+            # Option number (recommended first)
+            if index == 0:
+                row.label(text=f"Option {index + 1} ✓", icon="CHECKMARK")
+            else:
+                row.label(text=f"Option {index + 1}")
+
+            # Resolution type
+            resolution_type = getattr(item, 'resolution_type', 'Unknown')
+            row.label(text=resolution_type)
+
+            # Cost and effort
+            effort_hours = getattr(item, 'effort_hours', 0.0)
+            cost = getattr(item, 'cost', 0.0)
+            row.label(text=f"{effort_hours:.1f}h / ${cost:,.0f}")
+
+            # Risk level
+            risk_icons = {
+                'CRITICAL': 'ERROR',
+                'HIGH': 'ERROR',
+                'MEDIUM': 'INFO',
+                'LOW': 'CHECKMARK'
+            }
+            risk = getattr(item, 'risk_level', 'MEDIUM')
+            row.label(text=risk, icon=risk_icons.get(risk, 'INFO'))
+        else:
+            layout.label(text="", translate=False)
