@@ -71,6 +71,13 @@ classes = (
     operator.BIM_OT_suggest_resolutions,
     operator.BIM_OT_select_resolution_option,
 
+    # Phase 1.5 + Phase 2 operators
+    operator.BIM_OT_preview_resolution,
+    operator.BIM_OT_apply_resolution,
+    operator.BIM_OT_submit_resolution_feedback,
+    operator.BIM_OT_change_preset,
+    operator.BIM_OT_clear_preview,
+
     # UI Lists
     ui.BIM_UL_discipline_clashes,
     # Note: BIM_UL_clash_groups and BIM_UL_resolution_options not used in POC

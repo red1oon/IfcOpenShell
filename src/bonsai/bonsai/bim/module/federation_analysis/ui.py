@@ -394,6 +394,30 @@ class BIM_PT_clash_adjustment(Panel):
             return
 
         # ================================================================
+        # PHASE 1.5: CONFIGURATION SECTION
+        # ================================================================
+        config_box = layout.box()
+        config_box.label(text="Configuration", icon="SETTINGS")
+
+        # Active preset display
+        row = config_box.row(align=True)
+        row.label(text=f"Preset: {props.active_preset_name}", icon="PRESET")
+
+        # Preset selection buttons (example presets)
+        row = config_box.row(align=True)
+        op = row.operator("bim.change_preset", text="US Market")
+        op.preset_name = "US Market"
+        op = row.operator("bim.change_preset", text="Singapore")
+        op.preset_name = "Singapore"
+        op = row.operator("bim.change_preset", text="EU Standard")
+        op.preset_name = "EU Standard"
+
+        # Show learned estimates toggle
+        config_box.prop(props, "show_learned_estimates", text="Use Learned Estimates", toggle=True)
+
+        layout.separator()
+
+        # ================================================================
         # CLASH GROUPING
         # ================================================================
         grouping_box = layout.box()
@@ -414,8 +438,6 @@ class BIM_PT_clash_adjustment(Panel):
 
         # Show grouping results if available
         if hasattr(props, 'clash_groups_analyzed') and props.clash_groups_analyzed:
-            # TODO: Add property to track number of groups found
-            # For now, show placeholder
             result_box = layout.box()
             result_box.label(text="Grouping Results:", icon="CHECKMARK")
             result_box.label(text="  (Check Blender console for details)")
@@ -446,13 +468,84 @@ class BIM_PT_clash_adjustment(Panel):
             if hasattr(props, 'resolutions_generated') and props.resolutions_generated:
                 result_box = layout.box()
                 result_box.label(text="Resolution Options Available:", icon="CHECKMARK")
-                result_box.label(text="  (Check Blender console for ranked options)")
 
-                # Add button to view/select resolution options
+                # View resolution options button
                 row = result_box.row()
                 row.operator("bim.select_resolution_option",
                              text="View Resolution Options",
                              icon="PRESET")
+
+                layout.separator()
+
+                # ================================================================
+                # STEP 3: PREVIEW & APPLY RESOLUTION
+                # ================================================================
+                action_box = layout.box()
+                action_box.label(text="Step 3: Preview & Apply Resolution", icon="PLAY")
+
+                # Dropdown selector for resolution options
+                row = action_box.row()
+                row.prop(props, "selected_resolution_dropdown", text="Select Option")
+
+                # Show details if selected
+                if props.selected_resolution_option_id and props.selected_resolution_option_id != "NONE":
+                    detail_col = action_box.column(align=True)
+                    detail_col.scale_y = 0.7
+                    detail_col.label(text=f"✓ Selected: {props.selected_resolution_option_id[:8]}...", icon="CHECKMARK")
+
+                # Action buttons
+                row = action_box.row(align=True)
+                row.scale_y = 1.3
+                row.enabled = bool(props.selected_resolution_option_id)
+
+                # Preview button
+                row.operator("bim.preview_resolution",
+                            text="Preview 3D",
+                            icon="HIDE_OFF")
+
+                # Apply button
+                row.operator("bim.apply_resolution",
+                            text="Apply",
+                            icon="CHECKMARK")
+
+                # Clear preview button
+                row = action_box.row()
+                row.scale_y = 1.0
+                row.operator("bim.clear_preview",
+                            text="Clear Preview",
+                            icon="X")
+
+                # ================================================================
+                # PHASE 2: FEEDBACK PANEL
+                # ================================================================
+                if props.show_feedback_panel:
+                    layout.separator()
+                    feedback_box = layout.box()
+                    feedback_box.label(text="Resolution Feedback", icon="COMMUNITY")
+
+                    info_col = feedback_box.column(align=True)
+                    info_col.scale_y = 0.7
+                    info_col.label(text="💡 Help improve future estimates:")
+                    info_col.label(text="  Provide actual time spent and rating")
+
+                    # Rating (stars)
+                    row = feedback_box.row()
+                    row.label(text="Rating:")
+                    row.prop(props, "resolution_rating", text="", slider=False)
+                    row.label(text="⭐")
+
+                    # Actual hours
+                    feedback_box.prop(props, "actual_hours", text="Actual Hours Spent")
+
+                    # Variance notes (optional)
+                    feedback_box.prop(props, "variance_notes", text="Notes (optional)")
+
+                    # Submit feedback button
+                    row = feedback_box.row()
+                    row.scale_y = 1.5
+                    row.operator("bim.submit_resolution_feedback",
+                                text="Submit Feedback",
+                                icon="EXPORT")
 
 
 class BIM_UL_clash_groups(UIList):

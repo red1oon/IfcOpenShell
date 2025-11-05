@@ -1036,55 +1036,21 @@ class BIM_OT_suggest_resolutions(bpy.types.Operator):
             return {'CANCELLED'}
 
         try:
-            # Create resolution engine
-            engine = resolution_engine.ResolutionEngine(db_path)
+            # Use convenience function to analyze all groups
+            all_resolutions = resolution_engine.analyze_all_groups(db_path)
 
-            # Get all group IDs from database
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, cascade_element_guid FROM clash_groups ORDER BY id")
-            group_rows = cursor.fetchall()
-            conn.close()
-
-            if not group_rows:
+            if not all_resolutions:
                 self.report({'WARNING'}, "No clash groups found. Run grouping analysis first.")
                 return {'CANCELLED'}
-
-            # Generate resolutions for all groups
-            all_resolutions = {}
-            for group_id, element_guid in group_rows:
-                options = engine.analyze_group(group_id)
-                if options:
-                    engine.save_options_to_database(group_id, options)
-                    all_resolutions[group_id] = options
-
-            engine.close()
 
             # Set flag
             props.resolutions_generated = True
 
-            # Report results
-            print(f"\n{'='*60}")
-            print(f"RESOLUTION SUGGESTIONS GENERATED")
-            print(f"{'='*60}")
-            print(f"Groups Analyzed: {len(all_resolutions)}")
-            print(f"\nResolution Options:")
-
-            for group_id, resolutions in all_resolutions.items():
-                print(f"\n  Group {group_id}:")
-                for i, res in enumerate(resolutions, 1):
-                    print(f"    Option {i}: {res.option_type}")
-                    print(f"      Design Effort: {res.total_design_hours:.1f}h (${res.total_design_cost:,.0f})")
-                    print(f"      Schedule: {res.calendar_days:.0f} days")
-                    print(f"      Risk: {res.risk_category} (score: {res.risk_score}/100)")
-                    print(f"      Resolves: {res.clashes_resolved} clashes")
-                    if i == 1:
-                        print(f"      ✓ RECOMMENDED")
-
-            print(f"{'='*60}\n")
-
-            total_options = sum(len(r) for r in all_resolutions.values())
+            # Report summary
+            total_options = sum(len(options) for options in all_resolutions.values())
             self.report({'INFO'}, f"Generated {total_options} resolution options for {len(all_resolutions)} groups")
+
+            print("\n💡 Use 'View Resolution Options' to see detailed breakdown and select options")
             return {'FINISHED'}
 
         except Exception as e:
@@ -1122,19 +1088,19 @@ class BIM_OT_select_resolution_option(bpy.types.Operator):
 
             cursor.execute("""
                 SELECT
-                    ro.id,
+                    ro.option_id,
                     ro.group_id,
-                    ro.resolution_type,
-                    ro.effort_hours,
-                    ro.cost,
-                    ro.schedule_days,
-                    ro.risk_level,
+                    ro.option_type,
+                    ro.total_design_hours,
+                    ro.total_design_cost,
+                    ro.calendar_days_required,
+                    ro.risk_category,
                     ro.risk_score,
-                    cg.element_name,
-                    cg.clash_count
+                    cg.cascade_element_class,
+                    cg.total_clashes
                 FROM resolution_options ro
-                JOIN clash_groups cg ON ro.group_id = cg.id
-                ORDER BY ro.group_id, ro.rank
+                JOIN clash_groups cg ON ro.group_id = cg.group_id
+                ORDER BY ro.group_id, ro.recommendation_rank
             """)
 
             rows = cursor.fetchall()
@@ -1174,4 +1140,322 @@ class BIM_OT_select_resolution_option(bpy.types.Operator):
         except Exception as e:
             logger.exception("Failed to view resolution options")
             self.report({'ERROR'}, f"Failed to view options: {str(e)}")
+            return {'CANCELLED'}
+
+
+# ============================================================================
+# PHASE 1.5 + PHASE 2: UI OPERATORS
+# ============================================================================
+
+class BIM_OT_preview_resolution(bpy.types.Operator):
+    """Preview resolution in 3D viewport with ghost geometry"""
+    bl_idname = "bim.preview_resolution"
+    bl_label = "Preview Resolution"
+    bl_description = "Show 3D preview of selected resolution option"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        try:
+            from .clash import visualization_3d
+            from .visualization import federation_viz_helper
+
+            props = tool.Clash.get_clash_props()
+
+            # Validate selection
+            if props.selected_resolution_option_id == "":
+                self.report({'WARNING'}, "Please select a resolution option first")
+                return {'CANCELLED'}
+
+            # Get database path
+            fed_props = context.scene.BIMFederationProperties
+            db_path = fed_props.federation_database_path
+
+            if not db_path or not os.path.exists(db_path):
+                self.report({'ERROR'}, "Database not found. Run clash detection first.")
+                return {'CANCELLED'}
+
+            # Get resolution data from database
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+
+            # Get resolution details
+            cursor.execute("""
+                SELECT ro.group_id, ro.option_type, ro.total_design_hours,
+                       ro.total_design_cost, ro.calendar_days_required, ro.risk_category
+                FROM resolution_options ro
+                WHERE ro.option_id = ?
+            """, (props.selected_resolution_option_id,))
+
+            resolution_row = cursor.fetchone()
+            if not resolution_row:
+                conn.close()
+                self.report({'ERROR'}, f"Resolution option {props.selected_resolution_option_id} not found")
+                return {'CANCELLED'}
+
+            group_id, res_type, effort, cost, days, risk_level = resolution_row
+
+            # Get group element bbox
+            cursor.execute("""
+                SELECT cg.cascade_element_guid, rt.minX, rt.minY, rt.minZ,
+                       rt.maxX, rt.maxY, rt.maxZ
+                FROM clash_groups cg
+                JOIN elements_meta em ON cg.cascade_element_guid = em.guid
+                JOIN elements_rtree rt ON em.id = rt.id
+                WHERE cg.group_id = ?
+            """, (group_id,))
+
+            elem_row = cursor.fetchone()
+            conn.close()
+
+            if not elem_row:
+                self.report({'ERROR'}, f"Element bbox not found for group {group_id}")
+                return {'CANCELLED'}
+
+            element_id, min_x, min_y, min_z, max_x, max_y, max_z = elem_row
+
+            # Build bbox dict (camelCase keys for visualization_3d functions)
+            bbox = {
+                'minX': min_x, 'minY': min_y, 'minZ': min_z,
+                'maxX': max_x, 'maxY': max_y, 'maxZ': max_z
+            }
+
+            # Get coordinate offset for GPS coordinates
+            coord_offset = federation_viz_helper.get_model_offset()
+            if coord_offset is None:
+                coord_offset = Vector((0.0, 0.0, 0.0))
+
+            # For preview, use a simple upward offset to show proposed position
+            # TODO: Calculate actual movement offset based on resolution type
+            movement_offset = [0.0, 0.0, 2.0]  # Move 2m up as visual indicator
+
+            # Create preview visualization
+            preview_objects = visualization_3d.create_resolution_preview(
+                bbox=bbox,
+                offset=movement_offset,
+                clash_points=None,
+                coordinate_offset=coord_offset
+            )
+
+            if preview_objects:
+                # Zoom to preview - pass list of objects
+                obj_list = list(preview_objects.values())
+                visualization_3d.zoom_to_objects(obj_list)
+                self.report({'INFO'}, f"Previewing {res_type} resolution (Risk: {risk_level})")
+            else:
+                self.report({'WARNING'}, "Preview created but no objects returned")
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            logger.exception("Failed to preview resolution")
+            self.report({'ERROR'}, f"Preview failed: {str(e)}")
+            return {'CANCELLED'}
+
+
+class BIM_OT_apply_resolution(bpy.types.Operator):
+    """Apply selected resolution and record to database"""
+    bl_idname = "bim.apply_resolution"
+    bl_label = "Apply Resolution"
+    bl_description = "Apply the selected resolution option (records to history for learning)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        try:
+            props = tool.Clash.get_clash_props()
+
+            # Validate selection
+            if props.selected_resolution_option_id == "":
+                self.report({'WARNING'}, "Please select a resolution option first")
+                return {'CANCELLED'}
+
+            # Get database path
+            fed_props = context.scene.BIMFederationProperties
+            db_path = fed_props.federation_database_path
+            if not db_path or not os.path.exists(db_path):
+                self.report({'ERROR'}, "Database not found")
+                return {'CANCELLED'}
+
+            # Record application to resolution_history
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+
+            # Get resolution details
+            cursor.execute("""
+                SELECT group_id, option_type, total_design_hours, total_design_cost
+                FROM resolution_options
+                WHERE option_id = ?
+            """, (props.selected_resolution_option_id,))
+
+            resolution_data = cursor.fetchone()
+            if not resolution_data:
+                conn.close()
+                self.report({'ERROR'}, "Selected resolution not found in database")
+                return {'CANCELLED'}
+
+            group_id, res_type, estimated_hours, estimated_cost = resolution_data
+
+            # Insert into resolution_history
+            from datetime import datetime
+            cursor.execute("""
+                INSERT INTO resolution_history (
+                    group_id, option_id, selected_by, selected_date, selection_notes
+                )
+                VALUES (?, ?, ?, ?, ?)
+            """, (group_id, props.selected_resolution_option_id,
+                  "Blender User", datetime.now(),
+                  f"Applied {res_type} resolution (Estimated: {estimated_hours:.1f}hrs, ${estimated_cost:.0f})"))
+
+            history_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+
+            # Store history_id for feedback tracking
+            props.last_applied_resolution_history_id = history_id
+
+            # Show feedback panel
+            props.show_feedback_panel = True
+
+            self.report({'INFO'}, f"Applied {res_type} resolution. Please provide feedback when complete.")
+
+            # Clear preview
+            bpy.ops.bim.clear_preview()
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            logger.exception("Failed to apply resolution")
+            self.report({'ERROR'}, f"Apply failed: {str(e)}")
+            return {'CANCELLED'}
+
+
+class BIM_OT_submit_resolution_feedback(bpy.types.Operator):
+    """Submit feedback on applied resolution to improve learning"""
+    bl_idname = "bim.submit_resolution_feedback"
+    bl_label = "Submit Feedback"
+    bl_description = "Submit actual hours and rating to improve future estimates"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        try:
+            from .clash import learning_engine
+
+            props = tool.Clash.get_clash_props()
+
+            # Validate we have a history_id
+            if props.last_applied_resolution_history_id == -1:
+                self.report({'WARNING'}, "No applied resolution to provide feedback for")
+                return {'CANCELLED'}
+
+            # Validate actual hours provided
+            if props.actual_hours <= 0.0:
+                self.report({'WARNING'}, "Please enter actual hours spent (must be > 0)")
+                return {'CANCELLED'}
+
+            # Get database path
+            fed_props = context.scene.BIMFederationProperties
+            db_path = fed_props.federation_database_path
+            if not db_path or not os.path.exists(db_path):
+                self.report({'ERROR'}, "Database not found")
+                return {'CANCELLED'}
+
+            # Record feedback
+            learning_engine.record_resolution_feedback(
+                db_path=db_path,
+                resolution_history_id=props.last_applied_resolution_history_id,
+                user_rating=props.resolution_rating,
+                actual_hours=props.actual_hours,
+                variance_notes=props.variance_notes if props.variance_notes else None
+            )
+
+            # Update learned estimates
+            learning_engine.update_learned_estimates(
+                db_path=db_path,
+                resolution_history_id=props.last_applied_resolution_history_id,
+                actual_hours=props.actual_hours,
+                user_rating=props.resolution_rating,
+                project_id=props.project_id
+            )
+
+            self.report({'INFO'}, f"Feedback submitted! Rating: {props.resolution_rating}⭐, Actual: {props.actual_hours}hrs")
+
+            # Reset feedback form
+            props.show_feedback_panel = False
+            props.last_applied_resolution_history_id = -1
+            props.actual_hours = 0.0
+            props.variance_notes = ""
+            props.resolution_rating = 3
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            logger.exception("Failed to submit feedback")
+            self.report({'ERROR'}, f"Feedback submission failed: {str(e)}")
+            return {'CANCELLED'}
+
+
+class BIM_OT_change_preset(bpy.types.Operator):
+    """Switch configuration preset (US Market, Singapore, EU Standard)"""
+    bl_idname = "bim.change_preset"
+    bl_label = "Change Preset"
+    bl_description = "Switch to different configuration preset"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    preset_name: bpy.props.StringProperty(
+        name="Preset Name",
+        description="Name of preset to activate",
+        default=""
+    )
+
+    def execute(self, context):
+        try:
+            from .clash import resolution_database
+
+            props = tool.Clash.get_clash_props()
+
+            if not self.preset_name:
+                self.report({'WARNING'}, "No preset specified")
+                return {'CANCELLED'}
+
+            # Get database path
+            fed_props = context.scene.BIMFederationProperties
+            db_path = fed_props.federation_database_path
+            if not db_path or not os.path.exists(db_path):
+                self.report({'ERROR'}, "Database not found")
+                return {'CANCELLED'}
+
+            # Set active preset
+            success = resolution_database.set_active_preset(db_path, self.preset_name)
+
+            if success:
+                props.active_preset_name = self.preset_name
+                self.report({'INFO'}, f"Switched to preset: {self.preset_name}")
+                return {'FINISHED'}
+            else:
+                self.report({'ERROR'}, f"Failed to activate preset: {self.preset_name}")
+                return {'CANCELLED'}
+
+        except Exception as e:
+            logger.exception("Failed to change preset")
+            self.report({'ERROR'}, f"Preset change failed: {str(e)}")
+            return {'CANCELLED'}
+
+
+class BIM_OT_clear_preview(bpy.types.Operator):
+    """Clear all resolution preview geometry from viewport"""
+    bl_idname = "bim.clear_preview"
+    bl_label = "Clear Preview"
+    bl_description = "Remove all preview objects from the 3D viewport"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        try:
+            from .clash import visualization_3d
+
+            visualization_3d.clear_preview_objects()
+            self.report({'INFO'}, "Preview objects cleared")
+            return {'FINISHED'}
+
+        except Exception as e:
+            logger.exception("Failed to clear preview")
+            self.report({'ERROR'}, f"Clear preview failed: {str(e)}")
             return {'CANCELLED'}

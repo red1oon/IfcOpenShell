@@ -542,6 +542,63 @@ class BIMClashProperties(PropertyGroup):
         default=""
     )
 
+    def get_resolution_options_enum(self, context):
+        """Dynamically populate resolution options from database"""
+        import sqlite3
+        import os
+        import bpy
+
+        items = [("NONE", "-- Select Resolution Option --", "No option selected")]
+
+        try:
+            # Get database path from federation properties
+            fed_props = context.scene.BIMFederationProperties
+            db_path = fed_props.federation_database_path
+            if not db_path or not os.path.exists(db_path):
+                return items
+
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT
+                    ro.option_id,
+                    ro.group_id,
+                    ro.option_type,
+                    ro.total_design_hours,
+                    ro.total_design_cost,
+                    ro.risk_category,
+                    cg.cascade_element_class,
+                    cg.total_clashes
+                FROM resolution_options ro
+                JOIN clash_groups cg ON ro.group_id = cg.group_id
+                ORDER BY ro.group_id, ro.recommendation_rank
+            """)
+
+            rows = cursor.fetchall()
+            conn.close()
+
+            for option_id, group_id, opt_type, hours, cost, risk, elem_class, clashes in rows:
+                # Format: "Wall(17) Relocate $1.5k 12h MED"
+                cost_k = cost / 1000
+                opt_short = opt_type.replace('_element', '').replace('_', ' ').title()
+                label = f"{elem_class}({clashes}) {opt_short} ${cost_k:.1f}k {hours:.0f}h {risk[:3].upper()}"
+                desc = f"{elem_class} ({clashes} clashes) → {opt_type}: ${cost:,.0f}, {hours:.1f}hrs, Risk: {risk}"
+                items.append((option_id, label, desc))
+
+        except Exception as e:
+            print(f"Error loading resolution options: {e}")
+            return items
+
+        return items
+
+    selected_resolution_dropdown: EnumProperty(
+        name="Resolution Option",
+        description="Select a resolution option to preview or apply",
+        items=get_resolution_options_enum,
+        update=lambda self, context: setattr(self, 'selected_resolution_option_id', self.selected_resolution_dropdown if self.selected_resolution_dropdown != "NONE" else "")
+    )
+
     # ================================================================
     # PHASE 2: Learning System & Feedback
     # ================================================================

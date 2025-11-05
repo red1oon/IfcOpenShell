@@ -110,8 +110,14 @@ def create_arrow(start: Vector, end: Vector, color: tuple, name: str = "PREVIEW_
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes["Principled BSDF"]
     bsdf.inputs['Base Color'].default_value = color[:3] + (1.0,)
-    bsdf.inputs['Emission'].default_value = color[:3] + (1.0,)  # Make it glow
-    bsdf.inputs['Emission Strength'].default_value = 0.5
+
+    # Handle different Blender versions (Emission vs Emission Color)
+    if 'Emission Color' in bsdf.inputs:
+        bsdf.inputs['Emission Color'].default_value = color[:3] + (1.0,)
+        bsdf.inputs['Emission Strength'].default_value = 0.5
+    elif 'Emission' in bsdf.inputs:
+        bsdf.inputs['Emission'].default_value = color[:3] + (1.0,)
+        bsdf.inputs['Emission Strength'].default_value = 0.5
 
     obj.data.materials.append(mat)
 
