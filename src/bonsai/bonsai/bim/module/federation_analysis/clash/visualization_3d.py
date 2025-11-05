@@ -476,7 +476,7 @@ def create_resolution_preview(bbox: dict, offset: List[float],
             )
             created_objects[f'clash_{i}'] = sphere
 
-    # 5. Show all affected clashing elements (NEW - user requested feature)
+    # 5. Show all affected clashing elements (orange spheres only, no connecting lines)
     if clashing_elements:
         # Discipline color mapping (orange tones for affected elements)
         discipline_colors = {
@@ -501,22 +501,13 @@ def create_resolution_preview(bbox: dict, offset: List[float],
                 (elem_bbox['minZ'] + elem_bbox['maxZ']) / 2
             )) + coord_offset
 
-            # Create small marker sphere
+            # Create small marker sphere (orange to show affected elements)
             marker = create_small_marker(
                 elem_center,
                 color,
                 name=f"PREVIEW_ClashElement_{i}"
             )
             created_objects[f'clash_elem_{i}'] = marker
-
-            # Create connecting line from cascade element to clashing element
-            line = create_line(
-                current_center,
-                elem_center,
-                color=color[:3],  # Use same color as marker
-                name=f"PREVIEW_Connection_{i}"
-            )
-            created_objects[f'connection_{i}'] = line
 
     # 6. Zoom viewport to show both positions
     zoom_to_objects([ghost_current, ghost_proposed])

@@ -1266,25 +1266,56 @@ class BIM_OT_preview_resolution(bpy.types.Operator):
             print(f"Coordinate offset: {coord_offset}")
             print(f"Clashing elements: {len(clashing_elements)}")
 
-            # Create preview visualization with all affected elements
-            preview_objects = visualization_3d.create_resolution_preview(
-                bbox=bbox,
+            # Status message for user
+            self.report({'INFO'}, f"Finding objects to highlight...")
+
+            # POC: Try instant highlighting first (no object creation!)
+            from .clash import visualization_highlight
+
+            # Extract clashing GUIDs
+            clashing_guids = [elem['guid'] for elem in clashing_elements]
+
+            # Try instant highlight approach
+            highlight_result = visualization_highlight.highlight_resolution_preview(
+                cascade_guid=element_id,
                 offset=movement_offset,
-                clash_points=None,
-                coordinate_offset=coord_offset,
-                clashing_elements=clashing_elements  # NEW: Show all affected elements
+                clashing_guids=clashing_guids
             )
 
-            print(f"Preview objects created: {list(preview_objects.keys())}")
-            print("===================\n")
+            # Check if highlighting worked (objects found in scene)
+            if highlight_result.get('current'):
+                # SUCCESS! Objects were found and highlighted
+                print(f"✓ INSTANT HIGHLIGHT: Found and highlighted existing objects")
+                print(f"  Current: {highlight_result['current'].name}")
+                print(f"  Proposed: {highlight_result.get('proposed', 'N/A')}")
+                print(f"  Clashing: {len(highlight_result.get('clashing', []))} elements")
+                print("===================\n")
 
-            if preview_objects:
-                # Zoom to preview - pass list of objects
-                obj_list = list(preview_objects.values())
-                visualization_3d.zoom_to_objects(obj_list)
-                self.report({'INFO'}, f"Previewing {res_type} resolution (Risk: {risk_level})")
+                self.report({'INFO'}, f"✓ Previewing {res_type} (highlighted {len(clashing_guids)} clashing elements)")
             else:
-                self.report({'WARNING'}, "Preview created but no objects returned")
+                # FALLBACK: Objects not loaded yet, create visualization
+                print(f"⚠️  Objects not found in scene - falling back to created visualization")
+                print("===================\n")
+
+                self.report({'INFO'}, f"Creating preview visualization...")
+
+                # Use original visualization approach
+                preview_objects = visualization_3d.create_resolution_preview(
+                    bbox=bbox,
+                    offset=movement_offset,
+                    clash_points=None,
+                    coordinate_offset=coord_offset,
+                    clashing_elements=clashing_elements
+                )
+
+                print(f"Preview objects created: {list(preview_objects.keys())}")
+
+                if preview_objects:
+                    obj_list = list(preview_objects.values())
+                    visualization_3d.zoom_to_objects(obj_list)
+                    self.report({'INFO'}, f"Previewing {res_type} resolution (Risk: {risk_level})")
+                else:
+                    self.report({'WARNING'}, "Preview created but no objects returned")
 
             return {'FINISHED'}
 
@@ -1357,11 +1388,19 @@ class BIM_OT_apply_resolution(bpy.types.Operator):
             # Show feedback panel
             props.show_feedback_panel = True
 
-            # Clear preview but KEEP the green box to show resolved state
-            from .clash import visualization_3d
+            # Convert preview to "applied" state:
+            # - Restore red (current) element
+            # - Keep green (proposed) element solid
+            # - Restore orange (clash) elements
+            from .clash import visualization_3d, visualization_highlight
+
+            # Try instant highlight apply first
+            visualization_highlight.apply_resolution_highlights()
+
+            # Also clear old-style preview objects (fallback)
             visualization_3d.clear_preview_objects(keep_resolved=True)
 
-            self.report({'INFO'}, f"✓ Applied {res_type}. Green box shows resolved position. Provide feedback when done.")
+            self.report({'INFO'}, f"✓ Applied {res_type}. Green shows resolved position. Provide feedback when done.")
 
             return {'FINISHED'}
 
@@ -1492,10 +1531,13 @@ class BIM_OT_clear_preview(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            from .clash import visualization_3d
+            from .clash import visualization_3d, visualization_highlight
 
+            # Clear both: instant highlights AND created objects
+            visualization_highlight.clear_all_highlights()
             visualization_3d.clear_preview_objects()
-            self.report({'INFO'}, "Preview objects cleared")
+
+            self.report({'INFO'}, "Preview cleared")
             return {'FINISHED'}
 
         except Exception as e:

@@ -561,8 +561,8 @@ class BIMClashProperties(PropertyGroup):
             cursor = conn.cursor()
 
             cursor.execute("""
-                SELECT DISTINCT
-                    ro.option_id,
+                SELECT
+                    MIN(ro.option_id) as option_id,
                     ro.group_id,
                     ro.option_type,
                     ro.total_design_hours,
@@ -572,7 +572,8 @@ class BIMClashProperties(PropertyGroup):
                     cg.total_clashes
                 FROM resolution_options ro
                 JOIN clash_groups cg ON ro.group_id = cg.group_id
-                ORDER BY ro.group_id, ro.recommendation_rank
+                GROUP BY ro.group_id
+                ORDER BY ro.group_id
             """)
 
             rows = cursor.fetchall()
