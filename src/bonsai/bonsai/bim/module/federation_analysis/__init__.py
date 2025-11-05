@@ -76,27 +76,23 @@ classes = (
 
 
 def register():
-    """Register federation_analysis module classes and inject properties into clash module"""
-    print("\n🔧 Registering federation_analysis module...")
-
-    # Register all classes including gizmos (standard Blender registration)
-    for cls in classes:
-        bpy.utils.register_class(cls)
-        print(f"   ✓ {cls.__name__}")
+    """Register federation_analysis module - classes are auto-registered by bim/__init__.py"""
+    # NOTE: Classes are registered by bim/__init__.py via the classes tuple above.
+    # This function is only for additional setup (properties, handlers, etc.)
 
     # NOTE: Property injection disabled - properties are now statically defined
     # in bonsai/bim/module/clash/prop.py BIMClashProperties class.
     # Dynamic property injection fails because BIMClashProperties is already registered.
     # prop.register_federation_properties()
 
-    print("✓ federation_analysis module registered successfully")
+    print("✓ federation_analysis module registered")
 
 
 def unregister():
-    """Unregister federation_analysis module classes and remove injected properties"""
+    """Unregister federation_analysis module - classes are auto-unregistered by bim/__init__.py"""
+    # NOTE: Classes are unregistered by bim/__init__.py.
+    # This function is only for cleanup (properties, handlers, etc.)
+
     # NOTE: Property removal disabled - properties are statically defined in clash module
     # prop.unregister_federation_properties()
-
-    # Unregister all classes in reverse order (standard Blender unregistration)
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
+    pass

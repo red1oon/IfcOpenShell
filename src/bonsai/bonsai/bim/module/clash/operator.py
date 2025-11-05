@@ -603,9 +603,9 @@ class SelectSmartGroup(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class BIM_OT_clash_by_discipline(bpy.types.Operator):
-    """Run discipline-based clash detection using federation database"""
-    bl_idname = "bim.clash_by_discipline"
+class _DEPRECATED_BIM_OT_clash_by_discipline(bpy.types.Operator):
+    """DEPRECATED: Moved to federation_analysis module"""
+    bl_idname = "bim._deprecated_clash_by_discipline"
     bl_label = "Clash by Discipline"
     bl_description = "Quick clash detection by discipline using spatial index"
     bl_options = {"REGISTER"}

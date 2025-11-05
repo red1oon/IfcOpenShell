@@ -64,7 +64,7 @@ classes = (
     ui.BIM_PT_smart_clash_manager,
     ui.BIM_UL_clashes,
     ui.BIM_UL_clash_sets,
-    ui.BIM_UL_discipline_clashes,
+    # ui.BIM_UL_discipline_clashes,  # Moved to federation_analysis module
     ui.BIM_UL_smart_groups,
     # Note: ClashMarkerGizmo and ClashMarkerGizmoGroup moved to federation_analysis module
 )
