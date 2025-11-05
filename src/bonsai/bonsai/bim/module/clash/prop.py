@@ -510,3 +510,83 @@ class BIMClashProperties(PropertyGroup):
     # ================================================================
     # Note: Clash groups and resolution options are stored in database
     # UI reads directly from database queries (no need for collection properties in POC)
+
+    # ================================================================
+    # PHASE 1.5: Configuration System
+    # ================================================================
+
+    # Active configuration preset
+    active_preset_name: StringProperty(
+        name="Active Preset",
+        description="Currently active configuration preset (US Market, Singapore, EU Standard)",
+        default="US Market"
+    )
+
+    # Show learned estimates toggle
+    show_learned_estimates: BoolProperty(
+        name="Show Learned Estimates",
+        description="Display database-learned estimates with confidence indicators",
+        default=False
+    )
+
+    # Resolution selection
+    selected_resolution_index: IntProperty(
+        name="Selected Resolution Index",
+        description="Index of currently selected resolution option in UIList",
+        default=-1
+    )
+
+    selected_resolution_option_id: StringProperty(
+        name="Selected Resolution Option ID",
+        description="Database option_id of selected resolution",
+        default=""
+    )
+
+    # ================================================================
+    # PHASE 2: Learning System & Feedback
+    # ================================================================
+
+    # Feedback panel visibility
+    show_feedback_panel: BoolProperty(
+        name="Show Feedback Panel",
+        description="Whether to show resolution feedback collection panel",
+        default=False
+    )
+
+    # Feedback inputs
+    resolution_rating: IntProperty(
+        name="Resolution Rating",
+        description="How well did this resolution work? (1-5 stars)",
+        min=1,
+        max=5,
+        default=3
+    )
+
+    actual_hours: FloatProperty(
+        name="Actual Hours",
+        description="Actual time spent implementing this resolution (total hours)",
+        min=0.0,
+        default=0.0,
+        precision=1,
+        subtype='NONE'
+    )
+
+    variance_notes: StringProperty(
+        name="Variance Notes",
+        description="Optional notes explaining why actual differed from estimate",
+        default=""
+    )
+
+    # Track last applied resolution for feedback
+    last_applied_resolution_history_id: IntProperty(
+        name="Last Applied Resolution History ID",
+        description="Database history_id for last applied resolution (for feedback tracking)",
+        default=-1
+    )
+
+    # Project ID for learning context
+    project_id: StringProperty(
+        name="Project ID",
+        description="Project identifier for project-specific learning (e.g., 'Terminal_1')",
+        default="Terminal_1"
+    )

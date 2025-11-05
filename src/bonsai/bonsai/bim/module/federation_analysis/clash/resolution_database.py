@@ -368,6 +368,215 @@ def initialize_resolution_system(db_path: str) -> None:
     db.initialize_database()
 
 
+# ============================================================================
+# Phase 1.5: Configuration System - 3-Tier Lookup Functions
+# ============================================================================
+
+def get_activity_duration(db_path: str, activity_type: str, ifc_class: str = None,
+                          discipline: str = None, project_id: str = None) -> dict:
+    """
+    3-tier lookup: Learned → Project → Default
+
+    Priority:
+    1. Learned value for this project + class + discipline (highest confidence)
+    2. Project-specific override (manual configuration)
+    3. Default for class + discipline
+    4. Default for activity type only (most generic)
+
+    Args:
+        db_path: Path to database
+        activity_type: 'modeling', 'verification', 'documentation', 'coordination'
+        ifc_class: Optional IFC class (e.g., 'IfcDuctSegment')
+        discipline: Optional discipline (e.g., 'MEP')
+        project_id: Optional project ID for project-specific overrides
+
+    Returns:
+        dict with keys: 'base_hours', 'complexity_multiplier', 'source', 'confidence_score'
+    """
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    # Priority 1: Learned value for this project + class + discipline
+    if project_id and ifc_class and discipline:
+        cursor.execute("""
+            SELECT base_hours, complexity_multiplier, confidence_score, source, sample_size
+            FROM activity_base_durations
+            WHERE activity_type = ? AND ifc_class = ? AND discipline = ?
+              AND project_id = ? AND source = 'learned'
+            ORDER BY confidence_score DESC, last_updated DESC
+            LIMIT 1
+        """, (activity_type, ifc_class, discipline, project_id))
+
+        row = cursor.fetchone()
+        if row:
+            conn.close()
+            return dict(row)
+
+    # Priority 2: Project-specific override (class + discipline)
+    if project_id and ifc_class and discipline:
+        cursor.execute("""
+            SELECT base_hours, complexity_multiplier, confidence_score, source, sample_size
+            FROM activity_base_durations
+            WHERE activity_type = ? AND ifc_class = ? AND discipline = ?
+              AND project_id = ? AND source = 'project'
+            LIMIT 1
+        """, (activity_type, ifc_class, discipline, project_id))
+
+        row = cursor.fetchone()
+        if row:
+            conn.close()
+            return dict(row)
+
+    # Priority 3: Default for class + discipline (no project filter)
+    if ifc_class and discipline:
+        cursor.execute("""
+            SELECT base_hours, complexity_multiplier, confidence_score, source, sample_size
+            FROM activity_base_durations
+            WHERE activity_type = ? AND ifc_class = ? AND discipline = ?
+              AND source = 'default' AND project_id IS NULL
+            LIMIT 1
+        """, (activity_type, ifc_class, discipline))
+
+        row = cursor.fetchone()
+        if row:
+            conn.close()
+            return dict(row)
+
+    # Priority 4: Default for activity type only (most generic)
+    cursor.execute("""
+        SELECT base_hours, complexity_multiplier, confidence_score, source, sample_size
+        FROM activity_base_durations
+        WHERE activity_type = ? AND ifc_class IS NULL AND discipline IS NULL
+          AND source = 'default' AND project_id IS NULL
+        LIMIT 1
+    """, (activity_type,))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return dict(row)
+    else:
+        # Absolute fallback (shouldn't happen if defaults loaded)
+        return {
+            'base_hours': 2.0,
+            'complexity_multiplier': 0.10,
+            'confidence_score': 0,
+            'source': 'hardcoded_fallback',
+            'sample_size': 0
+        }
+
+
+def get_discipline_rate(db_path: str, discipline: str, skill_level: str = 'intermediate') -> float:
+    """
+    Get hourly rate from active preset.
+
+    Args:
+        db_path: Path to database
+        discipline: Discipline code (e.g., 'MEP', 'ARCHITECTURE')
+        skill_level: 'senior', 'intermediate', 'junior'
+
+    Returns:
+        Hourly rate (float)
+    """
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT pdr.hourly_rate
+        FROM preset_discipline_rates pdr
+        JOIN configuration_presets cp ON pdr.preset_id = cp.id
+        WHERE cp.is_active = 1
+          AND pdr.discipline = ?
+          AND pdr.skill_level = ?
+    """, (discipline, skill_level))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    return row[0] if row else 125.0  # Fallback rate
+
+
+def get_active_preset(db_path: str) -> Optional[dict]:
+    """
+    Get currently active configuration preset.
+
+    Returns:
+        dict with 'id', 'preset_name', 'currency', or None
+    """
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT id, preset_name, description, currency
+        FROM configuration_presets
+        WHERE is_active = 1
+        LIMIT 1
+    """)
+
+    row = cursor.fetchone()
+    conn.close()
+
+    return dict(row) if row else None
+
+
+def set_active_preset(db_path: str, preset_name: str) -> bool:
+    """
+    Change active configuration preset.
+
+    Args:
+        db_path: Path to database
+        preset_name: Name of preset to activate
+
+    Returns:
+        True if successful, False if preset not found
+    """
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # Check if preset exists
+    cursor.execute("SELECT id FROM configuration_presets WHERE preset_name = ?", (preset_name,))
+    if not cursor.fetchone():
+        conn.close()
+        return False
+
+    # Deactivate all presets
+    cursor.execute("UPDATE configuration_presets SET is_active = 0")
+
+    # Activate selected preset
+    cursor.execute("UPDATE configuration_presets SET is_active = 1 WHERE preset_name = ?", (preset_name,))
+
+    conn.commit()
+    conn.close()
+
+    return True
+
+
+def get_all_presets(db_path: str) -> list:
+    """
+    Get list of all available configuration presets.
+
+    Returns:
+        List of dicts with 'preset_name', 'description', 'currency', 'is_active'
+    """
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT preset_name, description, currency, is_active
+        FROM configuration_presets
+        ORDER BY preset_name
+    """)
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [dict(row) for row in rows]
+
+
 if __name__ == "__main__":
     """
     Initialize resolution database for Terminal 1
