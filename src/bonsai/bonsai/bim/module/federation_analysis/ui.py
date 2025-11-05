@@ -156,6 +156,24 @@ class BIM_PT_federation_clash_detection(Panel):
             info_col.label(text="  • Right-click for context menu")
             info_col.label(text="  • Color-coded: Red=New, Orange=Active, Yellow=Reviewed, Green=Resolved")
 
+            # BCF Export
+            layout.separator()
+            bcf_box = layout.box()
+            bcf_box.label(text="BCF Export", icon="EXPORT")
+
+            bcf_row = bcf_box.row()
+            bcf_row.operator("bim.export_bcf",
+                           text="Export to BCF 2.1",
+                           icon="FILE_TICK")
+
+            # Info about BCF
+            bcf_info = bcf_box.column(align=True)
+            bcf_info.scale_y = 0.7
+            bcf_info.label(text="💡 BCF (BIM Collaboration Format):", icon='INFO')
+            bcf_info.label(text="  • Industry standard for issue tracking")
+            bcf_info.label(text="  • Compatible with Navisworks, Solibri, BIMcollab")
+            bcf_info.label(text="  • Includes 3D viewpoints and clash metadata")
+
             # Show selection limit warning
             if selected_count > 10:
                 warn_row = result_box.row()

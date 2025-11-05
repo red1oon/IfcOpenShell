@@ -1544,3 +1544,127 @@ class BIM_OT_clear_preview(bpy.types.Operator):
             logger.exception("Failed to clear preview")
             self.report({'ERROR'}, f"Clear preview failed: {str(e)}")
             return {'CANCELLED'}
+
+
+class BIM_OT_export_bcf(bpy.types.Operator):
+    """Export clash detection results to BCF (BIM Collaboration Format) 2.1"""
+    bl_idname = "bim.export_bcf"
+    bl_label = "Export BCF"
+    bl_description = "Generate BCF 2.1 file from clash detection database for use in Navisworks, Solibri, BIMcollab"
+    bl_options = {'REGISTER'}
+
+    # File picker properties
+    filepath: bpy.props.StringProperty(
+        name="File Path",
+        description="Path for BCF file output",
+        subtype='FILE_PATH'
+    )
+
+    filename_ext = ".bcfzip"
+
+    filter_glob: bpy.props.StringProperty(
+        default="*.bcfzip",
+        options={'HIDDEN'}
+    )
+
+    include_resolved: bpy.props.BoolProperty(
+        name="Include Resolved Clashes",
+        description="Include clashes with RESOLVED status in BCF export",
+        default=False
+    )
+
+    generate_snapshots: bpy.props.BoolProperty(
+        name="Generate Snapshots",
+        description="Render 3D snapshots for each clash (slower but provides visual context)",
+        default=True
+    )
+
+    def invoke(self, context, event):
+        """Open file browser when operator is invoked."""
+        # Set default filename
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.filepath = f"clash_report_{timestamp}.bcfzip"
+
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+    def execute(self, context):
+        try:
+            from .bcf import BCFGenerator, ViewpointManager, SnapshotRenderer
+
+            # Get database path
+            fed_props = context.scene.BIMFederationProperties
+            db_path = fed_props.federation_database_path
+
+            if not db_path or not os.path.exists(db_path):
+                self.report({'ERROR'}, "Database not found. Run clash detection first.")
+                return {'CANCELLED'}
+
+            self.report({'INFO'}, "Generating BCF export...")
+
+            # Initialize BCF components
+            bcf_generator = BCFGenerator(db_path)
+            viewpoint_manager = ViewpointManager()
+            snapshot_renderer = SnapshotRenderer(db_path) if self.generate_snapshots else None
+
+            # Get clashes to export (selected or all)
+            clash_props = context.scene.BIMClashProperties
+            clash_ids = None
+
+            # Check if specific clashes are selected
+            if hasattr(clash_props, 'selected_clash_ids') and clash_props.selected_clash_ids:
+                clash_ids = list(clash_props.selected_clash_ids)
+                self.report({'INFO'}, f"Exporting {len(clash_ids)} selected clashes...")
+            else:
+                self.report({'INFO'}, "Exporting all clashes...")
+
+            # Generate viewpoints for all clashes
+            self.report({'INFO'}, "Generating 3D viewpoints...")
+            viewpoints = viewpoint_manager.generate_viewpoints_for_clashes(
+                db_path,
+                clash_ids
+            )
+
+            # Generate snapshots if requested
+            snapshots = None
+            if self.generate_snapshots:
+                self.report({'INFO'}, f"Rendering {len(viewpoints)} snapshots (this may take a while)...")
+
+                # Note: Snapshot rendering requires clash visualization to be loaded
+                # For now, we'll skip rendering if nothing is loaded
+                try:
+                    snapshots = snapshot_renderer.render_all_clash_snapshots(
+                        viewpoints,
+                        clash_ids,
+                        width=800,
+                        height=600
+                    )
+                    self.report({'INFO'}, f"Rendered {len(snapshots)} snapshots")
+                except Exception as e:
+                    logger.warning(f"Snapshot rendering failed: {e}")
+                    self.report({'WARNING'}, "Snapshot rendering failed, exporting without images")
+                    snapshots = None
+
+            # Generate BCF ZIP file
+            self.report({'INFO'}, "Creating BCF file...")
+            success, message = bcf_generator.generate_bcf_zip(
+                self.filepath,
+                clash_ids=clash_ids,
+                include_resolved=self.include_resolved,
+                viewpoints=viewpoints,
+                snapshots=snapshots
+            )
+
+            if success:
+                self.report({'INFO'}, f"BCF exported: {self.filepath}")
+                self.report({'INFO'}, message)
+                return {'FINISHED'}
+            else:
+                self.report({'ERROR'}, message)
+                return {'CANCELLED'}
+
+        except Exception as e:
+            logger.exception("BCF export failed")
+            self.report({'ERROR'}, f"BCF export failed: {str(e)}")
+            return {'CANCELLED'}
