@@ -117,10 +117,6 @@ class SnapshotRenderer:
                     print(f"  Warning: Could not load clash elements for clash {clash_id}")
                     return None
 
-                # DEBUG: Check what GUIDs the loaded objects have
-                guid_a_loaded = obj_a.get("federation_guid", "NOT_SET")
-                guid_b_loaded = obj_b.get("federation_guid", "NOT_SET")
-                print(f"    Loaded objects: {obj_a.name} (GUID: {guid_a_loaded}), {obj_b.name} (GUID: {guid_b_loaded})")
 
             except Exception as e:
                 print(f"  Warning: Failed to load clash elements: {e}")
@@ -479,13 +475,6 @@ class SnapshotRenderer:
         """
         highlighted = []
 
-        # DEBUG: Show what we're looking for and what exists
-        print(f"    Searching for GUIDs: {guids}")
-        federation_objs = [obj for obj in bpy.data.objects if "federation_guid" in obj]
-        print(f"    Found {len(federation_objs)} objects with federation_guid property")
-        if len(federation_objs) > 0 and len(federation_objs) <= 5:
-            for obj in federation_objs:
-                print(f"      - {obj.name}: {obj.get('federation_guid')}")
 
         for obj in bpy.data.objects:
             # Check if object has IFC GUID (in various possible locations)
@@ -536,10 +525,6 @@ class SnapshotRenderer:
                 if hasattr(obj, 'show_in_front'):
                     obj.show_in_front = True
 
-        if len(highlighted) == 0:
-            print(f"    Warning: Could not find objects for GUIDs {guids}")
-        else:
-            print(f"    Highlighted {len(highlighted)} clash elements")
 
         return highlighted
 
@@ -687,8 +672,7 @@ class SnapshotRenderer:
         """
         Render current viewport view to image file (clean render, no UI).
 
-        Uses Blender's workbench renderer with current viewport camera position.
-        This produces clean images without UI panels.
+        Uses viewport render for speed (~1s instead of ~10s with full render).
 
         Args:
             filepath: Output PNG file path
@@ -738,21 +722,29 @@ class SnapshotRenderer:
             # Set as scene camera
             scene.camera = temp_camera
 
-            # Configure render settings for clean output
+            # Configure render settings for FAST viewport render
             scene.render.resolution_x = width
             scene.render.resolution_y = height
             scene.render.resolution_percentage = 100
             scene.render.image_settings.file_format = 'PNG'
-            scene.render.image_settings.color_mode = 'RGBA'
+            scene.render.image_settings.color_mode = 'RGB'  # RGB is faster than RGBA
 
-            # Use workbench engine for fast rendering with good quality
+            # Use workbench engine with minimal settings for SPEED
             scene.render.engine = 'BLENDER_WORKBENCH'
-            scene.display.shading.light = 'STUDIO'
+            scene.display.shading.light = 'FLAT'  # Flat is fastest (no lighting calc)
             scene.display.shading.color_type = 'OBJECT'  # Show object colors
 
-            # Render to file
+            # SPEED OPTIMIZATIONS
+            scene.render.use_simplify = True
+            scene.render.simplify_subdivision = 0  # No subdivision
+
+            # Disable expensive features
+            scene.render.use_motion_blur = False
+            scene.render.use_border = False
+
+            # Viewport render (much faster than full render)
             scene.render.filepath = str(filepath)
-            bpy.ops.render.render(write_still=True)
+            bpy.ops.render.opengl(write_still=True)  # FAST: viewport render instead of full render
 
             return True
 
