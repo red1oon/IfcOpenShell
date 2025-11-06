@@ -116,11 +116,19 @@ class SnapshotRenderer:
                 if not obj_a or not obj_b:
                     print(f"  Warning: Could not load clash elements for clash {clash_id}")
                     return None
+
+                # DEBUG: Check what GUIDs the loaded objects have
+                guid_a_loaded = obj_a.get("federation_guid", "NOT_SET")
+                guid_b_loaded = obj_b.get("federation_guid", "NOT_SET")
+                print(f"    Loaded objects: {obj_a.name} (GUID: {guid_a_loaded}), {obj_b.name} (GUID: {guid_b_loaded})")
+
             except Exception as e:
                 print(f"  Warning: Failed to load clash elements: {e}")
+                import traceback
+                traceback.print_exc()
                 return None
 
-            # Highlight the clash elements
+            # Highlight the clash elements (now that they're loaded)
             highlighted_objects = self._highlight_elements_viewport([guid_a, guid_b])
 
             # Position viewport to clash location
@@ -476,6 +484,14 @@ class SnapshotRenderer:
         Returns list of original states for restoration.
         """
         highlighted = []
+
+        # DEBUG: Show what we're looking for and what exists
+        print(f"    Searching for GUIDs: {guids}")
+        federation_objs = [obj for obj in bpy.data.objects if "federation_guid" in obj]
+        print(f"    Found {len(federation_objs)} objects with federation_guid property")
+        if len(federation_objs) > 0 and len(federation_objs) <= 5:
+            for obj in federation_objs:
+                print(f"      - {obj.name}: {obj.get('federation_guid')}")
 
         for obj in bpy.data.objects:
             # Check if object has IFC GUID (in various possible locations)
