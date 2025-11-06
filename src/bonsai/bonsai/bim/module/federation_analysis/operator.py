@@ -1590,6 +1590,19 @@ class BIM_OT_export_bcf(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
     def execute(self, context):
+        # Setup logging to file
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        consolelogs_dir = Path.home() / "Documents/bonsai/consolelogs"
+        consolelogs_dir.mkdir(parents=True, exist_ok=True)
+        log_file = consolelogs_dir / f"bcf_export_{timestamp}.log"
+
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.INFO)
+        file_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+        file_handler.setFormatter(file_formatter)
+        logger.addHandler(file_handler)
+
         try:
             from .bcf import BCFGenerator, ViewpointManager, SnapshotRenderer
 
@@ -1599,8 +1612,12 @@ class BIM_OT_export_bcf(bpy.types.Operator):
 
             if not db_path or not os.path.exists(db_path):
                 self.report({'ERROR'}, "Database not found. Run clash detection first.")
+                logger.error("Database not found")
                 return {'CANCELLED'}
 
+            logger.info("="*70)
+            logger.info("BCF EXPORT STARTED")
+            logger.info("="*70)
             self.report({'INFO'}, "Generating BCF export...")
 
             # Initialize BCF components
@@ -1608,16 +1625,120 @@ class BIM_OT_export_bcf(bpy.types.Operator):
             viewpoint_manager = ViewpointManager()
             snapshot_renderer = SnapshotRenderer(db_path) if self.generate_snapshots else None
 
-            # Get clashes to export (selected or all)
+            # Get clashes to export (from loaded results)
             clash_props = context.scene.BIMClashProperties
-            clash_ids = None
 
-            # Check if specific clashes are selected
-            if hasattr(clash_props, 'selected_clash_ids') and clash_props.selected_clash_ids:
-                clash_ids = list(clash_props.selected_clash_ids)
-                self.report({'INFO'}, f"Exporting {len(clash_ids)} selected clashes...")
+            # Check if we have loaded clash results to export
+            logger.info(f"Checking loaded clashes: loaded={clash_props.discipline_clash_loaded}, count={len(clash_props.discipline_clash_candidates)}")
+
+            if clash_props.discipline_clash_loaded and clash_props.discipline_clash_candidates:
+                logger.info(f"Exporting {len(clash_props.discipline_clash_candidates)} loaded clashes (not all from database)")
+
+                # Ensure clash_status table exists before syncing
+                import sqlite3
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+
+                # Check if clash_status table exists
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='clash_status'")
+                if not cursor.fetchone():
+                    logger.info("Creating clash_status table (first time BCF export)")
+                    # Create minimal clash_status table for BCF export
+                    cursor.execute("""
+                        CREATE TABLE clash_status (
+                            clash_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            guid_a TEXT NOT NULL,
+                            guid_b TEXT NOT NULL,
+                            name_a TEXT,
+                            name_b TEXT,
+                            ifc_class_a TEXT,
+                            ifc_class_b TEXT,
+                            discipline_a TEXT,
+                            discipline_b TEXT,
+                            status TEXT DEFAULT 'NEW',
+                            assigned_to TEXT,
+                            comment TEXT,
+                            is_ignored INTEGER DEFAULT 0,
+                            distance REAL,
+                            date_created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            date_modified TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            UNIQUE(guid_a, guid_b)
+                        )
+                    """)
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_clash_status_guid_a ON clash_status(guid_a)")
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_clash_status_guid_b ON clash_status(guid_b)")
+                    conn.commit()
+                    logger.info("clash_status table created successfully")
+
+                clash_ids = []
+                for clash in clash_props.discipline_clash_candidates:
+                    # Lookup disciplines from elements_meta
+                    cursor.execute("SELECT discipline FROM elements_meta WHERE guid = ?", (clash.guid_a,))
+                    row_a = cursor.fetchone()
+                    discipline_a = row_a[0] if row_a else 'UNKNOWN'
+
+                    cursor.execute("SELECT discipline FROM elements_meta WHERE guid = ?", (clash.guid_b,))
+                    row_b = cursor.fetchone()
+                    discipline_b = row_b[0] if row_b else 'UNKNOWN'
+
+                    # Check if clash already exists
+                    cursor.execute("""
+                        SELECT clash_id FROM clash_status
+                        WHERE (guid_a = ? AND guid_b = ?) OR (guid_a = ? AND guid_b = ?)
+                    """, (clash.guid_a, clash.guid_b, clash.guid_b, clash.guid_a))
+                    existing = cursor.fetchone()
+
+                    if existing:
+                        # Use existing clash_id
+                        clash_ids.append(existing[0])
+                    else:
+                        # Insert new clash
+                        cursor.execute("""
+                            INSERT INTO clash_status
+                            (guid_a, guid_b, name_a, name_b, ifc_class_a, ifc_class_b,
+                             discipline_a, discipline_b, status, distance, is_ignored)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'NEW', ?, 0)
+                        """, (
+                            clash.guid_a, clash.guid_b,
+                            clash.name_a, clash.name_b,
+                            clash.ifc_class_a, clash.ifc_class_b,
+                            discipline_a, discipline_b,
+                            clash.distance
+                        ))
+                        clash_ids.append(cursor.lastrowid)
+
+                conn.commit()
+                conn.close()
+
+                logger.info(f"Saved {len(clash_ids)} clashes to database, clash_ids: {clash_ids[:5]}..." if len(clash_ids) > 5 else clash_ids)
+                self.report({'INFO'}, f"Exporting {len(clash_ids)} loaded clashes...")
             else:
-                self.report({'INFO'}, "Exporting all clashes...")
+                # No loaded clashes - fall back to exporting all from database
+                # First, ensure clash_status table exists
+                import sqlite3
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='clash_status'")
+                if not cursor.fetchone():
+                    logger.error("No clash_status table and no loaded clashes - nothing to export")
+                    self.report({'ERROR'}, "No clashes to export. Run clash detection first.")
+                    conn.close()
+                    return {'CANCELLED'}
+
+                # Check if there are any clashes in the database
+                cursor.execute("SELECT COUNT(*) FROM clash_status WHERE is_ignored = 0")
+                clash_count = cursor.fetchone()[0]
+                conn.close()
+
+                if clash_count == 0:
+                    logger.info("No clashes in database to export")
+                    self.report({'WARNING'}, "No clashes found in database")
+                    return {'CANCELLED'}
+
+                clash_ids = None
+                logger.info(f"No loaded clashes found - exporting ALL {clash_count} clashes from database")
+                self.report({'INFO'}, f"Exporting all {clash_count} clashes from database...")
 
             # Generate viewpoints for all clashes
             self.report({'INFO'}, "Generating 3D viewpoints...")
@@ -1657,14 +1778,23 @@ class BIM_OT_export_bcf(bpy.types.Operator):
             )
 
             if success:
+                logger.info("="*70)
+                logger.info(f"BCF EXPORT SUCCESSFUL: {self.filepath}")
+                logger.info(message)
+                logger.info("="*70)
                 self.report({'INFO'}, f"BCF exported: {self.filepath}")
                 self.report({'INFO'}, message)
                 return {'FINISHED'}
             else:
+                logger.error(f"BCF export failed: {message}")
                 self.report({'ERROR'}, message)
                 return {'CANCELLED'}
 
         except Exception as e:
-            logger.exception("BCF export failed")
+            logger.exception("BCF export failed with exception")
             self.report({'ERROR'}, f"BCF export failed: {str(e)}")
             return {'CANCELLED'}
+        finally:
+            # Remove file handler to avoid duplicate logs
+            logger.removeHandler(file_handler)
+            file_handler.close()

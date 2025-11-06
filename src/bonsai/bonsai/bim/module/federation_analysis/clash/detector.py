@@ -81,7 +81,7 @@ def detect_clashes_from_database(db_path: str,
     total = len(elements)
 
     print(f"Clash detection: Checking {total:,} elements...")
-    print(f"  Tolerance: {tolerance_mm}mm")
+    print(f"  Tolerance: {tolerance_mm * 1000:.1f}mm")
 
     clashes = []
     checks_performed = 0

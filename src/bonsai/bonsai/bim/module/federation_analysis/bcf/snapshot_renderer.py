@@ -36,10 +36,14 @@ class SnapshotRenderer:
         viewpoint_data: Dict,
         width: int = 800,
         height: int = 600,
-        highlight_clashes: bool = True
+        highlight_clashes: bool = True,
+        context_radius: float = 20.0
     ) -> Optional[bytes]:
         """
         Render snapshot for a single clash.
+
+        PERFORMANCE: Only renders objects within context_radius of the clash
+        to avoid OOM with large scenes (49K+ elements).
 
         Args:
             clash_id: Clash ID to render
@@ -47,10 +51,12 @@ class SnapshotRenderer:
             width: Image width in pixels
             height: Image height in pixels
             highlight_clashes: Draw red boxes around clashing elements
+            context_radius: Show objects within this radius (meters) of clash center
 
         Returns:
             PNG image as bytes, or None if rendering failed
         """
+        hidden_objects = []
         try:
             # Store original render settings
             original_settings = self._store_render_settings()
@@ -67,6 +73,11 @@ class SnapshotRenderer:
 
             # Get clash element GUIDs
             guid_a, guid_b = self._get_clash_guids(clash_id)
+
+            # CRITICAL: Hide distant objects to avoid rendering 49K elements (OOM prevention)
+            clash_center = mathutils.Vector(viewpoint_data['target'])
+            hidden_objects = self._hide_distant_objects(clash_center, context_radius)
+            print(f"  Rendering context: {len(bpy.data.objects) - len(hidden_objects)}/{len(bpy.data.objects)} objects visible (hid {len(hidden_objects)} distant)")
 
             # Highlight clashing elements if requested
             highlighted_objects = []
@@ -92,6 +103,11 @@ class SnapshotRenderer:
             if highlighted_objects:
                 self._restore_element_highlighting(highlighted_objects)
 
+            # Restore hidden objects
+            for obj in hidden_objects:
+                obj.hide_render = False
+                obj.hide_viewport = False
+
             # Restore render settings
             self._restore_render_settings(original_settings)
 
@@ -99,6 +115,13 @@ class SnapshotRenderer:
 
         except Exception as e:
             print(f"Failed to render snapshot for clash {clash_id}: {e}")
+            # Ensure objects are restored even on error
+            for obj in hidden_objects:
+                try:
+                    obj.hide_render = False
+                    obj.hide_viewport = False
+                except:
+                    pass
             return None
 
     def render_viewport_screenshot(
@@ -163,6 +186,9 @@ class SnapshotRenderer:
         """
         Render snapshots for multiple clashes.
 
+        MEMORY WARNING: This method stores all snapshots in memory.
+        For large clash sets (>100), use render_clash_snapshots_lazy() instead.
+
         Args:
             viewpoints: Dict mapping clash_id to viewpoint_data
             clash_ids: Specific clash IDs to render (None = all in viewpoints)
@@ -194,6 +220,48 @@ class SnapshotRenderer:
                 snapshots[clash_id] = snapshot
 
         return snapshots
+
+    def render_clash_snapshots_lazy(
+        self,
+        viewpoints: Dict[int, Dict],
+        clash_ids: Optional[List[int]] = None,
+        width: int = 800,
+        height: int = 600
+    ):
+        """
+        Render snapshots one at a time (generator pattern - memory efficient).
+
+        This is the RECOMMENDED method for large clash sets to avoid OOM.
+
+        Args:
+            viewpoints: Dict mapping clash_id to viewpoint_data
+            clash_ids: Specific clash IDs to render (None = all in viewpoints)
+            width: Image width
+            height: Image height
+
+        Yields:
+            Tuple of (clash_id, snapshot_bytes) for each rendered snapshot
+        """
+        ids_to_render = clash_ids if clash_ids else list(viewpoints.keys())
+
+        for i, clash_id in enumerate(ids_to_render, 1):
+            if clash_id not in viewpoints:
+                print(f"Warning: No viewpoint for clash {clash_id}, skipping")
+                continue
+
+            print(f"Rendering snapshot {i}/{len(ids_to_render)} for clash {clash_id}...")
+
+            snapshot = self.render_clash_snapshot(
+                clash_id,
+                viewpoints[clash_id],
+                width,
+                height
+            )
+
+            if snapshot:
+                yield (clash_id, snapshot)
+            else:
+                print(f"  Warning: Snapshot rendering failed for clash {clash_id}")
 
     def _get_clash_guids(self, clash_id: int) -> Tuple[Optional[str], Optional[str]]:
         """Get element GUIDs for a clash."""
@@ -248,6 +316,36 @@ class SnapshotRenderer:
                 obj.color = item['color']
             obj.display_type = item['display_type']
             obj.show_in_front = False
+
+    def _hide_distant_objects(self, center: mathutils.Vector, radius: float) -> List:
+        """
+        Hide objects beyond radius from center to reduce render complexity.
+
+        Args:
+            center: Center point (clash location)
+            radius: Radius in meters
+
+        Returns:
+            List of hidden objects (for restoration)
+        """
+        hidden = []
+
+        for obj in bpy.data.objects:
+            # Skip cameras, lights, empties
+            if obj.type not in {'MESH', 'CURVE', 'SURFACE'}:
+                continue
+
+            # Calculate distance from object to clash center
+            obj_location = mathutils.Vector(obj.location)
+            distance = (obj_location - center).length
+
+            # Hide if too far
+            if distance > radius:
+                obj.hide_render = True
+                obj.hide_viewport = True
+                hidden.append(obj)
+
+        return hidden
 
     def _create_temp_camera(self, viewpoint_data: Dict) -> bpy.types.Object:
         """Create temporary camera at viewpoint position."""
