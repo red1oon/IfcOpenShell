@@ -709,19 +709,19 @@ class SnapshotRenderer:
             original_camera = scene.camera
 
             # Find 3D viewport to get current view
-            view3d_region = None
+            region_3d = None
             for area in bpy.context.screen.areas:
                 if area.type == 'VIEW_3D':
+                    space = area.spaces.active
                     for region in area.regions:
                         if region.type == 'WINDOW':
-                            view3d_region = region
+                            region_3d = space.region_3d
                             break
-                    if view3d_region:
-                        space = area.spaces.active
+                    if region_3d:
                         break
 
-            if not view3d_region:
-                print("  Error: No 3D viewport found")
+            if not region_3d:
+                print("  Error: No 3D viewport region_3d found")
                 return False
 
             # Create temporary camera matching viewport view
@@ -730,7 +730,7 @@ class SnapshotRenderer:
             scene.collection.objects.link(temp_camera)
 
             # Copy viewport camera transform to temp camera
-            temp_camera.matrix_world = view3d_region.view_matrix.inverted()
+            temp_camera.matrix_world = region_3d.view_matrix.inverted()
 
             # Set camera FOV to match viewport
             camera_data.lens = 35  # Default perspective lens
