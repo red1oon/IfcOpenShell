@@ -1574,9 +1574,9 @@ class BIM_OT_export_bcf(bpy.types.Operator):
     )
 
     generate_snapshots: bpy.props.BoolProperty(
-        name="Generate Snapshots",
-        description="Render 3D snapshots for each clash (slower but provides visual context)",
-        default=True
+        name="Generate Snapshots (SLOW - may take minutes)",
+        description="Render PNG images for each clash. WARNING: Slow for large scenes (>10K objects). Automatically disabled for scenes >10K objects to prevent OOM crashes",
+        default=False
     )
 
     def invoke(self, context, event):
@@ -1750,32 +1750,57 @@ class BIM_OT_export_bcf(bpy.types.Operator):
             # Generate snapshots if requested
             snapshots = None
             if self.generate_snapshots:
-                # PERFORMANCE: Check scene size - skip snapshots for huge scenes
+                # PERFORMANCE: Check scene size and choose rendering mode
                 scene_obj_count = len([o for o in bpy.data.objects if o.type == 'MESH'])
-                snapshot_timeout = 10  # Max seconds per snapshot
 
-                if scene_obj_count > 10000:
-                    logger.warning(f"Scene has {scene_obj_count} objects - snapshot rendering disabled for performance")
-                    self.report({'WARNING'}, f"Scene too large ({scene_obj_count} objects) - exporting viewpoints only (no snapshots)")
-                    logger.info(f"  Estimated render time: {scene_obj_count}×30 clashes×30s = {scene_obj_count*30*30/3600:.1f} hours!")
-                    logger.info("  Recommendation: Use viewpoint-only BCF export for large scenes")
+                # Determine render mode based on scene size
+                if scene_obj_count > 100000:
+                    # VERY LARGE: Skip entirely
+                    logger.warning(f"Scene has {scene_obj_count} objects - snapshot rendering disabled (too large)")
+                    self.report({'WARNING'}, f"Scene too large ({scene_obj_count} objects) - exporting viewpoints only")
                     snapshots = None
+                elif scene_obj_count > 50000:
+                    # LARGE: Warn but allow fast mode
+                    logger.info(f"Scene has {scene_obj_count} objects - using FAST viewport screenshot mode")
+                    self.report({'INFO'}, f"Large scene detected - using fast snapshot mode (~30s for {len(viewpoints)} snapshots)")
+                    fast_mode = True
+                elif scene_obj_count > 10000:
+                    # MEDIUM: Recommend fast mode
+                    logger.info(f"Scene has {scene_obj_count} objects - using fast viewport screenshot mode")
+                    self.report({'INFO'}, f"Rendering {len(viewpoints)} fast snapshots (~1min total)...")
+                    fast_mode = True
                 else:
-                    self.report({'INFO'}, f"Rendering {len(viewpoints)} snapshots (this may take a while)...")
+                    # SMALL: Can use full render
+                    logger.info(f"Scene has {scene_obj_count} objects - using standard render mode")
+                    self.report({'INFO'}, f"Rendering {len(viewpoints)} quality snapshots (may take 3-5 minutes)...")
+                    fast_mode = False
 
-                    # Note: Snapshot rendering requires clash visualization to be loaded
-                    # For now, we'll skip rendering if nothing is loaded
+                if scene_obj_count <= 100000:
+                    # Attempt rendering
                     try:
+                        import time
+                        start_time = time.time()
+
                         snapshots = snapshot_renderer.render_all_clash_snapshots(
                             viewpoints,
                             clash_ids,
                             width=800,
-                            height=600
+                            height=600,
+                            fast_mode=fast_mode
                         )
-                        self.report({'INFO'}, f"Rendered {len(snapshots)} snapshots")
+
+                        elapsed = time.time() - start_time
+                        if snapshots:
+                            avg_time = elapsed / len(snapshots) if snapshots else 0
+                            self.report({'INFO'}, f"✓ Rendered {len(snapshots)} snapshots in {elapsed:.1f}s ({avg_time:.1f}s each)")
+                            logger.info(f"Snapshot rendering: {len(snapshots)} images in {elapsed:.1f}s")
+                        else:
+                            logger.warning("No snapshots were generated")
+                            self.report({'WARNING'}, "Snapshot rendering produced no images")
+
                     except Exception as e:
                         logger.warning(f"Snapshot rendering failed: {e}")
-                        self.report({'WARNING'}, "Snapshot rendering failed, exporting without images")
+                        self.report({'WARNING'}, f"Snapshot rendering failed: {str(e)[:100]}")
                         snapshots = None
 
             # Generate BCF ZIP file

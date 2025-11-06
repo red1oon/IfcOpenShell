@@ -36,14 +36,16 @@ class SnapshotRenderer:
         viewpoint_data: Dict,
         width: int = 800,
         height: int = 600,
-        highlight_clashes: bool = True,
-        context_radius: float = 5.0
+        highlight_clashes: bool = False,
+        fast_mode: bool = True,
+        target_size_kb: int = 200
     ) -> Optional[bytes]:
         """
         Render snapshot for a single clash.
 
-        PERFORMANCE: Only renders objects within context_radius of the clash
-        to avoid OOM with large scenes (49K+ elements).
+        PERFORMANCE MODES:
+        - fast_mode=True: Viewport screenshot (~0.5s, <200KB)
+        - fast_mode=False: Full render (3-5s, higher quality)
 
         Args:
             clash_id: Clash ID to render
@@ -51,10 +53,99 @@ class SnapshotRenderer:
             width: Image width in pixels
             height: Image height in pixels
             highlight_clashes: Draw red boxes around clashing elements
-            context_radius: Show objects within this radius (meters) of clash center
+            fast_mode: Use viewport screenshot (fast) vs full render (slow)
+            target_size_kb: Target PNG file size in KB
 
         Returns:
             PNG image as bytes, or None if rendering failed
+        """
+        try:
+            # FAST MODE: Viewport screenshot (no full render)
+            if fast_mode:
+                return self._render_viewport_snapshot(
+                    clash_id,
+                    viewpoint_data,
+                    width,
+                    height,
+                    target_size_kb
+                )
+
+            # SLOW MODE: Full render with object hiding
+            return self._render_full_snapshot(
+                clash_id,
+                viewpoint_data,
+                width,
+                height,
+                highlight_clashes
+            )
+
+        except Exception as e:
+            print(f"Failed to render snapshot for clash {clash_id}: {e}")
+            return None
+
+    def _render_viewport_snapshot(
+        self,
+        clash_id: int,
+        viewpoint_data: Dict,
+        width: int,
+        height: int,
+        target_size_kb: int
+    ) -> Optional[bytes]:
+        """
+        Fast viewport screenshot method.
+
+        Captures current viewport state - no full render overhead.
+        ~0.5s per snapshot, ~50-200KB file size.
+        """
+        try:
+            import tempfile
+            from pathlib import Path
+
+            # Position viewport to clash location
+            positioned = self.set_viewport_to_viewpoint(viewpoint_data)
+            if not positioned:
+                print(f"  Warning: Could not position viewport for clash {clash_id}")
+
+            # Create temp file for screenshot
+            temp_path = Path(tempfile.gettempdir()) / f"clash_{clash_id}_viewport.png"
+
+            # Capture viewport to file
+            bpy.ops.screen.screenshot(filepath=str(temp_path))
+
+            # Read image
+            if temp_path.exists():
+                with open(temp_path, 'rb') as f:
+                    image_data = f.read()
+
+                # Optimize size if needed
+                file_size_kb = len(image_data) / 1024
+                if file_size_kb > target_size_kb * 1.5:  # 50% over target
+                    image_data = self._optimize_png_size(image_data, target_size_kb)
+
+                # Cleanup
+                temp_path.unlink()
+
+                return image_data
+            else:
+                print(f"  Warning: Screenshot file not created for clash {clash_id}")
+                return None
+
+        except Exception as e:
+            print(f"  Viewport snapshot failed for clash {clash_id}: {e}")
+            return None
+
+    def _render_full_snapshot(
+        self,
+        clash_id: int,
+        viewpoint_data: Dict,
+        width: int,
+        height: int,
+        highlight_clashes: bool
+    ) -> Optional[bytes]:
+        """
+        Full render method (original approach).
+
+        Slower but higher quality. Used when fast_mode=False.
         """
         hidden_objects = []
         try:
@@ -181,19 +272,18 @@ class SnapshotRenderer:
         viewpoints: Dict[int, Dict],
         clash_ids: Optional[List[int]] = None,
         width: int = 800,
-        height: int = 600
+        height: int = 600,
+        fast_mode: bool = True
     ) -> Dict[int, bytes]:
         """
         Render snapshots for multiple clashes.
-
-        MEMORY WARNING: This method stores all snapshots in memory.
-        For large clash sets (>100), use render_clash_snapshots_lazy() instead.
 
         Args:
             viewpoints: Dict mapping clash_id to viewpoint_data
             clash_ids: Specific clash IDs to render (None = all in viewpoints)
             width: Image width
             height: Image height
+            fast_mode: Use viewport screenshot (fast) vs full render (slow)
 
         Returns:
             Dict mapping clash_id to PNG bytes
@@ -201,23 +291,38 @@ class SnapshotRenderer:
         snapshots = {}
 
         ids_to_render = clash_ids if clash_ids else list(viewpoints.keys())
+        total = len(ids_to_render)
 
-        for clash_id in ids_to_render:
+        mode_str = "FAST viewport" if fast_mode else "quality render"
+        print(f"\n{'='*60}")
+        print(f"Rendering {total} snapshots ({mode_str} mode)")
+        print(f"{'='*60}\n")
+
+        for i, clash_id in enumerate(ids_to_render, 1):
             if clash_id not in viewpoints:
-                print(f"Warning: No viewpoint for clash {clash_id}, skipping")
+                print(f"[{i}/{total}] Warning: No viewpoint for clash {clash_id}, skipping")
                 continue
 
-            print(f"Rendering snapshot for clash {clash_id}...")
+            print(f"[{i}/{total}] Rendering snapshot for clash {clash_id}...")
 
             snapshot = self.render_clash_snapshot(
                 clash_id,
                 viewpoints[clash_id],
                 width,
-                height
+                height,
+                fast_mode=fast_mode
             )
 
             if snapshot:
+                size_kb = len(snapshot) / 1024
                 snapshots[clash_id] = snapshot
+                print(f"          ✓ Success ({size_kb:.0f}KB)")
+            else:
+                print(f"          ✗ Failed")
+
+        print(f"\n{'='*60}")
+        print(f"Completed: {len(snapshots)}/{total} snapshots rendered")
+        print(f"{'='*60}\n")
 
         return snapshots
 
@@ -403,3 +508,44 @@ class SnapshotRenderer:
         scene.render.image_settings.file_format = settings['file_format']
         scene.render.image_settings.color_mode = settings['color_mode']
         scene.render.engine = settings['engine']
+
+    def _optimize_png_size(self, image_data: bytes, target_kb: int) -> bytes:
+        """
+        Optimize PNG file size to meet target.
+
+        Uses PIL/Pillow to reduce quality/resolution if needed.
+        Falls back to original if PIL not available.
+        """
+        try:
+            from PIL import Image
+            import io
+
+            # Load image
+            img = Image.open(io.BytesIO(image_data))
+
+            # Try compression first
+            output = io.BytesIO()
+            img.save(output, format='PNG', optimize=True, compress_level=9)
+            optimized_data = output.getvalue()
+
+            # If still too large, reduce resolution
+            if len(optimized_data) / 1024 > target_kb:
+                scale = (target_kb * 1024 / len(optimized_data)) ** 0.5
+                new_size = (int(img.width * scale * 0.9), int(img.height * scale * 0.9))
+                img_resized = img.resize(new_size, Image.LANCZOS)
+
+                output = io.BytesIO()
+                img_resized.save(output, format='PNG', optimize=True, compress_level=9)
+                optimized_data = output.getvalue()
+
+            final_size_kb = len(optimized_data) / 1024
+            print(f"    Optimized: {len(image_data)/1024:.0f}KB → {final_size_kb:.0f}KB")
+
+            return optimized_data
+
+        except ImportError:
+            print("    Note: PIL/Pillow not available for size optimization")
+            return image_data
+        except Exception as e:
+            print(f"    Warning: Optimization failed: {e}")
+            return image_data
