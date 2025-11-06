@@ -470,10 +470,17 @@ class BIM_PT_clash_adjustment(Panel):
             # Info about resolutions
             info_col = resolution_box.column(align=True)
             info_col.scale_y = 0.7
-            info_col.label(text="💡 Select resolution option from dropdown:")
+            info_col.label(text="💡 Generates resolution options for each group:")
             info_col.label(text="  • Design effort estimates (hours)")
             info_col.label(text="  • Cost breakdown by discipline")
             info_col.label(text="  • Risk assessment")
+
+            # Suggest resolutions button
+            row = resolution_box.row()
+            row.scale_y = 1.5
+            row.operator("bim.suggest_resolutions",
+                        text="Generate Resolution Options",
+                        icon="OUTLINER_DATA_LIGHTPROBE")
 
             layout.separator()
 
@@ -546,6 +553,35 @@ class BIM_PT_clash_adjustment(Panel):
                 row.operator("bim.submit_resolution_feedback",
                             text="Submit Feedback",
                             icon="EXPORT")
+
+            # ================================================================
+            # REPORT GENERATION
+            # ================================================================
+            layout.separator()
+            report_box = layout.box()
+            report_box.label(text="Step 3: Generate Resolution Report", icon="FILE_TEXT")
+
+            # Info about report
+            info_col = report_box.column(align=True)
+            info_col.scale_y = 0.7
+            info_col.label(text="💡 Creates professional Markdown report:")
+            info_col.label(text="  • Executive summary with cost analysis")
+            info_col.label(text="  • Before/after visualizations")
+            info_col.label(text="  • Detailed action plan")
+            info_col.label(text="  • Editable format (convert to PDF later)")
+
+            # Generate report button
+            row = report_box.row()
+            row.scale_y = 1.5
+            row.operator("bim.generate_clash_resolution_report",
+                        text="Generate Report",
+                        icon="FILE_TEXT")
+
+            # Snapshot note
+            note_col = report_box.column(align=True)
+            note_col.scale_y = 0.6
+            note_col.label(text="Note: Snapshots require geometry loaded in scene")
+            note_col.label(text="(Use Preview/Solid/Full buttons first for images)")
 
 
 class BIM_UL_clash_groups(UIList):

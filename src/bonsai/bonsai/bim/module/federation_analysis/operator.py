@@ -1858,3 +1858,277 @@ class BIM_OT_export_bcf(bpy.types.Operator):
             # Remove file handler to avoid duplicate logs
             logger.removeHandler(file_handler)
             file_handler.close()
+
+
+class BIM_OT_generate_clash_resolution_report(bpy.types.Operator):
+    """Generate Markdown report for clash resolution analysis"""
+    bl_idname = "bim.generate_clash_resolution_report"
+    bl_label = "Generate Resolution Report"
+    bl_description = "Generate professional Markdown report with cost analysis and before/after visualizations"
+    bl_options = {'REGISTER'}
+
+    # Properties
+    output_directory: bpy.props.StringProperty(
+        name="Output Directory",
+        description="Directory to save report and snapshots",
+        default="",
+        subtype='DIR_PATH'
+    )
+
+    project_name: bpy.props.StringProperty(
+        name="Project Name",
+        description="Name of the project",
+        default="BIM Project"
+    )
+
+    analyst_name: bpy.props.StringProperty(
+        name="Analyst Name",
+        description="Name of the analyst/reporter",
+        default=""
+    )
+
+    include_snapshots: bpy.props.BoolProperty(
+        name="Include Snapshots",
+        description="Generate before/after visualizations (adds ~2s per group)",
+        default=True
+    )
+
+    def invoke(self, context, event):
+        """Show dialog to configure report settings."""
+        # Set default output directory
+        if not self.output_directory:
+            timestamp = __import__('datetime').datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_dir = Path.home() / "Documents" / "bonsai" / "clash_reports" / f"clash_resolution_{timestamp}"
+            self.output_directory = str(default_dir)
+
+        # Set default analyst name from user preferences
+        if not self.analyst_name:
+            # Try to get author from preferences (may not exist in all Blender versions)
+            try:
+                self.analyst_name = context.preferences.system.author or "[Analyst Name]"
+            except AttributeError:
+                self.analyst_name = "[Analyst Name]"
+
+        return context.window_manager.invoke_props_dialog(self, width=500)
+
+    def draw(self, context):
+        """Draw the dialog UI."""
+        layout = self.layout
+        layout.prop(self, "project_name")
+        layout.prop(self, "analyst_name")
+        layout.prop(self, "output_directory")
+        layout.prop(self, "include_snapshots")
+
+        # Show estimate
+        fed_props = context.scene.BIMFederationProperties
+        db_path = fed_props.federation_database_path
+
+        if db_path and Path(bpy.path.abspath(db_path)).exists():
+            try:
+                import sqlite3
+                conn = sqlite3.connect(bpy.path.abspath(db_path))
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM clash_groups")
+                num_groups = cursor.fetchone()[0]
+                conn.close()
+
+                # Estimate time
+                base_time = 2  # seconds for report generation
+                snapshot_time = num_groups * 2 if self.include_snapshots else 0
+                total_time = base_time + snapshot_time
+
+                box = layout.box()
+                box.label(text=f"Clash Groups: {num_groups}", icon='INFO')
+                box.label(text=f"Estimated Time: ~{total_time:.0f} seconds")
+
+            except Exception as e:
+                box = layout.box()
+                box.label(text="Could not estimate time", icon='ERROR')
+
+    def execute(self, context):
+        """Execute the report generation."""
+        import logging
+        from datetime import datetime
+        import tempfile
+
+        # Setup dedicated logger for report generation
+        logger = logging.getLogger('bonsai.report_generation')
+        logger.setLevel(logging.INFO)
+
+        # Clear any existing handlers to avoid spam
+        logger.handlers.clear()
+
+        # Setup console log file handler
+        log_dir = Path.home() / "Documents/bonsai/consolelogs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / f"report_generation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(file_handler)
+
+        # Also add console handler
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(logging.Formatter('%(message)s'))
+        logger.addHandler(console_handler)
+
+        # Get database path
+        fed_props = context.scene.BIMFederationProperties
+        db_path = fed_props.federation_database_path
+
+        if not db_path:
+            logger.error("No federation database loaded")
+            self.report({'ERROR'}, "Please load Federation Database first")
+            logger.removeHandler(file_handler)
+            file_handler.close()
+            return {'CANCELLED'}
+
+        db_path = Path(bpy.path.abspath(db_path))
+        if not db_path.exists():
+            logger.error(f"Database not found: {db_path}")
+            self.report({'ERROR'}, f"Database not found: {db_path}")
+            logger.removeHandler(file_handler)
+            file_handler.close()
+            return {'CANCELLED'}
+
+        # Create output directory
+        output_path = Path(self.output_directory)
+
+        try:
+            output_path.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.error(f"Could not create output directory: {e}")
+            self.report({'ERROR'}, f"Could not create output directory: {e}")
+            logger.removeHandler(file_handler)
+            file_handler.close()
+            return {'CANCELLED'}
+
+        logger.info("="*70)
+        logger.info("GENERATING CLASH RESOLUTION REPORT")
+        logger.info("="*70)
+        logger.info(f"Project: {self.project_name}")
+        logger.info(f"Analyst: {self.analyst_name}")
+        logger.info(f"Database: {db_path}")
+        logger.info(f"Output: {output_path}")
+        logger.info(f"Include Snapshots: {self.include_snapshots}")
+        logger.info(f"Log File: {log_file}")
+        logger.info("-"*70)
+
+        try:
+            # Import report generator
+            from .clash.report.report_generator import ReportGenerator
+
+            # Generate report
+            self.report({'INFO'}, "Generating report...")
+            generator = ReportGenerator(str(db_path))
+
+            success, message = generator.generate_report(
+                output_dir=str(output_path),
+                project_name=self.project_name,
+                analyst_name=self.analyst_name
+            )
+
+            if not success:
+                logger.error(f"Report generation failed: {message}")
+                self.report({'ERROR'}, message)
+                return {'CANCELLED'}
+
+            logger.info(f"✅ Report generated: {message}")
+
+            # Generate snapshots if requested
+            if self.include_snapshots:
+                self.report({'INFO'}, "Generating snapshots...")
+                logger.info("Generating before/after snapshots...")
+
+                try:
+                    from .clash.report.snapshot_manager import SnapshotManager
+
+                    snapshot_mgr = SnapshotManager(str(db_path))
+
+                    # Check feasibility
+                    import sqlite3
+                    conn = sqlite3.connect(str(db_path))
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT COUNT(*) FROM clash_groups")
+                    num_groups = cursor.fetchone()[0]
+                    conn.close()
+
+                    feasible, feasibility_msg = snapshot_mgr.check_snapshot_feasibility(num_groups)
+                    logger.info(f"Snapshot feasibility: {feasibility_msg}")
+
+                    if not feasible:
+                        logger.warning("Snapshot generation may take longer than expected")
+                        self.report({'WARNING'}, "Snapshot generation may be slow - consider reducing group count")
+
+                    # Generate snapshots
+                    successful, failed, errors = snapshot_mgr.generate_all_group_snapshots(
+                        output_path,
+                        width=1920,
+                        height=1080
+                    )
+
+                    if successful > 0:
+                        logger.info(f"✅ Generated {successful} snapshots")
+                        self.report({'INFO'}, f"Generated {successful} snapshots")
+
+                    if failed > 0:
+                        logger.warning(f"⚠️ Failed to generate {failed} snapshots")
+                        self.report({'WARNING'}, f"Failed to generate {failed} snapshots")
+                        for error in errors[:5]:  # Show first 5 errors
+                            logger.warning(f"  - {error}")
+
+                except ImportError as e:
+                    logger.warning(f"Snapshot generation not available: {e}")
+                    self.report({'WARNING'}, "Snapshots skipped - BCF renderer not available")
+                except Exception as e:
+                    logger.error(f"Snapshot generation failed: {e}")
+                    self.report({'WARNING'}, f"Snapshots failed: {str(e)[:100]}")
+
+            # Success summary
+            logger.info("="*70)
+            logger.info("REPORT GENERATION COMPLETED")
+            logger.info("="*70)
+            logger.info(f"Output: {output_path}")
+            logger.info(f"Files: report.md, metadata.json, data_export.csv")
+            if self.include_snapshots:
+                logger.info(f"Snapshots: snapshots/ directory")
+            logger.info("="*70)
+
+            # User-facing message
+            self.report({'INFO'}, f"✅ Report generated successfully!")
+            self.report({'INFO'}, f"   Location: {output_path}")
+            self.report({'INFO'}, f"   Open report.md to view and edit")
+
+            print(f"\n{'='*70}")
+            print(f"✅ CLASH RESOLUTION REPORT GENERATED")
+            print(f"{'='*70}")
+            print(f"Location: {output_path}")
+            print(f"Files:")
+            print(f"  - report.md (editable Markdown report)")
+            print(f"  - metadata.json (report metadata)")
+            print(f"  - data_export.csv (clash data)")
+            if self.include_snapshots:
+                print(f"  - snapshots/ (before/after images)")
+            print(f"\nNext steps:")
+            print(f"  1. Open report.md in a text editor")
+            print(f"  2. Customize as needed")
+            print(f"  3. Convert to PDF: pandoc report.md -o report.pdf")
+            print(f"  4. Distribute to project team")
+            print(f"{'='*70}\n")
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            logger.exception("Report generation failed with exception")
+            self.report({'ERROR'}, f"Report generation failed: {str(e)}")
+            logger.info(f"Error details saved to: {log_file}")
+            return {'CANCELLED'}
+        finally:
+            # Remove all handlers
+            if 'file_handler' in locals():
+                logger.removeHandler(file_handler)
+                file_handler.close()
+            if 'console_handler' in locals():
+                logger.removeHandler(console_handler)

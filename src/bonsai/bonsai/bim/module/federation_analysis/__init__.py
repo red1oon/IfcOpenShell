@@ -81,6 +81,9 @@ classes = (
     # BCF Export
     operator.BIM_OT_export_bcf,
 
+    # Report Generation
+    operator.BIM_OT_generate_clash_resolution_report,
+
     # UI Lists
     ui.BIM_UL_discipline_clashes,
     # Note: BIM_UL_clash_groups and BIM_UL_resolution_options not used in POC

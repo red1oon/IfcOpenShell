@@ -100,7 +100,71 @@ def find_or_create_element_from_database(
 
         guid, ifc_class, discipline, min_x, min_y, min_z, max_x, max_y, max_z = result
 
-        # Step 3: Create procedural shape from bbox
+        # Step 3: Try to load tessellated geometry first, fallback to bbox
+        # Load tessellated geometry directly (simplified - no vertex_count needed)
+        try:
+            from bonsai.bim.module.federation.stage2_tessellation_loader import unpack_vertices, unpack_faces
+
+            cursor.execute("""
+                SELECT vertices, faces
+                FROM element_geometry
+                WHERE guid = ?
+            """, (guid,))
+
+            geom_row = cursor.fetchone()
+
+            if geom_row:
+                verts_blob, faces_blob = geom_row
+
+                # Unpack geometry
+                vertices = unpack_vertices(verts_blob)
+                faces = unpack_faces(faces_blob)
+
+                # CRITICAL: Calculate GPS center from BBOX (elements_rtree has correct values)
+                # element_transforms.center is (0,0,0) for all elements - NOT GPS position
+                bbox_center_gps = Vector(((min_x + max_x) / 2.0, (min_y + max_y) / 2.0, (min_z + max_z) / 2.0))
+
+                # Transform mesh vertices from GPS to local (relative to bbox center)
+                vertices_local = [(v[0] - bbox_center_gps.x, v[1] - bbox_center_gps.y, v[2] - bbox_center_gps.z) for v in vertices]
+
+                # Create Blender mesh with LOCAL vertices
+                mesh = bpy.data.meshes.new(guid[:8])
+                mesh.from_pydata(vertices_local, [], faces)
+                mesh.update()
+
+                # Create object
+                obj = bpy.data.objects.new(guid, mesh)
+
+                # Position object: bbox_center - offset
+                # Get global offset (single-row table, no id column)
+                cursor.execute("SELECT offset_x, offset_y, offset_z FROM global_offset LIMIT 1")
+                offset_row = cursor.fetchone()
+
+                if offset_row:
+                    offset_x, offset_y, offset_z = offset_row
+                    offset = Vector((offset_x, offset_y, offset_z))
+                    obj.location = bbox_center_gps - offset
+                else:
+                    # No offset available - use bbox center as-is
+                    obj.location = bbox_center_gps
+
+                # Store metadata
+                obj["federation_guid"] = guid
+                obj["federation_ifc_class"] = ifc_class
+                obj["federation_discipline"] = discipline
+                obj["federation_viz_temp"] = True
+
+                # Add to collection
+                collection.objects.link(obj)
+
+                print(f"  ✓ Loaded tessellated geometry for {guid} ({len(vertices)} verts, {len(faces)} faces)")
+                return obj
+
+        except Exception as e:
+            print(f"  ⚠️  Could not load tessellated mesh for {guid}: {e}")
+            # Fall through to bbox creation
+
+        # Fallback: Create procedural shape from bbox
         obj = create_procedural_shape_from_bbox(
             guid=guid,
             ifc_class=ifc_class,
