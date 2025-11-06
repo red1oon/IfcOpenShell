@@ -1780,6 +1780,8 @@ class BIM_OT_export_bcf(bpy.types.Operator):
 
             # Generate BCF ZIP file
             self.report({'INFO'}, "Creating BCF file...")
+            logger.info("Generating BCF ZIP file...")
+
             success, message = bcf_generator.generate_bcf_zip(
                 self.filepath,
                 clash_ids=clash_ids,
@@ -1789,12 +1791,34 @@ class BIM_OT_export_bcf(bpy.types.Operator):
             )
 
             if success:
+                # Log success with summary
                 logger.info("="*70)
-                logger.info(f"BCF EXPORT SUCCESSFUL: {self.filepath}")
-                logger.info(message)
+                logger.info("BCF EXPORT COMPLETED SUCCESSFULLY")
                 logger.info("="*70)
-                self.report({'INFO'}, f"BCF exported: {self.filepath}")
-                self.report({'INFO'}, message)
+                logger.info(f"  Output file: {self.filepath}")
+                logger.info(f"  {message}")
+                logger.info(f"  Clashes exported: {len(clash_ids) if clash_ids else 'all'}")
+                logger.info(f"  Viewpoints: {len(viewpoints)}")
+                logger.info(f"  Snapshots: {len(snapshots) if snapshots else 0}")
+                if not snapshots:
+                    logger.info("  Note: Snapshots skipped (large scene optimization)")
+                logger.info("="*70)
+
+                # User-facing messages
+                self.report({'INFO'}, f"✅ BCF exported successfully!")
+                self.report({'INFO'}, f"   File: {self.filepath}")
+                self.report({'INFO'}, f"   {message}")
+                print(f"\n{'='*70}")
+                print(f"✅ BCF EXPORT SUCCESS")
+                print(f"{'='*70}")
+                print(f"File: {self.filepath}")
+                print(f"Topics: {len(clash_ids) if clash_ids else 'all'}")
+                print(f"Viewpoints: {len(viewpoints)}")
+                print(f"Snapshots: {len(snapshots) if snapshots else 0}")
+                if not snapshots:
+                    print(f"Note: Snapshots skipped for performance (scene has {scene_obj_count if 'scene_obj_count' in dir() else '?'} objects)")
+                print(f"{'='*70}\n")
+
                 return {'FINISHED'}
             else:
                 logger.error(f"BCF export failed: {message}")
