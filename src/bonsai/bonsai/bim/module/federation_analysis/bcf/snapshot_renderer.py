@@ -501,18 +501,23 @@ class SnapshotRenderer:
             if "federation_guid" in obj:
                 ifc_guid = obj["federation_guid"]
 
-            # PRIORITY 2: Try BIMObjectProperties (full IFC load mode)
+            # PRIORITY 2: Check object name (common pattern: object.name == GUID)
+            # This handles objects created by get_clash_elements_for_visualization()
+            elif obj.name in guids:
+                ifc_guid = obj.name
+
+            # PRIORITY 3: Try BIMObjectProperties (full IFC load mode)
             elif hasattr(obj, 'BIMObjectProperties') and hasattr(obj.BIMObjectProperties, 'attributes'):
                 for attr in obj.BIMObjectProperties.attributes:
                     if attr.name == 'GlobalId':
                         ifc_guid = attr.string_value
                         break
 
-            # PRIORITY 3: Try direct property access
+            # PRIORITY 4: Try direct property access
             elif hasattr(obj, 'BIMObjectProperties'):
                 ifc_guid = obj.BIMObjectProperties.get('ifc_guid', '')
 
-            # PRIORITY 4: Check object name (last resort)
+            # PRIORITY 5: Check object name contains GUID (last resort)
             elif any(guid in obj.name for guid in guids):
                 ifc_guid = next((guid for guid in guids if guid in obj.name), None)
 
