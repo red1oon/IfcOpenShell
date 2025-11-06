@@ -549,3 +549,60 @@ class SnapshotRenderer:
         except Exception as e:
             print(f"    Warning: Optimization failed: {e}")
             return image_data
+
+    def set_viewport_to_viewpoint(self, viewpoint_data: Dict) -> bool:
+        """
+        Set Blender viewport camera to match viewpoint data.
+
+        Useful for positioning view before taking screenshots.
+
+        Args:
+            viewpoint_data: Dict with camera, target, up
+
+        Returns:
+            True if successful, False if viewport not found
+        """
+        try:
+            camera_loc = mathutils.Vector(viewpoint_data['camera'])
+            target_loc = mathutils.Vector(viewpoint_data['target'])
+
+            for area in bpy.context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    space = area.spaces.active
+                    region_3d = space.region_3d
+
+                    # Calculate view direction
+                    direction = (target_loc - camera_loc).normalized()
+
+                    # Create rotation from direction and up vector
+                    up = mathutils.Vector(viewpoint_data.get('up', (0, 0, 1)))
+
+                    # Build view matrix
+                    # Forward is -Z in Blender camera space
+                    forward = -direction
+                    right = up.cross(forward).normalized()
+                    up_corrected = forward.cross(right)
+
+                    rot_matrix = mathutils.Matrix([
+                        right,
+                        up_corrected,
+                        forward
+                    ]).transposed().to_4x4()
+
+                    rot_matrix.translation = camera_loc
+
+                    # Apply to viewport
+                    region_3d.view_matrix = rot_matrix.inverted()
+
+                    # Set view distance
+                    if 'distance' in viewpoint_data:
+                        region_3d.view_distance = viewpoint_data['distance']
+
+                    return True
+
+            # No 3D viewport found
+            return False
+
+        except Exception as e:
+            print(f"  Failed to set viewport: {e}")
+            return False
