@@ -97,20 +97,60 @@ class SnapshotRenderer:
         Captures current viewport state - no full render overhead.
         ~0.5s per snapshot, ~50-200KB file size.
         """
+        highlighted_objects = []
         try:
             import tempfile
             from pathlib import Path
+
+            # Get clash element GUIDs
+            guid_a, guid_b = self._get_clash_guids(clash_id)
+            if not guid_a or not guid_b:
+                print(f"  Warning: Could not get GUIDs for clash {clash_id}")
+                return None
+
+            # Ensure clash elements are loaded in viewport
+            # This loads them as procedural shapes if not already present
+            try:
+                from ..visualization.federation_viz_helper import get_clash_elements_for_visualization
+                obj_a, obj_b = get_clash_elements_for_visualization(guid_a, guid_b, self.database_path)
+                if not obj_a or not obj_b:
+                    print(f"  Warning: Could not load clash elements for clash {clash_id}")
+                    return None
+            except Exception as e:
+                print(f"  Warning: Failed to load clash elements: {e}")
+                return None
+
+            # Highlight the clash elements
+            highlighted_objects = self._highlight_elements_viewport([guid_a, guid_b])
 
             # Position viewport to clash location
             positioned = self.set_viewport_to_viewpoint(viewpoint_data)
             if not positioned:
                 print(f"  Warning: Could not position viewport for clash {clash_id}")
 
+            # Force viewport redraw to ensure camera position is applied
+            for area in bpy.context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    area.tag_redraw()
+
+            # Process pending updates
+            bpy.context.view_layer.update()
+
             # Create temp file for screenshot
             temp_path = Path(tempfile.gettempdir()) / f"clash_{clash_id}_viewport.png"
 
-            # Capture viewport to file
-            bpy.ops.screen.screenshot(filepath=str(temp_path))
+            # FIXED: Capture only 3D viewport area, not entire screen
+            # Find the 3D viewport and capture it using override context
+            for area in bpy.context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    # Override context to capture only this area
+                    with bpy.context.temp_override(area=area):
+                        bpy.ops.screen.screenshot(filepath=str(temp_path))
+                    break
+            else:
+                # Fallback if no 3D viewport found
+                print(f"  Warning: No 3D viewport found for clash {clash_id}")
+                bpy.ops.screen.screenshot(filepath=str(temp_path))
 
             # Read image
             if temp_path.exists():
@@ -133,6 +173,10 @@ class SnapshotRenderer:
         except Exception as e:
             print(f"  Viewport snapshot failed for clash {clash_id}: {e}")
             return None
+        finally:
+            # Always restore highlighted elements
+            if highlighted_objects:
+                self._restore_element_highlighting_viewport(highlighted_objects)
 
     def _render_full_snapshot(
         self,
@@ -421,6 +465,80 @@ class SnapshotRenderer:
                 obj.color = item['color']
             obj.display_type = item['display_type']
             obj.show_in_front = False
+
+    def _highlight_elements_viewport(self, guids: List[str]) -> List[Dict]:
+        """
+        Highlight elements for viewport screenshots.
+
+        Makes elements stand out by selecting them and setting bright color.
+        Works with viewport shading modes and database-only procedural objects.
+
+        Returns list of original states for restoration.
+        """
+        highlighted = []
+
+        for obj in bpy.data.objects:
+            # Check if object has IFC GUID (in various possible locations)
+            ifc_guid = None
+
+            # PRIORITY 1: Check federation_guid custom property (database-only mode)
+            if "federation_guid" in obj:
+                ifc_guid = obj["federation_guid"]
+
+            # PRIORITY 2: Try BIMObjectProperties (full IFC load mode)
+            elif hasattr(obj, 'BIMObjectProperties') and hasattr(obj.BIMObjectProperties, 'attributes'):
+                for attr in obj.BIMObjectProperties.attributes:
+                    if attr.name == 'GlobalId':
+                        ifc_guid = attr.string_value
+                        break
+
+            # PRIORITY 3: Try direct property access
+            elif hasattr(obj, 'BIMObjectProperties'):
+                ifc_guid = obj.BIMObjectProperties.get('ifc_guid', '')
+
+            # PRIORITY 4: Check object name (last resort)
+            elif any(guid in obj.name for guid in guids):
+                ifc_guid = next((guid for guid in guids if guid in obj.name), None)
+
+            if ifc_guid and ifc_guid in guids:
+                # Store original state
+                original = {
+                    'object': obj,
+                    'color': obj.color[:] if hasattr(obj, 'color') else (1.0, 1.0, 1.0, 1.0),
+                    'hide_viewport': obj.hide_viewport,
+                    'hide_select': obj.hide_select,
+                    'select': obj.select_get()
+                }
+                highlighted.append(original)
+
+                # Apply bright red highlight visible in viewport
+                obj.color = (1.0, 0.0, 0.0, 1.0)  # Bright red
+                obj.hide_viewport = False
+                obj.hide_select = False
+                obj.select_set(True)  # Select for visibility
+
+                # Make appear in front (helps with occlusion)
+                if hasattr(obj, 'show_in_front'):
+                    obj.show_in_front = True
+
+        if len(highlighted) == 0:
+            print(f"    Warning: Could not find objects for GUIDs {guids}")
+        else:
+            print(f"    Highlighted {len(highlighted)} clash elements")
+
+        return highlighted
+
+    def _restore_element_highlighting_viewport(self, highlighted: List[Dict]):
+        """Restore elements to original viewport state."""
+        for item in highlighted:
+            obj = item['object']
+            obj.color = item['color']
+            obj.hide_viewport = item['hide_viewport']
+            obj.hide_select = item['hide_select']
+            obj.select_set(item['select'])
+
+            if hasattr(obj, 'show_in_front'):
+                obj.show_in_front = False
 
     def _hide_distant_objects(self, center: mathutils.Vector, radius: float) -> List:
         """
