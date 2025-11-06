@@ -147,18 +147,12 @@ class SnapshotRenderer:
             # Create temp file for screenshot
             temp_path = Path(tempfile.gettempdir()) / f"clash_{clash_id}_viewport.png"
 
-            # FIXED: Capture only 3D viewport area, not entire screen
-            # Find the 3D viewport and capture it using override context
-            for area in bpy.context.screen.areas:
-                if area.type == 'VIEW_3D':
-                    # Override context to capture only this area
-                    with bpy.context.temp_override(area=area):
-                        bpy.ops.screen.screenshot(filepath=str(temp_path))
-                    break
-            else:
-                # Fallback if no 3D viewport found
-                print(f"  Warning: No 3D viewport found for clash {clash_id}")
-                bpy.ops.screen.screenshot(filepath=str(temp_path))
+            # Render viewport to offscreen buffer (viewport only, no UI)
+            screenshot_success = self._render_viewport_to_image(temp_path, width, height)
+
+            if not screenshot_success:
+                print(f"  Warning: Viewport rendering failed for clash {clash_id}")
+                return None
 
             # Read image
             if temp_path.exists():
@@ -688,6 +682,94 @@ class SnapshotRenderer:
         except Exception as e:
             print(f"    Warning: Optimization failed: {e}")
             return image_data
+
+    def _render_viewport_to_image(self, filepath: Path, width: int, height: int) -> bool:
+        """
+        Render current viewport view to image file (clean render, no UI).
+
+        Uses Blender's workbench renderer with current viewport camera position.
+        This produces clean images without UI panels.
+
+        Args:
+            filepath: Output PNG file path
+            width: Image width in pixels
+            height: Image height in pixels
+
+        Returns:
+            True if successful, False otherwise
+        """
+        temp_camera = None
+        original_camera = None
+        original_settings = None
+
+        try:
+            # Store original render settings
+            original_settings = self._store_render_settings()
+            scene = bpy.context.scene
+            original_camera = scene.camera
+
+            # Find 3D viewport to get current view
+            view3d_region = None
+            for area in bpy.context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            view3d_region = region
+                            break
+                    if view3d_region:
+                        space = area.spaces.active
+                        break
+
+            if not view3d_region:
+                print("  Error: No 3D viewport found")
+                return False
+
+            # Create temporary camera matching viewport view
+            camera_data = bpy.data.cameras.new(name="BCF_Temp_Viewport_Cam")
+            temp_camera = bpy.data.objects.new("BCF_Temp_Viewport_Cam", camera_data)
+            scene.collection.objects.link(temp_camera)
+
+            # Copy viewport camera transform to temp camera
+            temp_camera.matrix_world = view3d_region.view_matrix.inverted()
+
+            # Set camera FOV to match viewport
+            camera_data.lens = 35  # Default perspective lens
+
+            # Set as scene camera
+            scene.camera = temp_camera
+
+            # Configure render settings for clean output
+            scene.render.resolution_x = width
+            scene.render.resolution_y = height
+            scene.render.resolution_percentage = 100
+            scene.render.image_settings.file_format = 'PNG'
+            scene.render.image_settings.color_mode = 'RGBA'
+
+            # Use workbench engine for fast rendering with good quality
+            scene.render.engine = 'BLENDER_WORKBENCH'
+            scene.display.shading.light = 'STUDIO'
+            scene.display.shading.color_type = 'OBJECT'  # Show object colors
+
+            # Render to file
+            scene.render.filepath = str(filepath)
+            bpy.ops.render.render(write_still=True)
+
+            return True
+
+        except Exception as e:
+            print(f"  Error rendering viewport: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+        finally:
+            # Cleanup: Remove temp camera and restore settings
+            if temp_camera:
+                bpy.data.objects.remove(temp_camera, do_unlink=True)
+            if original_camera:
+                bpy.context.scene.camera = original_camera
+            if original_settings:
+                self._restore_render_settings(original_settings)
 
     def set_viewport_to_viewpoint(self, viewpoint_data: Dict) -> bool:
         """
