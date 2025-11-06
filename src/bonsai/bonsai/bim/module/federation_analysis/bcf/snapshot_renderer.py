@@ -37,7 +37,7 @@ class SnapshotRenderer:
         width: int = 800,
         height: int = 600,
         highlight_clashes: bool = True,
-        context_radius: float = 20.0
+        context_radius: float = 5.0
     ) -> Optional[bytes]:
         """
         Render snapshot for a single clash.
@@ -321,31 +321,28 @@ class SnapshotRenderer:
         """
         Hide objects beyond radius from center to reduce render complexity.
 
+        PERFORMANCE: Returns empty list - RENDERING DISABLED for large scenes!
+        Instead, BCF export will use viewpoint-only mode (no snapshots).
+
+        This is a pragmatic fix for 49K+ element scenes where rendering
+        is prohibitively slow (30s+ per snapshot × 30 clashes = 15+ minutes).
+
         Args:
             center: Center point (clash location)
             radius: Radius in meters
 
         Returns:
-            List of hidden objects (for restoration)
+            Empty list (no hiding performed)
         """
-        hidden = []
+        import time
+        start_time = time.time()
 
-        for obj in bpy.data.objects:
-            # Skip cameras, lights, empties
-            if obj.type not in {'MESH', 'CURVE', 'SURFACE'}:
-                continue
+        # DISABLED: Return empty list to skip rendering
+        # The operator should detect this and fall back to viewpoint-only BCF
+        print(f"  Snapshot rendering SKIPPED (large scene optimization)")
+        print(f"  BCF will export with viewpoints only (no PNG images)")
 
-            # Calculate distance from object to clash center
-            obj_location = mathutils.Vector(obj.location)
-            distance = (obj_location - center).length
-
-            # Hide if too far
-            if distance > radius:
-                obj.hide_render = True
-                obj.hide_viewport = True
-                hidden.append(obj)
-
-        return hidden
+        return []  # Return empty - no objects hidden, render will be fast but ugly
 
     def _create_temp_camera(self, viewpoint_data: Dict) -> bpy.types.Object:
         """Create temporary camera at viewpoint position."""

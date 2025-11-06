@@ -1750,22 +1750,33 @@ class BIM_OT_export_bcf(bpy.types.Operator):
             # Generate snapshots if requested
             snapshots = None
             if self.generate_snapshots:
-                self.report({'INFO'}, f"Rendering {len(viewpoints)} snapshots (this may take a while)...")
+                # PERFORMANCE: Check scene size - skip snapshots for huge scenes
+                scene_obj_count = len([o for o in bpy.data.objects if o.type == 'MESH'])
+                snapshot_timeout = 10  # Max seconds per snapshot
 
-                # Note: Snapshot rendering requires clash visualization to be loaded
-                # For now, we'll skip rendering if nothing is loaded
-                try:
-                    snapshots = snapshot_renderer.render_all_clash_snapshots(
-                        viewpoints,
-                        clash_ids,
-                        width=800,
-                        height=600
-                    )
-                    self.report({'INFO'}, f"Rendered {len(snapshots)} snapshots")
-                except Exception as e:
-                    logger.warning(f"Snapshot rendering failed: {e}")
-                    self.report({'WARNING'}, "Snapshot rendering failed, exporting without images")
+                if scene_obj_count > 10000:
+                    logger.warning(f"Scene has {scene_obj_count} objects - snapshot rendering disabled for performance")
+                    self.report({'WARNING'}, f"Scene too large ({scene_obj_count} objects) - exporting viewpoints only (no snapshots)")
+                    logger.info(f"  Estimated render time: {scene_obj_count}×30 clashes×30s = {scene_obj_count*30*30/3600:.1f} hours!")
+                    logger.info("  Recommendation: Use viewpoint-only BCF export for large scenes")
                     snapshots = None
+                else:
+                    self.report({'INFO'}, f"Rendering {len(viewpoints)} snapshots (this may take a while)...")
+
+                    # Note: Snapshot rendering requires clash visualization to be loaded
+                    # For now, we'll skip rendering if nothing is loaded
+                    try:
+                        snapshots = snapshot_renderer.render_all_clash_snapshots(
+                            viewpoints,
+                            clash_ids,
+                            width=800,
+                            height=600
+                        )
+                        self.report({'INFO'}, f"Rendered {len(snapshots)} snapshots")
+                    except Exception as e:
+                        logger.warning(f"Snapshot rendering failed: {e}")
+                        self.report({'WARNING'}, "Snapshot rendering failed, exporting without images")
+                        snapshots = None
 
             # Generate BCF ZIP file
             self.report({'INFO'}, "Creating BCF file...")
