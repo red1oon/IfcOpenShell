@@ -25,6 +25,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from bonsai.bim.module.clash.prop import BIMClashProperties
 
+# Import label mapper for friendly IFC class names
+from .ifc_label_mapper import get_friendly_label, get_discipline_label
+
 
 class BIM_UL_federated_files(UIList):
     """UI List for displaying federated files"""
@@ -417,13 +420,22 @@ class BIM_PT_federation_clash_detection(Panel):
                 detail_box = result_box.box()
                 detail_box.label(text="Clash Details:", icon="INFO")
                 col = detail_box.column(align=True)
+
+                # Get database path for label lookups
+                fed_props = context.scene.BIMFederationProperties
+                db_path = fed_props.federation_database_path if fed_props.federation_database_path else None
+
+                # Get friendly class names
+                friendly_class_a = get_friendly_label(candidate.ifc_class_a, db_path=db_path)
+                friendly_class_b = get_friendly_label(candidate.ifc_class_b, db_path=db_path)
+
                 col.label(text=f"Element A: {candidate.name_a}")
                 col.label(text=f"  GUID: {candidate.guid_a}")
-                col.label(text=f"  Class: {candidate.ifc_class_a}")
+                col.label(text=f"  Class: {friendly_class_a}")
                 col.separator()
                 col.label(text=f"Element B: {candidate.name_b}")
                 col.label(text=f"  GUID: {candidate.guid_b}")
-                col.label(text=f"  Class: {candidate.ifc_class_b}")
+                col.label(text=f"  Class: {friendly_class_b}")
 
 
 class BIM_PT_federation_lod_visualization(Panel):
@@ -580,16 +592,14 @@ class BIM_UL_discipline_clashes(UIList):
             # Checkbox column
             row.prop(item, "selected", text="")
 
-            # Element A
-            row.label(text=str(item.name_a), translate=False, icon="NONE")
-
-            # Element B
-            row.label(text=str(item.name_b), translate=False, icon="NONE")
-
-            # Type (grayed out)
-            col = row.column()
-            col.enabled = False
-            col.label(text=f"{item.ifc_class_a}/{item.ifc_class_b}")
+            # Element A | Element B - Show friendly IFC class names
+            # Get database path for label lookups
+            fed_props = context.scene.BIMFederationProperties
+            db_path = fed_props.federation_database_path if fed_props.federation_database_path else None
+            # Get friendly labels
+            friendly_a = get_friendly_label(item.ifc_class_a, db_path=db_path)
+            friendly_b = get_friendly_label(item.ifc_class_b, db_path=db_path)
+            row.label(text=f"{friendly_a}  |  {friendly_b}", translate=False)
         else:
             layout.label(text="", translate=False)
 
@@ -877,14 +887,55 @@ class BIM_UL_resolution_options(UIList):
             else:
                 row.label(text=f"Option {index + 1}")
 
-            # Resolution type
+            # Resolution type - Replace IFC class names with friendly labels
             resolution_type = getattr(item, 'resolution_type', 'Unknown')
-            row.label(text=resolution_type)
 
-            # Cost and effort
-            effort_hours = getattr(item, 'effort_hours', 0.0)
-            cost = getattr(item, 'cost', 0.0)
-            row.label(text=f"{effort_hours:.1f}h / ${cost:,.0f}")
+            # Parse and replace IFC class names (e.g., "IfcOpeningElement(8)" -> "Opening(8)")
+            import re
+            fed_props = context.scene.BIMFederationProperties
+            db_path = fed_props.federation_database_path if fed_props.federation_database_path else None
+
+            def replace_ifc_class(match):
+                ifc_class = match.group(1)
+                count = match.group(2)
+                friendly = get_friendly_label(ifc_class, db_path=db_path)
+                # Pluralize if count > 1
+                plural = friendly + 's' if int(count) > 1 else friendly
+                return f"{count} {plural}"
+
+            # Replace pattern like "IfcOpeningElement(8) Coordinate $1.1k 10h MED"
+            # with "8 Openings → Coordinate ($1.1k, 10h, MED)"
+            friendly_resolution_type = re.sub(r'(Ifc\w+)\((\d+)\)', replace_ifc_class, resolution_type)
+
+            # Reformat: Extract action and details, add arrow
+            # Pattern: "5 HVAC Duct Segments Reroute Mep $0.9k 7h MED"
+            # Split into: element count/type + action + cost/time/confidence
+            parts = friendly_resolution_type.split()
+            if len(parts) >= 3:
+                # Find where the action starts (after the element description)
+                # Simple heuristic: action words are "Coordinate", "Reroute", "Lower", etc.
+                action_words = ['Coordinate', 'Reroute', 'Lower', 'Raise', 'Resize', 'Move']
+                action_idx = None
+                for i, part in enumerate(parts):
+                    if any(part.startswith(word) for word in action_words):
+                        action_idx = i
+                        break
+
+                if action_idx:
+                    element_part = ' '.join(parts[:action_idx])  # "5 HVAC Duct Segments"
+                    action_part = ' '.join(parts[action_idx:])    # "Reroute Mep $0.9k 7h MED"
+
+                    # Extract cost, time, confidence if present
+                    cost_match = re.search(r'\$[\d.]+k?', action_part)
+                    time_match = re.search(r'\d+\.?\d*h', action_part)
+                    conf_match = re.search(r'(LOW|MED|HIGH|CRITICAL)', action_part)
+
+                    if cost_match and time_match and conf_match:
+                        action_name = action_part[:cost_match.start()].strip()
+                        details = f"({cost_match.group()}, {time_match.group()}, {conf_match.group()})"
+                        friendly_resolution_type = f"{element_part} → {action_name} {details}"
+
+            row.label(text=friendly_resolution_type)
 
             # Risk level
             risk_icons = {

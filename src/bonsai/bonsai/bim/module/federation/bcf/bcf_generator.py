@@ -18,6 +18,9 @@ from typing import Dict, List, Optional, Tuple
 import zipfile
 import io
 
+# Import label mapper for friendly names in BCF exports
+from ..ifc_label_mapper import get_element_display_name, get_discipline_label
+
 
 class BCFGenerator:
     """
@@ -142,8 +145,12 @@ class BCFGenerator:
                 cs.comment,
                 cs.distance,
                 cs.date_created,
-                cs.date_modified
+                cs.date_modified,
+                ss_a.storey as storey_a,
+                ss_b.storey as storey_b
             FROM clash_status cs
+            LEFT JOIN spatial_structure ss_a ON cs.guid_a = ss_a.guid
+            LEFT JOIN spatial_structure ss_b ON cs.guid_b = ss_b.guid
             WHERE cs.is_ignored = 0
         """
 
@@ -216,8 +223,23 @@ class BCFGenerator:
         ET.SubElement(refs, 'ReferenceLink').text = clash['guid_a']
         ET.SubElement(refs, 'ReferenceLink').text = clash['guid_b']
 
-        # Title (descriptive clash name)
-        title = f"Clash: {clash['name_a']} vs {clash['name_b']}"
+        # Title (descriptive clash name with friendly labels)
+        # Use friendly element names with spatial context
+        elem_a_display = get_element_display_name(
+            guid=clash['guid_a'],
+            ifc_class=clash['ifc_class_a'],
+            element_name=clash.get('name_a'),
+            storey=clash.get('storey_a'),
+            db_path=self.database_path
+        )
+        elem_b_display = get_element_display_name(
+            guid=clash['guid_b'],
+            ifc_class=clash['ifc_class_b'],
+            element_name=clash.get('name_b'),
+            storey=clash.get('storey_b'),
+            db_path=self.database_path
+        )
+        title = f"Clash: {elem_a_display} vs {elem_b_display}"
         ET.SubElement(topic, 'Title').text = title
 
         # Priority (based on disciplines and severity)
@@ -244,10 +266,12 @@ class BCFGenerator:
         description = self._generate_clash_description(clash)
         ET.SubElement(topic, 'Description').text = description
 
-        # Labels (disciplines, element types)
+        # Labels (disciplines, element types) - Use friendly names
         labels = ET.SubElement(topic, 'Labels')
-        ET.SubElement(labels, 'Label').text = clash['discipline_a']
-        ET.SubElement(labels, 'Label').text = clash['discipline_b']
+        # Friendly discipline names
+        ET.SubElement(labels, 'Label').text = get_discipline_label(clash['discipline_a'])
+        ET.SubElement(labels, 'Label').text = get_discipline_label(clash['discipline_b'])
+        # Keep original IFC classes as technical reference
         ET.SubElement(labels, 'Label').text = clash['ifc_class_a']
         ET.SubElement(labels, 'Label').text = clash['ifc_class_b']
 
