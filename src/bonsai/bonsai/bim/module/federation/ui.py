@@ -16,8 +16,14 @@ Federation Module UI
 Blender interface panels for multi-model federation management.
 """
 
+from __future__ import annotations
 import bpy
+import bonsai.tool as tool
 from bpy.types import Panel, UIList
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from bonsai.bim.module.clash.prop import BIMClashProperties
 
 
 class BIM_UL_federated_files(UIList):
@@ -253,20 +259,8 @@ class BIM_PT_federation(Panel):
 # You should have received a copy of the GNU General Public License
 # along with Bonsai.  If not, see <http://www.gnu.org/licenses/>.
 
-"""
-Federation Analysis UI
-
-UI panels for discipline-based clash detection and LOD visualization.
-"""
-
-from __future__ import annotations
-import bpy
-import bonsai.tool as tool
-from bpy.types import Panel, UIList
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from bonsai.bim.module.clash.prop import BIMClashProperties
+# === Federation Analysis UI Panels (merged from federation_analysis module) ===
+# Panels for discipline-based clash detection and LOD visualization
 
 
 class BIM_PT_federation_clash_detection(Panel):

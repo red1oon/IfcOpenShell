@@ -16,6 +16,7 @@ Federation Module Properties
 Blender property groups for storing federation settings and state.
 """
 
+from __future__ import annotations
 import bpy
 from pathlib import Path
 from bpy.types import PropertyGroup
@@ -280,21 +281,7 @@ Custom properties for discipline-based clash detection and LOD visualization.
 These properties are added to the existing BIMClashProperties in the clash module.
 """
 
-from __future__ import annotations
-import bpy
-from bpy.props import (
-    StringProperty,
-    BoolProperty,
-    FloatProperty,
-    EnumProperty,
-    IntProperty,
-    CollectionProperty,
-)
-from bpy.types import PropertyGroup
-from typing import TYPE_CHECKING, Literal
-
-if TYPE_CHECKING:
-    from mathutils import Vector
+# (Imports already at top of file - federation_analysis properties merged below)
 
 
 class DisciplineClashCandidate(PropertyGroup):
