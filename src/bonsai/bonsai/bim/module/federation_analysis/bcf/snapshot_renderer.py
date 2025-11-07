@@ -86,6 +86,106 @@ class SnapshotRenderer:
             print(f"Failed to render snapshot for clash {clash_id}: {e}")
             return None
 
+    def render_group_snapshot(
+        self,
+        guids: List[str],
+        viewpoint_data: Dict,
+        width: int = 800,
+        height: int = 600,
+        target_size_kb: int = 200
+    ) -> Optional[bytes]:
+        """
+        Render snapshot for a cascade group with multiple elements.
+
+        Highlights all elements in the cascade group (not just one clash pair).
+        Used for clash resolution reports to show all affected elements.
+
+        Args:
+            guids: List of element GUIDs to highlight
+            viewpoint_data: Camera position data
+            width: Image width in pixels
+            height: Image height in pixels
+            target_size_kb: Target PNG file size in KB
+
+        Returns:
+            PNG image as bytes, or None if rendering failed
+        """
+        highlighted_objects = []
+        try:
+            import tempfile
+            from pathlib import Path
+
+            # Load all elements in viewport
+            try:
+                from ..visualization.federation_viz_helper import get_clash_elements_for_visualization
+                loaded_count = 0
+                for guid in guids:
+                    # Try to load each element (may already be loaded)
+                    obj, _ = get_clash_elements_for_visualization(guid, guid, self.database_path)
+                    if obj:
+                        loaded_count += 1
+
+                if loaded_count == 0:
+                    print(f"  Warning: Could not load any elements from {len(guids)} GUIDs")
+                    return None
+
+            except Exception as e:
+                print(f"  Warning: Failed to load cascade elements: {e}")
+                return None
+
+            # Highlight all cascade elements
+            highlighted_objects = self._highlight_elements_viewport(guids)
+
+            # Position viewport to cascade location
+            positioned = self.set_viewport_to_viewpoint(viewpoint_data)
+            if not positioned:
+                logger.debug(f"Could not position viewport for cascade group (using default view)")
+
+            # Force viewport redraw to ensure camera position is applied
+            for area in bpy.context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    area.tag_redraw()
+
+            # Process pending updates
+            bpy.context.view_layer.update()
+
+            # Create temp file for screenshot
+            temp_path = Path(tempfile.gettempdir()) / f"cascade_group_viewport.png"
+
+            # Take viewport screenshot
+            bpy.ops.screen.screenshot(filepath=str(temp_path), full=True)
+
+            # Read screenshot
+            if not temp_path.exists():
+                print(f"  Error: Screenshot not saved to {temp_path}")
+                return None
+
+            with open(temp_path, 'rb') as f:
+                image_data = f.read()
+
+            # Cleanup
+            temp_path.unlink()
+
+            # Restore element highlighting
+            if highlighted_objects:
+                self._restore_element_highlighting_viewport(highlighted_objects)
+
+            return image_data
+
+        except Exception as e:
+            print(f"Failed to render cascade group snapshot: {e}")
+            import traceback
+            traceback.print_exc()
+
+            # Restore highlighting if failed
+            if highlighted_objects:
+                try:
+                    self._restore_element_highlighting_viewport(highlighted_objects)
+                except:
+                    pass
+
+            return None
+
     def _render_viewport_snapshot(
         self,
         clash_id: int,

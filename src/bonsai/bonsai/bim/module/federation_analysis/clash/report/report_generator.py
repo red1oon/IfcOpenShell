@@ -519,7 +519,9 @@ class ReportGenerator:
                 disc_b = get_discipline_label(member.get('element_b_discipline', ''))
                 disciplines = f"{disc_a} vs {disc_b}"
 
-                sections.append(f"| {idx} | {elem_a_display} | {elem_b_display} | {disciplines} | {member['status']} |")
+                # Link element names to group snapshot
+                snapshot_link = f"snapshots/group_{group_id}_overview.png"
+                sections.append(f"| {idx} | [{elem_a_display}]({snapshot_link}) | [{elem_b_display}]({snapshot_link}) | {disciplines} | {member['status']} |")
 
         # Resolution options
         if group['resolution_options']:

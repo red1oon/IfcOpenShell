@@ -76,7 +76,7 @@ class SnapshotManager:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
-            # Get root element for camera positioning AND a representative clash
+            # Get root element for camera positioning
             cursor.execute("""
                 SELECT
                     cascade_element_guid as root_element_guid,
@@ -90,20 +90,27 @@ class SnapshotManager:
                 conn.close()
                 return False, f"Group {group_id} not found"
 
-            # Get a representative clash from this group for rendering
+            # Get ALL clashes in this cascade group (not just one representative)
             cursor.execute("""
-                SELECT clash_id
-                FROM clash_group_members
-                WHERE group_id = ?
-                LIMIT 1
+                SELECT cs.guid_a, cs.guid_b
+                FROM clash_group_members cgm
+                JOIN clash_status cs ON cgm.clash_id = cs.clash_id
+                WHERE cgm.group_id = ?
             """, (group_id,))
 
-            clash_row = cursor.fetchone()
-            if not clash_row:
+            clash_rows = cursor.fetchall()
+            if not clash_rows:
                 conn.close()
                 return False, f"No clashes found for group {group_id}"
 
-            representative_clash_id = clash_row[0]
+            # Collect all unique GUIDs from all clashes in the group
+            all_guids = set()
+            for row in clash_rows:
+                all_guids.add(row['guid_a'])
+                all_guids.add(row['guid_b'])
+            all_guids = list(all_guids)
+
+            print(f"  Cascade group {group_id}: {len(clash_rows)} clashes, {len(all_guids)} unique elements")
 
             # Get element position from database
             cursor.execute("""
@@ -142,17 +149,16 @@ class SnapshotManager:
                 'camera_up_vector': [0, 0, 1],  # Z-up
             }
 
-            # Generate clash overview snapshot (current state with clashes highlighted)
+            # Generate cascade group snapshot showing ALL affected elements
+            # Highlights all elements in cascade group (not just one clash pair)
             # Note: Engineers visualize proposed changes in their BIM software (Revit/Blender)
             # No "after" snapshot needed for POC
             snapshot_file = output_dir / f"group_{group_id}_overview.png"
-            snapshot_bytes = self.renderer.render_clash_snapshot(
-                clash_id=representative_clash_id,  # Use actual clash ID from group
+            snapshot_bytes = self.renderer.render_group_snapshot(
+                guids=all_guids,  # All unique GUIDs from cascade group
                 viewpoint_data=viewpoint_data,
                 width=width,
                 height=height,
-                highlight_clashes=True,  # Red highlighting shows clash locations
-                fast_mode=True,  # Fast viewport rendering (~1s per snapshot)
                 target_size_kb=300
             )
 
