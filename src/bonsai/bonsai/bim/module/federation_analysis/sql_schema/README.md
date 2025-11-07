@@ -70,8 +70,15 @@ sqlite3 DatabaseFiles/database.db < sql_schema/initialize_ifc_label_dictionary.s
 
 **Location Strategy:**
 - These schemas are safekept in the git repository
-- Working copies may exist in `~/Documents/bonsai/Scripts/` for testing
-- This `sql_schema/` directory is the canonical source of truth
+- Working copies in `~/Documents/bonsai/Scripts/` are preserved for backward compatibility
+- This `sql_schema/` directory is the canonical source of truth for version-controlled schemas
+- Do NOT overwrite old scripts in Scripts/ - they may have local customizations
+
+**Backward Compatibility:**
+- All existing databases continue to work without schema changes
+- `ifc_labels` tables are OPTIONAL - system has fallback behavior
+- CREATE TABLE statements use `IF NOT EXISTS` - safe to run multiple times
+- Python code checks for table existence before querying
 
 **Future Work:**
 - Schema migration system (version upgrades)

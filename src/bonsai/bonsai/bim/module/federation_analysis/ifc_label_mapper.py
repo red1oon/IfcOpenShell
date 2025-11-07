@@ -307,6 +307,7 @@ def get_element_display_name(
     # Clean up storey name for display
     location = ""
     if storey:
+        import re
         # Transform "04 THIRD FLOOR LEVEL" -> "3rd Floor"
         # Transform "GROUND FLOOR LEVEL" -> "Ground Floor"
         location = (storey
@@ -320,7 +321,6 @@ def get_element_display_name(
                    .replace("GROUND", "Ground")
                    .strip())
         # Remove leading numbers if present (e.g., "04 3rd Floor" -> "3rd Floor")
-        import re
         location = re.sub(r'^\d+\s+', '', location)
 
     # Check if element_name is meaningful
