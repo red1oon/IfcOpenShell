@@ -15,7 +15,7 @@ import time
 from mathutils import Vector, Euler
 from typing import List, Optional, Callable, Dict, Tuple
 from . import semantic_utils
-from .visualization import shape_templates
+from ..visualization import shape_templates
 
 
 # Priority system for progressive loading
@@ -358,7 +358,7 @@ class ChunkedSemanticLoader:
         mat.use_nodes = True
 
         # Get discipline color
-        from .bbox_visualization import DISCIPLINE_COLORS
+        from ..bbox_visualization import DISCIPLINE_COLORS
         color = DISCIPLINE_COLORS.get(discipline, DISCIPLINE_COLORS['DEFAULT'])
 
         # Set color in shader

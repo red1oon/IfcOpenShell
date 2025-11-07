@@ -321,7 +321,7 @@ class ExecuteIfcClash(bpy.types.Operator, ExportHelper):
         # Bbox prefilter hook (if enabled)
         if self.props.enable_bbox_prefilter and self.props.bbox_database_path:
             try:
-                from bonsai.bim.module.federation.spatial_index import FederationIndex
+                from bonsai.bim.module.federation.core.spatial_index import FederationIndex
 
                 db_path = Path(self.props.bbox_database_path)
 
@@ -701,7 +701,7 @@ class _DEPRECATED_BIM_OT_clash_by_discipline(bpy.types.Operator):
         print("=" * 70)
 
         try:
-            from bonsai.bim.module.federation.spatial_index import FederationIndex
+            from bonsai.bim.module.federation.core.spatial_index import FederationIndex
 
             # Load spatial index
             start_time = time.time()
@@ -1051,7 +1051,7 @@ class BIM_OT_analyze_bbox_candidates(bpy.types.Operator):
         print("=" * 70)
 
         try:
-            from bonsai.bim.module.federation.spatial_index import FederationIndex
+            from bonsai.bim.module.federation.core.spatial_index import FederationIndex
 
             # Build index
             start_time = time.time()
