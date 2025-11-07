@@ -963,7 +963,7 @@ class BIM_OT_select_discipline_clash(bpy.types.Operator):
             self.report({'ERROR'}, "No federation database loaded")
             return {"CANCELLED"}
 
-        from ..federation_analysis.visualization import federation_viz_helper
+        from ..federation.visualization import federation_viz_helper
 
         # Find or create elements from database
         print(f"Finding clash elements from database (no IFC needed)...")
@@ -1172,7 +1172,7 @@ class BIM_OT_visualize_selected_discipline_clashes(bpy.types.Operator):
         print(f"Collection: {collection_name}")
 
         # Import gizmo module for DB query helper
-        from ..federation_analysis.clash import gizmo
+        from ..federation.clash import gizmo
 
         # Get federation DB path
         db_path = props.bbox_database_path
@@ -1296,13 +1296,13 @@ class BIM_OT_clear_discipline_clash_visualization(bpy.types.Operator):
         print("\n=== Clearing ALL Clash Visualizations ===")
 
         # 1. Disable GPU overlay visualization
-        from ..federation_analysis.clash import visualization
+        from ..federation.clash import visualization
         if visualization.is_enabled():
             visualization.disable_visualization()
             print("✓ Disabled GPU overlay visualization")
 
         # 2. Disable Gizmo visualization
-        from ..federation_analysis.clash import gizmo
+        from ..federation.clash import gizmo
         props = tool.Clash.get_clash_props()
         if gizmo.is_gizmo_group_active():
             props.gizmo_visualization_enabled = False
@@ -1376,7 +1376,7 @@ class BIM_OT_enable_clash_gpu_visualization(bpy.types.Operator):
     bl_options = {"REGISTER"}
 
     def execute(self, context):
-        from ..federation_analysis.clash import visualization
+        from ..federation.clash import visualization
 
         props = tool.Clash.get_clash_props()
 
@@ -1403,7 +1403,7 @@ class BIM_OT_enable_clash_gpu_visualization(bpy.types.Operator):
 
                 # Found reference - query DB for first clash bbox center as IFC reference
                 if props.discipline_clash_candidates:
-                    from ..federation_analysis.clash import gizmo
+                    from ..federation.clash import gizmo
                     first_clash = props.discipline_clash_candidates[0]
                     db_path = props.bbox_database_path
                     ifc_ref = gizmo.get_element_bbox_center(first_clash.guid_a, db_path)
@@ -1418,7 +1418,7 @@ class BIM_OT_enable_clash_gpu_visualization(bpy.types.Operator):
                     break
 
         # Convert candidates to visualization format (query DB for coords)
-        from ..federation_analysis.clash import gizmo
+        from ..federation.clash import gizmo
         from pathlib import Path
 
         db_path = props.bbox_database_path
@@ -1465,7 +1465,7 @@ class BIM_OT_disable_clash_gpu_visualization(bpy.types.Operator):
     bl_options = {"REGISTER"}
 
     def execute(self, context):
-        from ..federation_analysis.clash import visualization
+        from ..federation.clash import visualization
 
         if not visualization.is_enabled():
             self.report({'INFO'}, "GPU visualization already disabled")
@@ -1485,7 +1485,7 @@ class BIM_OT_enable_clash_gizmo_visualization(bpy.types.Operator):
     bl_options = {"REGISTER"}
 
     def execute(self, context):
-        from ..federation_analysis.clash import gizmo
+        from ..federation.clash import gizmo
 
         props = tool.Clash.get_clash_props()
 
@@ -1518,7 +1518,7 @@ class BIM_OT_enable_clash_gizmo_visualization(bpy.types.Operator):
 
                 # Found reference - query DB for first clash bbox center as IFC reference
                 if props.discipline_clash_candidates:
-                    from ..federation_analysis.clash import gizmo
+                    from ..federation.clash import gizmo
                     first_clash = props.discipline_clash_candidates[0]
                     db_path = props.bbox_database_path
                     ifc_ref = gizmo.get_element_bbox_center(first_clash.guid_a, db_path)
@@ -1553,7 +1553,7 @@ class BIM_OT_disable_clash_gizmo_visualization(bpy.types.Operator):
     bl_options = {"REGISTER"}
 
     def execute(self, context):
-        from ..federation_analysis.clash import gizmo
+        from ..federation.clash import gizmo
 
         props = tool.Clash.get_clash_props()
 
@@ -1861,7 +1861,7 @@ class BIM_OT_enable_semantic_proxy_visualization(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from ..federation_analysis.visualization import semantic_shapes as semantic_visualization
+        from ..federation.visualization import semantic_shapes as semantic_visualization
 
         props = tool.Clash.get_clash_props()
         fed_props = context.scene.BIMFederationProperties
@@ -1906,7 +1906,7 @@ class BIM_OT_disable_semantic_proxy_visualization(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from ..federation_analysis.visualization import semantic_shapes as semantic_visualization
+        from ..federation.visualization import semantic_shapes as semantic_visualization
 
         props = tool.Clash.get_clash_props()
 
@@ -1927,7 +1927,7 @@ class BIM_OT_enable_full_geometry_visualization(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from ..federation_analysis.visualization import semantic_shapes as semantic_visualization
+        from ..federation.visualization import semantic_shapes as semantic_visualization
 
         props = tool.Clash.get_clash_props()
         fed_props = context.scene.BIMFederationProperties
@@ -1972,7 +1972,7 @@ class BIM_OT_disable_full_geometry_visualization(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from ..federation_analysis.visualization import semantic_shapes as semantic_visualization
+        from ..federation.visualization import semantic_shapes as semantic_visualization
 
         props = tool.Clash.get_clash_props()
 
@@ -1996,7 +1996,7 @@ class BIM_OT_analyze_clash_groups(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from ..federation_analysis.clash import clash_grouping
+        from ..federation.clash import clash_grouping
         from pathlib import Path
 
         props = tool.Clash.get_clash_props()
@@ -2062,7 +2062,7 @@ class BIM_OT_suggest_resolutions(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from ..federation_analysis.clash import resolution_engine
+        from ..federation.clash import resolution_engine
         from pathlib import Path
 
         props = tool.Clash.get_clash_props()
@@ -2135,7 +2135,7 @@ class BIM_OT_select_resolution_option(bpy.types.Operator):
     option_index: bpy.props.IntProperty(name="Option Index", default=0)
 
     def execute(self, context):
-        from ..federation_analysis.clash import resolution_engine
+        from ..federation.clash import resolution_engine
         from pathlib import Path
 
         props = tool.Clash.get_clash_props()
