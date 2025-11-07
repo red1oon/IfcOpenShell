@@ -417,7 +417,7 @@ class ReportGenerator:
 
 **Groups Identified:** {summary['total_groups']} cascade groups
 **Total Clashes Analyzed:** {summary['total_analyzed']} clashes
-**Clashes Grouped:** {summary['total_clashes_in_groups']} clashes ({summary['cascade_efficiency']:.1f}%% cascade efficiency)
+**Clashes Grouped:** {summary['total_clashes_in_groups']} clashes ({summary['cascade_efficiency']:.1f}% cascade efficiency)
 **Ungrouped Clashes:** {summary['ungrouped_clashes']} isolated clashes
 
 ### Financial Impact (Estimated)
