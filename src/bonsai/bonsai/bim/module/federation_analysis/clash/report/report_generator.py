@@ -16,7 +16,7 @@ import json
 import csv
 
 # Import standard IFC label mapper (reusable across modules)
-from ...ifc_label_mapper import get_friendly_label, get_discipline_label
+from ...ifc_label_mapper import get_friendly_label, get_discipline_label, get_element_display_name
 
 
 class ReportGenerator:
@@ -251,7 +251,7 @@ class ReportGenerator:
         return groups
 
     def _fetch_group_members(self, group_id: int) -> List[Dict]:
-        """Fetch clash members for a specific group."""
+        """Fetch clash members for a specific group with spatial context."""
         cursor = self.conn.cursor()
 
         cursor.execute("""
@@ -263,9 +263,15 @@ class ReportGenerator:
                 cs.name_b as element_b_name,
                 cs.ifc_class_a as element_a_type,
                 cs.ifc_class_b as element_b_type,
-                cs.status
+                cs.discipline_a as element_a_discipline,
+                cs.discipline_b as element_b_discipline,
+                cs.status,
+                ss_a.storey as element_a_storey,
+                ss_b.storey as element_b_storey
             FROM clash_group_members cgm
             JOIN clash_status cs ON cgm.clash_id = cs.clash_id
+            LEFT JOIN spatial_structure ss_a ON cs.guid_a = ss_a.guid
+            LEFT JOIN spatial_structure ss_b ON cs.guid_b = ss_b.guid
             WHERE cgm.group_id = ?
             ORDER BY cgm.clash_id
         """, (group_id,))
@@ -482,18 +488,38 @@ class ReportGenerator:
 **Severity:** {group['severity']}
 **Pattern Type:** {group['pattern_type']}""")
 
-        # Clash members table
+        # Clash members table with friendly names
         if group['members']:
             sections.append("""
-**Clashing Elements:**
+**Affected Neighboring Elements:**
 
-| # | Element A | Element B | Type | Status |
-|---|-----------|-----------|------|--------|""")
+| # | Element A | Element B | Disciplines | Status |
+|---|-----------|-----------|-------------|--------|""")
 
             for idx, member in enumerate(group['members'], 1):
-                elem_a_short = member['element_a_name'][:30] if member['element_a_name'] else member['element_a_guid'][:8]
-                elem_b_short = member['element_b_name'][:30] if member['element_b_name'] else member['element_b_guid'][:8]
-                sections.append(f"| {idx} | {elem_a_short} | {elem_b_short} | {member['element_a_type']} vs {member['element_b_type']} | {member['status']} |")
+                # Use friendly display names instead of cryptic GUIDs
+                elem_a_display = get_element_display_name(
+                    guid=member['element_a_guid'],
+                    ifc_class=member['element_a_type'],
+                    element_name=member.get('element_a_name'),
+                    storey=member.get('element_a_storey'),
+                    db_path=self.database_path
+                )[:50]  # Reasonable length for table
+
+                elem_b_display = get_element_display_name(
+                    guid=member['element_b_guid'],
+                    ifc_class=member['element_b_type'],
+                    element_name=member.get('element_b_name'),
+                    storey=member.get('element_b_storey'),
+                    db_path=self.database_path
+                )[:50]
+
+                # Show friendly discipline names
+                disc_a = get_discipline_label(member.get('element_a_discipline', ''))
+                disc_b = get_discipline_label(member.get('element_b_discipline', ''))
+                disciplines = f"{disc_a} vs {disc_b}"
+
+                sections.append(f"| {idx} | {elem_a_display} | {elem_b_display} | {disciplines} | {member['status']} |")
 
         # Resolution options
         if group['resolution_options']:
@@ -529,11 +555,11 @@ class ReportGenerator:
 
         # Add visual documentation section with snapshot
         sections.append(f"""
-### Clash Overview
+### Clash Overview Snapshot
 
 ![Group {group_num} Clash Overview](snapshots/group_{group['group_id']}_overview.png)
 
-*Figure {group_num}: Clashes highlighted in red showing current state. Engineers visualize proposed changes in their BIM software (Revit/Blender).*
+*Figure {group_num}: Cascaded composite snapshot showing all affected elements highlighted in red. Resolution strategies are determined by the coordination team using their BIM authoring tools.*
 
 > **Note:** If image doesn't appear, snapshots may not have been generated. Re-run report generation with "Include Snapshots" enabled.
 """)

@@ -1864,7 +1864,7 @@ class BIM_OT_generate_clash_resolution_report(bpy.types.Operator):
     """Generate Markdown report for clash resolution analysis"""
     bl_idname = "bim.generate_clash_resolution_report"
     bl_label = "Generate Resolution Report"
-    bl_description = "Generate professional Markdown report with cost analysis and before/after visualizations"
+    bl_description = "Generate professional Markdown report with cost analysis and clash overview snapshots"
     bl_options = {'REGISTER'}
 
     # Properties
@@ -1889,7 +1889,7 @@ class BIM_OT_generate_clash_resolution_report(bpy.types.Operator):
 
     include_snapshots: bpy.props.BoolProperty(
         name="Include Snapshots",
-        description="Generate before/after visualizations (adds ~2s per group)",
+        description="Generate clash overview snapshots showing affected elements (adds ~2s per group)",
         default=True
     )
 
@@ -2040,7 +2040,7 @@ class BIM_OT_generate_clash_resolution_report(bpy.types.Operator):
             # Generate snapshots if requested
             if self.include_snapshots:
                 self.report({'INFO'}, "Generating snapshots...")
-                logger.info("Generating before/after snapshots...")
+                logger.info("Generating clash overview snapshots...")
 
                 try:
                     from .clash.report.snapshot_manager import SnapshotManager
@@ -2110,7 +2110,7 @@ class BIM_OT_generate_clash_resolution_report(bpy.types.Operator):
             print(f"  - metadata.json (report metadata)")
             print(f"  - data_export.csv (clash data)")
             if self.include_snapshots:
-                print(f"  - snapshots/ (before/after images)")
+                print(f"  - snapshots/ (clash overview images)")
             print(f"\nNext steps:")
             print(f"  1. Open report.md in a text editor")
             print(f"  2. Customize as needed")

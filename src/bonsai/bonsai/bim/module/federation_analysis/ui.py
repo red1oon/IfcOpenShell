@@ -566,7 +566,7 @@ class BIM_PT_clash_adjustment(Panel):
             info_col.scale_y = 0.7
             info_col.label(text="💡 Creates professional Markdown report:")
             info_col.label(text="  • Executive summary with cost analysis")
-            info_col.label(text="  • Before/after visualizations")
+            info_col.label(text="  • Clash overview snapshots (current state)")
             info_col.label(text="  • Detailed action plan")
             info_col.label(text="  • Editable format (convert to PDF later)")
 

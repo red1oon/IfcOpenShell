@@ -265,6 +265,79 @@ def _is_meaningful_name(name: str) -> bool:
     return True
 
 
+def get_element_display_name(
+    guid: str,
+    ifc_class: str,
+    element_name: Optional[str] = None,
+    storey: Optional[str] = None,
+    db_path: Optional[str] = None
+) -> str:
+    """
+    Get human-readable element display name for reports.
+
+    Combines friendly IFC label + location context when element_name is cryptic.
+    Designed for clash reports to replace cryptic GUIDs with meaningful names.
+
+    Args:
+        guid: Element GUID (for fallback display)
+        ifc_class: IFC class (e.g., 'IfcDuct', 'IfcPipeFitting')
+        element_name: Element name from model (may be NULL or cryptic)
+        storey: Storey/floor location (e.g., '04 THIRD FLOOR LEVEL')
+        db_path: Database path (for ifc_labels table lookup)
+
+    Returns:
+        Human-readable element identifier for reports
+
+    Examples:
+        >>> get_element_display_name('2eD...', 'IfcOpeningElement', None, '04 THIRD FLOOR LEVEL')
+        'Opening (3rd Floor)'
+
+        >>> get_element_display_name('289...', 'IfcPipeFitting', 'Main Supply', '04 THIRD FLOOR LEVEL')
+        'Main Supply (3rd Floor)'
+
+        >>> get_element_display_name('3gR...', 'IfcDuct', 'M_HVAC:Duct:12345', 'GROUND FLOOR LEVEL')
+        'HVAC Duct (Ground Floor)'
+
+        >>> get_element_display_name('1VM...', 'IfcBeam', None, None)
+        'Structural Beam (#1VM...)'
+    """
+    # Get friendly IFC type
+    friendly_type = get_friendly_label(ifc_class, db_path=db_path)
+
+    # Clean up storey name for display
+    location = ""
+    if storey:
+        # Transform "04 THIRD FLOOR LEVEL" -> "3rd Floor"
+        # Transform "GROUND FLOOR LEVEL" -> "Ground Floor"
+        location = (storey
+                   .replace(" LEVEL", "")
+                   .replace("FLOOR", "Floor")
+                   .replace("THIRD", "3rd")
+                   .replace("FOURTH", "4th")
+                   .replace("FIFTH", "5th")
+                   .replace("SECOND", "2nd")
+                   .replace("FIRST", "1st")
+                   .replace("GROUND", "Ground")
+                   .strip())
+        # Remove leading numbers if present (e.g., "04 3rd Floor" -> "3rd Floor")
+        import re
+        location = re.sub(r'^\d+\s+', '', location)
+
+    # Check if element_name is meaningful
+    if element_name and _is_meaningful_name(element_name):
+        # Use existing name but add location context
+        if location:
+            return f"{element_name} ({location})"
+        return element_name
+
+    # Generate from IFC type + location
+    if location:
+        return f"{friendly_type} ({location})"
+
+    # Last resort: IFC type + GUID fragment for uniqueness
+    return f"{friendly_type} (#{guid[:8]})"
+
+
 def get_discipline_label(discipline_code: str) -> str:
     """
     Convert discipline code to friendly name.
@@ -300,7 +373,7 @@ def get_discipline_label(discipline_code: str) -> str:
 
 # Export public API
 __all__ = [
-    'IFC_LABEL_DICTIONARY',
     'get_friendly_label',
+    'get_element_display_name',
     'get_discipline_label',
 ]
