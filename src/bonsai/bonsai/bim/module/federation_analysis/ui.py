@@ -666,3 +666,122 @@ class BIM_UL_resolution_options(UIList):
             row.label(text=risk, icon=risk_icons.get(risk, 'INFO'))
         else:
             layout.label(text="", translate=False)
+
+
+class BIM_PT_boq_export(Panel):
+    """Bill of Quantities Export Panel"""
+    bl_label = "Bill of Quantities (BOQ)"
+    bl_idname = "BIM_PT_boq_export"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "scene"
+    bl_parent_id = "BIM_PT_tab_clash_detection"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context):
+        assert self.layout
+        layout = self.layout
+
+        # Get federation database path
+        fed_props = context.scene.BIMFederationProperties
+        db_path = fed_props.federation_database_path
+
+        # Check BOQ status
+        import os
+        import glob
+        from datetime import datetime
+
+        boq_exists = False
+        boq_file = None
+        boq_timestamp = ""
+        has_qto_table = False
+
+        # Search for existing BOQ files
+        boq_pattern = os.path.expanduser("~/Documents/bonsai/BOQ_Comprehensive_*.xlsx")
+        boq_files = sorted(glob.glob(boq_pattern), reverse=True)
+        if boq_files:
+            boq_file = boq_files[0]  # Most recent
+            boq_exists = True
+            mtime = os.path.getmtime(boq_file)
+            boq_timestamp = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+
+        # Check if database has simple_qto table with data
+        if db_path and os.path.exists(db_path):
+            import sqlite3
+            try:
+                conn = sqlite3.connect(db_path)
+                # Check if table exists
+                cursor = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='simple_qto'"
+                )
+                table_exists = cursor.fetchone() is not None
+
+                # Check if table has data
+                if table_exists:
+                    cursor = conn.execute("SELECT COUNT(*) FROM simple_qto")
+                    row_count = cursor.fetchone()[0]
+                    has_qto_table = row_count > 0
+                else:
+                    has_qto_table = False
+
+                conn.close()
+            except:
+                has_qto_table = False
+
+        # Header with status indicator
+        box = layout.box()
+        row = box.row()
+        row.label(text="Bill of Quantities (BOQ)", icon="TEXT")
+
+        # Status indicator (right-aligned)
+        status_row = row.row()
+        status_row.alignment = 'RIGHT'
+        if boq_exists and has_qto_table:
+            status_row.label(text="Ready", icon="CHECKMARK")
+        else:
+            status_row.label(text="Not Ready", icon="INFO")
+
+        # Info text
+        info_col = box.column(align=True)
+        info_col.scale_y = 0.7
+        info_col.label(text="💡 Malaysian standards (CIDB 2024)", icon='INFO')
+        info_col.label(text="   Materials + Labor + Equipment breakdown")
+
+        box.separator()
+
+        # Check database path
+        if not db_path or not os.path.exists(db_path):
+            warn_row = box.row()
+            warn_row.alert = True
+            warn_row.label(text="⚠ Set database in Multi-Model Federation panel first", icon='ERROR')
+            return
+
+        # Buttons - conditional layout
+        if boq_exists:
+            # Two buttons: Open existing + Regenerate
+            row = box.row(align=True)
+            row.scale_y = 1.5
+            op = row.operator("bim.open_boq_report", text="Open BOQ", icon="DOCUMENTS")
+            op.filepath = boq_file
+            row.operator("bim.regenerate_boq_report", text="Regenerate", icon="FILE_REFRESH")
+
+            # Show file info
+            info_col = box.column(align=True)
+            info_col.scale_y = 0.6
+            info_col.label(text=f"Last generated: {boq_timestamp}")
+            info_col.label(text=f"File: {os.path.basename(boq_file)}")
+        else:
+            # Single button: Generate
+            row = box.row()
+            row.scale_y = 1.5
+            row.operator("bim.export_comprehensive_boq",
+                         text="Generate BOQ Report",
+                         icon="DOCUMENTS")
+
+            # Helper text
+            hint = box.column(align=True)
+            hint.scale_y = 0.6
+            if not has_qto_table:
+                hint.label(text="(Database analysis will run automatically)")
+            else:
+                hint.label(text="(Click to generate Excel report)")

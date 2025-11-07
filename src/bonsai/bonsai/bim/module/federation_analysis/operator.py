@@ -2132,3 +2132,131 @@ class BIM_OT_generate_clash_resolution_report(bpy.types.Operator):
                 file_handler.close()
             if 'console_handler' in locals():
                 logger.removeHandler(console_handler)
+
+
+# ============================================================================
+# BOQ (BILL OF QUANTITIES) OPERATORS
+# ============================================================================
+
+class BIM_OT_export_comprehensive_boq(bpy.types.Operator):
+    """Export comprehensive Bill of Quantities with Malaysian standards"""
+    bl_idname = "bim.export_comprehensive_boq"
+    bl_label = "Export Comprehensive BOQ"
+    bl_description = "Generate BOQ Excel report with Materials, Labor, Equipment breakdown"
+
+    def execute(self, context):
+        from datetime import datetime
+        import subprocess
+        import sys
+
+        # Get database path
+        fed_props = context.scene.BIMFederationProperties
+        db_path = fed_props.federation_database_path
+
+        if not db_path or not os.path.exists(db_path):
+            self.report({'ERROR'}, "Federation database not found. Set database path first.")
+            return {'CANCELLED'}
+
+        # Check if simple_qto table exists
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='simple_qto'"
+        )
+        has_qto_table = cursor.fetchone() is not None
+        conn.close()
+
+        if not has_qto_table:
+            self.report({'INFO'}, "Running QTO analysis first...")
+            # TODO: Call QTO analysis operator when available
+            # For now, inform user to run extraction first
+            self.report({'WARNING'}, "Database needs QTO analysis. Please run database extraction first.")
+            return {'CANCELLED'}
+
+        # Generate BOQ
+        try:
+            self.report({'INFO'}, "Generating comprehensive BOQ report...")
+
+            # Import BOQ exporter
+            from bonsai.bim.module.federation_analysis.dataintelligence.comprehensive_boq_export import ComprehensiveBOQExporter
+
+            # Generate timestamped output
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_dir = os.path.expanduser("~/Documents/bonsai")
+            os.makedirs(output_dir, exist_ok=True)
+            output_path = os.path.join(output_dir, f"BOQ_Comprehensive_{timestamp}.xlsx")
+
+            # Create exporter and generate
+            exporter = ComprehensiveBOQExporter(output_path)
+            project_name = "Terminal 1 Expansion Project"
+            result_path = exporter.generate_comprehensive_boq(db_path, project_name)
+
+            self.report({'INFO'}, f"✅ BOQ generated: {os.path.basename(result_path)}")
+
+            # Auto-open Excel file
+            try:
+                if sys.platform.startswith('linux'):
+                    subprocess.Popen(['xdg-open', result_path])
+                elif sys.platform == 'darwin':
+                    subprocess.Popen(['open', result_path])
+                elif sys.platform == 'win32':
+                    os.startfile(result_path)
+            except Exception as e:
+                logger.warning(f"Could not auto-open file: {e}")
+                self.report({'INFO'}, f"File saved: {result_path}")
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            logger.exception("BOQ export failed")
+            self.report({'ERROR'}, f"BOQ export failed: {str(e)}")
+            return {'CANCELLED'}
+
+
+class BIM_OT_open_boq_report(bpy.types.Operator):
+    """Open existing BOQ Excel file"""
+    bl_idname = "bim.open_boq_report"
+    bl_label = "Open BOQ Report"
+    bl_description = "Open the most recent BOQ Excel file"
+
+    filepath: bpy.props.StringProperty(
+        name="File Path",
+        description="Path to BOQ Excel file",
+        default=""
+    )
+
+    def execute(self, context):
+        import subprocess
+        import sys
+
+        if not self.filepath or not os.path.exists(self.filepath):
+            self.report({'ERROR'}, "BOQ file not found")
+            return {'CANCELLED'}
+
+        try:
+            # Open file with default application
+            if sys.platform.startswith('linux'):
+                subprocess.Popen(['xdg-open', self.filepath])
+            elif sys.platform == 'darwin':
+                subprocess.Popen(['open', self.filepath])
+            elif sys.platform == 'win32':
+                os.startfile(self.filepath)
+
+            self.report({'INFO'}, f"Opening: {os.path.basename(self.filepath)}")
+            return {'FINISHED'}
+
+        except Exception as e:
+            logger.exception("Failed to open BOQ file")
+            self.report({'ERROR'}, f"Failed to open file: {str(e)}")
+            return {'CANCELLED'}
+
+
+class BIM_OT_regenerate_boq_report(bpy.types.Operator):
+    """Regenerate BOQ Excel file (force refresh)"""
+    bl_idname = "bim.regenerate_boq_report"
+    bl_label = "Regenerate BOQ Report"
+    bl_description = "Force regenerate BOQ report with latest database data"
+
+    def execute(self, context):
+        # Simply call the export operator (which generates a new timestamped file)
+        return bpy.ops.bim.export_comprehensive_boq()
+

@@ -84,6 +84,11 @@ classes = (
     # Report Generation
     operator.BIM_OT_generate_clash_resolution_report,
 
+    # BOQ (Bill of Quantities) Export
+    operator.BIM_OT_export_comprehensive_boq,
+    operator.BIM_OT_open_boq_report,
+    operator.BIM_OT_regenerate_boq_report,
+
     # UI Lists
     ui.BIM_UL_discipline_clashes,
     # Note: BIM_UL_clash_groups and BIM_UL_resolution_options not used in POC
@@ -93,6 +98,7 @@ classes = (
     ui.BIM_PT_federation_clash_detection,
     ui.BIM_PT_federation_lod_visualization,
     ui.BIM_PT_clash_adjustment,
+    ui.BIM_PT_boq_export,
 )
 
 
