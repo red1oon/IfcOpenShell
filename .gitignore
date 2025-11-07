@@ -80,3 +80,8 @@ sample_config_suggested.json
 .ifc_analysis_cache.json
 sample_extraction_*.db
 src/bonsai/bonsai-0.0.0/
+
+.pixi/
+
+src/ifcopenshell-python/ifcopenshell/express/*.exp
+src/ifcopenshell-python/ifcopenshell/express/*.exp.cache.dat

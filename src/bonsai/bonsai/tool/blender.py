@@ -100,6 +100,7 @@ class Blender(bonsai.core.tool.Blender):
     - (identifier, name, description, icon, number)
     """
     BLENDER_ENUM_ITEMS = Iterable[BLENDER_ENUM_ITEM]
+    BLENDER_5 = bpy.app.version >= (5, 0, 0)
 
     @classmethod
     def activate_camera(cls, obj: bpy.types.Object) -> None:
@@ -416,7 +417,7 @@ class Blender(bonsai.core.tool.Blender):
         cls, blender_material: bpy.types.Material, node_type: str, kwargs: Optional[dict] = {}
     ) -> Union[bpy.types.ShaderNode, None]:
         """returns first node from the `blender_material` shader graph with type `node_type`"""
-        if not blender_material.use_nodes:
+        if not tool.Style.get_use_nodes(blender_material):
             return
         nodes = blender_material.node_tree.nodes
         for node in nodes:
@@ -709,7 +710,7 @@ class Blender(bonsai.core.tool.Blender):
 
         new_selected_objects = [o for o in selected_objects if cls.is_valid_data_block(o) and o in view_layer_objects]
 
-        if active_object and (not cls.is_valid_data_block(active_object) or active_object not in view_layer_objects):
+        if active_object and not cls.is_valid_data_block(active_object):
             active_object = None
 
         return context, active_object, new_selected_objects
@@ -2083,3 +2084,14 @@ class Blender(bonsai.core.tool.Blender):
         assert bpy.context.preferences
         if props_updated and bpy.context.preferences.use_preferences_save:
             bpy.ops.wm.save_userpref()
+
+    @classmethod
+    def get_eevee_name(cls) -> Literal["BLENDER_EEVEE"] | Literal["BLENDER_EEVEE_NEXT"]:
+        """Convenience method to get correct eevee render engine name in multiple Blender versions.
+
+        In Blender 4.2 eevee was renamed to "eevee next".
+        In Blender 5 eevee next is now just "eevee" again.
+        """
+        if cls.BLENDER_5:
+            return "BLENDER_EEVEE"
+        return "BLENDER_EEVEE_NEXT"

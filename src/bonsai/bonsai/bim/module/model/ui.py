@@ -17,7 +17,6 @@
 # along with Bonsai.  If not, see <http://www.gnu.org/licenses/>.
 
 import bpy
-import bl_ui_utils.layout
 import bonsai.bim
 import bonsai.tool as tool
 from bpy.types import Panel, Menu
@@ -36,7 +35,12 @@ from bonsai.bim.module.model.stair import regenerate_stair_mesh
 from bonsai.bim.module.model.railing import update_railing_modifier_bmesh
 from bonsai.bim.module.model.roof import update_roof_modifier_bmesh
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING or bpy.app.version >= (5, 0, 0):
+    import _bl_ui_utils.layout as bl_ui_utils_layout
+else:
+    import bl_ui_utils.layout as bl_ui_utils_layout
 
 
 class BIM_MT_type_manager_menu(bpy.types.Menu):
@@ -56,7 +60,7 @@ class BIM_MT_type_menu(bpy.types.Menu):
     def draw(self, context):
         props = tool.Model.get_model_props()
         layout = self.layout
-        with bl_ui_utils.layout.operator_context(layout, "INVOKE_REGION_WIN"):
+        with bl_ui_utils_layout.operator_context(layout, "INVOKE_REGION_WIN"):
             op = layout.operator("bim.rename_type", icon="GREASEPENCIL", text="Rename Type")
             op.element = props.menu_relating_type_id
         op = layout.operator("bim.select_type", icon="OBJECT_DATA")
@@ -305,21 +309,23 @@ class BIM_PT_stair(bpy.types.Panel):
                     # Skip custom_tread_lock as it's handled with custom_first_last_tread_run
                     if prop_name == "custom_tread_lock":
                         continue
-                    
+
                     prop_value = getattr(props, prop_name)
-                    
+
                     # Special handling for custom_first_last_tread_run
                     if prop_name == "custom_first_last_tread_run":
                         # Draw the lock toggle
                         row_lock = self.layout.row(align=True)
-                        lock_text = "Lock First/Last Treads" if not props.custom_tread_lock else "Unlock First/Last Treads"
+                        lock_text = (
+                            "Lock First/Last Treads" if not props.custom_tread_lock else "Unlock First/Last Treads"
+                        )
                         row_lock.prop(
                             props,
                             "custom_tread_lock",
                             text=lock_text,
                             icon="LOCKED" if props.custom_tread_lock else "UNLOCKED",
                         )
-                        
+
                         # Only show the custom values input if unlocked
                         if not props.custom_tread_lock:
                             prop_readable_name = props.bl_rna.properties[prop_name].name
@@ -331,7 +337,7 @@ class BIM_PT_stair(bpy.types.Panel):
                         self.layout.prop(props, prop_name, text="")
                     else:
                         self.layout.prop(props, prop_name)
-                    
+
                     if prop_name == "height":  # Weak but we just want to insert this inside props drawing
                         row_length = self.layout.row(align=True)
                         row_length.prop(props, "total_length_target")
