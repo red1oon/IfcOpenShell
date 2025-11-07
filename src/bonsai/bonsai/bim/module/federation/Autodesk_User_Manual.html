@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Bonsai Federation Analysis - Autodesk User Manual</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 20px;
+            color: #333;
+        }
+        h1 {
+            color: #0066cc;
+            border-bottom: 3px solid #0066cc;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #0088cc;
+            border-bottom: 2px solid #e0e0e0;
+            margin-top: 30px;
+            padding-bottom: 5px;
+        }
+        h3 {
+            color: #555;
+            margin-top: 20px;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 20px 0;
+        }
+        th {
+            background-color: #0066cc;
+            color: white;
+            padding: 12px;
+            text-align: left;
+        }
+        td {
+            border: 1px solid #ddd;
+            padding: 10px;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+        blockquote {
+            border-left: 4px solid #0066cc;
+            margin-left: 0;
+            padding-left: 20px;
+            color: #666;
+        }
+        .emoji {
+            font-size: 1.2em;
+        }
+        hr {
+            border: none;
+            border-top: 2px solid #e0e0e0;
+            margin: 30px 0;
+        }
+        @media print {
+            body {
+                max-width: 100%;
+                margin: 0;
+            }
+            h1, h2, h3 {
+                page-break-after: avoid;
+            }
+            table {
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+<h1 id="bonsai-federation-analysis-autodesk-user-manual">Bonsai Federation Analysis - Autodesk User Manual</h1>
+<p><strong>Document Version:</strong> 1.0
+<strong>Date:</strong> 2025-11-07
+<strong>Target Audience:</strong> Autodesk Navisworks, Revit, and BIM 360 Users
+<strong>Author:</strong> Bonsai Federation Team</p>
+<hr />
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#introduction">Introduction</a></li>
+<li><a href="#quick-start-guide">Quick Start Guide</a></li>
+<li><a href="#workflow-navisworks-to-bonsai">Workflow: Navisworks to Bonsai</a></li>
+<li><a href="#workflow-bonsai-to-navisworks">Workflow: Bonsai to Navisworks</a></li>
+<li><a href="#bcf-export--import">BCF Export &amp; Import</a></li>
+<li><a href="#clash-reports-for-autodesk-teams">Clash Reports for Autodesk Teams</a></li>
+<li><a href="#troubleshooting">Troubleshooting</a></li>
+<li><a href="#faq">FAQ</a></li>
+</ol>
+<hr />
+<h2 id="introduction">Introduction</h2>
+<h3 id="what-is-bonsai-federation-analysis">What is Bonsai Federation Analysis?</h3>
+<p>Bonsai is an <strong>open-source BIM coordination tool</strong> built on Blender and IfcOpenShell. It provides:</p>
+<ul>
+<li>✅ <strong>Fast clash detection</strong> using spatial R-tree indexing</li>
+<li>✅ <strong>Intelligent cascade grouping</strong> (identifies root cause elements)</li>
+<li>✅ <strong>BCF 2.1 export</strong> compatible with Autodesk tools</li>
+<li>✅ <strong>Cost intelligence</strong> for coordination decision-making</li>
+<li>✅ <strong>Markdown + Excel reports</strong> for stakeholder communication</li>
+</ul>
+<h3 id="why-bonsai-autodesk">Why Bonsai + Autodesk?</h3>
+<p><strong>Complementary Strengths:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Bonsai</th>
+<th>Navisworks</th>
+<th>Best Use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Clash Detection</strong></td>
+<td>✅ Fast (R-tree)</td>
+<td>✅ Standard</td>
+<td>Bonsai for batch, Navis for review</td>
+</tr>
+<tr>
+<td><strong>Cascade Analysis</strong></td>
+<td>✅ AI grouping</td>
+<td>❌ Manual</td>
+<td>Bonsai finds root causes</td>
+</tr>
+<tr>
+<td><strong>BCF Export</strong></td>
+<td>✅ BCF 2.1</td>
+<td>✅ BCF 2.1</td>
+<td>Round-trip coordination</td>
+</tr>
+<tr>
+<td><strong>Cost Intelligence</strong></td>
+<td>✅ Integrated</td>
+<td>❌ No</td>
+<td>Bonsai for business case</td>
+</tr>
+<tr>
+<td><strong>3D Navigation</strong></td>
+<td>⚠️ Blender UI</td>
+<td>✅ Optimized</td>
+<td>Navis for daily review</td>
+</tr>
+<tr>
+<td><strong>License Cost</strong></td>
+<td>🆓 Free</td>
+<td>💰 $3,600/year</td>
+<td>Bonsai for tight budgets</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Recommended Workflow:</strong>
+1. <strong>Bonsai</strong>: Batch clash detection + intelligent analysis
+2. <strong>Export BCF</strong>: Share findings with Autodesk teams
+3. <strong>Navisworks</strong>: Review in familiar interface
+4. <strong>Update BCF</strong>: Mark status, add comments
+5. <strong>Round-trip</strong>: Import updated BCF into Bonsai for verification</p>
+<hr />
+<h2 id="quick-start-guide">Quick Start Guide</h2>
+<h3 id="for-navisworks-users-receiving-bcf-from-bonsai">For Navisworks Users Receiving BCF from Bonsai</h3>
+<p><strong>Step 1: Receive BCF File</strong></p>
+<div class="codehilite"><pre><span></span><code>You receive: ClashReport_Week12.bcfzip (email or cloud)
+</code></pre></div>
+
+<p><strong>Step 2: Import into Navisworks</strong>
+1. Open Navisworks Manage
+2. <strong>Viewpoint</strong> tab → <strong>BCF</strong> → <strong>Import</strong>
+3. Select <code>ClashReport_Week12.bcfzip</code>
+4. Click <strong>Open</strong></p>
+<p><strong>Step 3: Navigate to Clashes</strong>
+1. <strong>Viewpoint</strong> panel → Expand topics
+2. Click any topic (e.g., "Clash: Pipe vs Duct")
+3. Viewport jumps to clash location
+4. Red highlighting shows clashing elements</p>
+<p><strong>Step 4: Update Status</strong>
+1. Right-click topic → <strong>Add Comment</strong>
+2. Type: "Duct rerouted 800mm north, resolved"
+3. Change status: <strong>Open</strong> → <strong>Resolved</strong>
+4. <strong>Viewpoint</strong> → <strong>BCF</strong> → <strong>Export</strong>
+5. Save as <code>ClashReport_Week12_UPDATED.bcfzip</code>
+6. Email back to coordinator</p>
+<hr />
+<h2 id="workflow-navisworks-to-bonsai">Workflow: Navisworks to Bonsai</h2>
+<h3 id="scenario-you-detect-clashes-in-navisworks-want-bonsais-intelligent-analysis">Scenario: You detect clashes in Navisworks, want Bonsai's intelligent analysis</h3>
+<p><strong>Step 1: Export IFC Models from Navisworks</strong></p>
+<p>Navisworks doesn't export IFC directly. You need source models:</p>
+<p><strong>Option A: From Revit</strong></p>
+<div class="codehilite"><pre><span></span><code>Revit → File → Export → IFC
+- IFC Version: IFC4 (or IFC2x3)
+- Save to shared folder
+</code></pre></div>
+
+<p><strong>Option B: From Existing IFC</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="k">If</span><span class="w"> </span><span class="nv">your</span><span class="w"> </span><span class="nv">federated</span><span class="w"> </span><span class="nv">model</span><span class="w"> </span><span class="nv">came</span><span class="w"> </span><span class="nv">from</span><span class="w"> </span><span class="nv">IFC</span><span class="w"> </span><span class="nv">files</span>,<span class="w"> </span><span class="nv">use</span><span class="w"> </span><span class="nv">those</span><span class="w"> </span><span class="nv">originals</span>
+</code></pre></div>
+
+<p><strong>Step 2: Load IFC into Bonsai</strong></p>
+<ol>
+<li><strong>Open Blender</strong> (with Bonsai addon installed)</li>
+<li><strong>Bonsai</strong> menu → <strong>Federation</strong> panel</li>
+<li>Click <strong>"Load Federation Database"</strong></li>
+<li>Select your federation database (or create new)</li>
+<li>IFC models auto-loaded into spatial database</li>
+</ol>
+<p><strong>Step 3: Run Clash Detection in Bonsai</strong></p>
+<ol>
+<li><strong>Federation</strong> panel → <strong>Clash Detection</strong> section</li>
+<li>Select disciplines:</li>
+<li><strong>Discipline A</strong>: MEP (e.g., ACMV, Plumbing)</li>
+<li><strong>Discipline B</strong>: Structure</li>
+<li>Click <strong>"Detect Clashes (Preview)"</strong></li>
+<li>Results appear in panel (e.g., "252 clashes found")</li>
+</ol>
+<p><strong>Step 4: Generate Intelligent Clash Report</strong></p>
+<ol>
+<li>Click <strong>"Generate Clash Report"</strong></li>
+<li>Bonsai analyzes clashes:</li>
+<li>✅ Groups cascading clashes (finds root causes)</li>
+<li>✅ Calculates resolution costs</li>
+<li>✅ Prioritizes by severity</li>
+<li>Report saved to <code>clash_reports/clash_resolution_YYYYMMDD_HHMMSS/</code></li>
+</ol>
+<p><strong>Step 5: Review Report (Markdown Format)</strong></p>
+<div class="codehilite"><pre><span></span><code>📄 report.md - Open in any text editor or Markdown viewer
+📂 snapshots/ - PNG images of each cascade group
+</code></pre></div>
+
+<p><strong>Key Sections:</strong>
+- <strong>Executive Summary</strong>: Total clashes, cascade efficiency
+- <strong>Group 1: CASCADE CLASH PATTERN</strong>
+  - Root cause: "Opening (2eD_GMhN)"
+  - Affected elements: 8 clashes
+  - Resolution strategy: "Adjust opening position"
+  - Estimated cost: $1,200 design + $800 construction</p>
+<p><strong>Step 6: Export BCF for Navisworks Team</strong></p>
+<ol>
+<li><strong>Federation</strong> panel → <strong>BCF Export</strong></li>
+<li>Click <strong>"Export BCF 2.1"</strong></li>
+<li>Select clashes to include (or select all)</li>
+<li>BCF file generated: <code>clash_export_YYYYMMDD.bcfzip</code></li>
+<li>Share with Navisworks users</li>
+</ol>
+<hr />
+<h2 id="workflow-bonsai-to-navisworks">Workflow: Bonsai to Navisworks</h2>
+<h3 id="scenario-bonsai-detects-clashes-navisworks-team-resolves-them">Scenario: Bonsai detects clashes, Navisworks team resolves them</h3>
+<p><strong>Step 1: Bonsai Generates BCF</strong></p>
+<p>(As per Step 6 above)</p>
+<p><strong>Step 2: Navisworks Imports BCF</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="n">Navisworks</span><span class="w"> </span><span class="n">Manage</span><span class="p">:</span>
+<span class="mf">1.</span><span class="w"> </span><span class="n">Viewpoint</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">BCF</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">Import</span>
+<span class="mf">2.</span><span class="w"> </span><span class="n">Select</span><span class="w"> </span><span class="n">clash_export_YYYYMMDD</span><span class="o">.</span><span class="n">bcfzip</span>
+<span class="mf">3.</span><span class="w"> </span><span class="n">Topics</span><span class="w"> </span><span class="n">appear</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">Viewpoint</span><span class="w"> </span><span class="n">panel</span>
+</code></pre></div>
+
+<p><strong>Step 3: Navisworks User Reviews Clashes</strong></p>
+<p><strong>What You See:</strong>
+- Topic: "Clash: Pipe Fitting (Aras 02) vs Opening"
+- Snapshot: 3D view with red highlighting
+- Description: Element details, disciplines, status
+- Comments: Any notes from Bonsai coordinator</p>
+<p><strong>What You Do:</strong>
+1. Click topic → Viewport jumps to clash
+2. Use Section Box to inspect closely
+3. Measure clearances with Measure Tools
+4. Decide resolution:
+   - <strong>Reroute</strong>: Change MEP layout
+   - <strong>Adjust</strong>: Move opening/structural element
+   - <strong>Acceptable</strong>: Document why (e.g., "Non-critical, 50mm clearance OK")</p>
+<p><strong>Step 4: Update BCF Status</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="n">Right</span><span class="o">-</span><span class="n">click</span><span class="w"> </span><span class="n">topic</span><span class="o">:</span>
+<span class="o">-</span><span class="w"> </span><span class="n">Add</span><span class="w"> </span><span class="n">Comment</span><span class="o">:</span><span class="w"> </span><span class="s">&quot;Pipe rerouted via north corridor, clearance 200mm&quot;</span>
+<span class="o">-</span><span class="w"> </span><span class="n">Change</span><span class="w"> </span><span class="n">Status</span><span class="o">:</span><span class="w"> </span><span class="n">Open</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">Resolved</span>
+<span class="o">-</span><span class="w"> </span><span class="n">Assign</span><span class="w"> </span><span class="n">To</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="n">Your</span><span class="w"> </span><span class="n">name</span><span class="p">]</span>
+</code></pre></div>
+
+<p><strong>Step 5: Export Updated BCF</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="n">Viewpoint</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">BCF</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">Export</span>
+<span class="o">-</span><span class="w"> </span><span class="n">Filename</span><span class="p">:</span><span class="w"> </span><span class="n">clash_export_YYYYMMDD_RESOLVED</span><span class="o">.</span><span class="n">bcfzip</span>
+<span class="o">-</span><span class="w"> </span><span class="n">Send</span><span class="w"> </span><span class="n">back</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="n">Bonsai</span><span class="w"> </span><span class="n">coordinator</span>
+</code></pre></div>
+
+<p><strong>Step 6: Bonsai Verifies Resolutions</strong></p>
+<p><em>(Coordinator imports updated BCF into Bonsai, re-runs detection to confirm)</em></p>
+<hr />
+<h2 id="bcf-export-import">BCF Export &amp; Import</h2>
+<h3 id="bcf-21-compatibility">BCF 2.1 Compatibility</h3>
+<p>Bonsai exports <strong>BCF 2.1</strong> format, fully compatible with:</p>
+<table>
+<thead>
+<tr>
+<th>Software</th>
+<th>Import</th>
+<th>Export</th>
+<th>Round-trip</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Navisworks 2024</strong></td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><strong>Navisworks 2023</strong></td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><strong>Revit 2024</strong></td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><strong>BIM 360 / ACC</strong></td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><strong>Solibri</strong></td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><strong>BIMcollab</strong></td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+<h3 id="whats-included-in-bonsai-bcf">What's Included in Bonsai BCF?</h3>
+<p><strong>Per Topic (Clash):</strong></p>
+<div class="codehilite"><pre><span></span><code>✅<span class="w"> </span>Topic<span class="w"> </span>GUID<span class="w"> </span>(unique<span class="w"> </span>ID)
+✅<span class="w"> </span>Title:<span class="w"> </span>&quot;Clash:<span class="w"> </span>Pipe<span class="w"> </span>Fitting<span class="w"> </span>vs<span class="w"> </span>Opening&quot;
+✅<span class="w"> </span>Description:<span class="w"> </span>Element<span class="w"> </span>details,<span class="w"> </span>disciplines
+✅<span class="w"> </span>Status:<span class="w"> </span>Open<span class="w"> </span>/<span class="w"> </span>In<span class="w"> </span>Progress<span class="w"> </span>/<span class="w"> </span>Resolved
+✅<span class="w"> </span>Priority:<span class="w"> </span>High<span class="w"> </span>/<span class="w"> </span>Medium<span class="w"> </span>/<span class="w"> </span>Low
+✅<span class="w"> </span>Viewpoint:
+<span class="w">   </span>-<span class="w"> </span>Camera<span class="w"> </span>position<span class="w"> </span>(location,<span class="w"> </span>target,<span class="w"> </span>up<span class="w"> </span>vector)
+<span class="w">   </span>-<span class="w"> </span>Element<span class="w"> </span>GUIDs<span class="w"> </span>(IFC<span class="w"> </span>references)
+✅<span class="w"> </span>Snapshot:<span class="w"> </span>PNG<span class="w"> </span>image<span class="w"> </span>(800x600,<span class="w"> </span>~200KB)
+<span class="w">   </span>-<span class="w"> </span>Red<span class="w"> </span>highlighting<span class="w"> </span>on<span class="w"> </span>clashing<span class="w"> </span>elements
+<span class="w">   </span>-<span class="w"> </span>Isometric<span class="w"> </span>view<span class="w"> </span>(~45°<span class="w"> </span>angle)
+</code></pre></div>
+
+<h3 id="bcf-import-into-navisworks">BCF Import into Navisworks</h3>
+<p><strong>Automatic Mapping:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Bonsai BCF Field</th>
+<th>Navisworks Field</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Topic Title</td>
+<td>Issue Name</td>
+</tr>
+<tr>
+<td>Description</td>
+<td>Comments</td>
+</tr>
+<tr>
+<td>Status (NEW)</td>
+<td>Active</td>
+</tr>
+<tr>
+<td>Status (RESOLVED)</td>
+<td>Closed</td>
+</tr>
+<tr>
+<td>Priority (HIGH)</td>
+<td>Critical</td>
+</tr>
+<tr>
+<td>Viewpoint → Camera</td>
+<td>Saved Viewpoint</td>
+</tr>
+<tr>
+<td>Element GUIDs</td>
+<td>Search Sets (if IFC loaded)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Known Limitations:</strong></p>
+<p>⚠️ <strong>GUID Matching</strong>: Navisworks must have <strong>same IFC files loaded</strong> for element highlighting to work
+- If models differ → Viewpoint works, but element selection may fail
+- Solution: Ensure Navisworks uses <strong>exact same IFC exports</strong> as Bonsai</p>
+<p>⚠️ <strong>Snapshot Rendering</strong>: Bonsai snapshots are Blender-rendered
+- May look different from Navisworks viewport
+- Viewpoint data is accurate, visual style differs</p>
+<h3 id="bcf-import-into-revit">BCF Import into Revit</h3>
+<p><strong>Steps:</strong></p>
+<div class="codehilite"><pre><span></span><code>Revit 2024:
+1. Add-Ins → BCF Manager
+2. Import BCF
+3. Issues appear in BCF Browser
+4. Click issue → Model view aligns to viewpoint
+</code></pre></div>
+
+<p><strong>Limitation:</strong>
+- Revit BCF import requires <strong>model elements</strong> in current file
+- If clash involves linked models → Manual navigation needed</p>
+<hr />
+<h2 id="clash-reports-for-autodesk-teams">Clash Reports for Autodesk Teams</h2>
+<h3 id="report-format-options">Report Format Options</h3>
+<p>Bonsai generates <strong>Markdown (.md) reports</strong> optimized for Autodesk workflows:</p>
+<p><strong>Option 1: View in Text Editor</strong></p>
+<div class="codehilite"><pre><span></span><code>- Notepad++ (Windows)
+- VS Code (Windows/Mac/Linux)
+- Any Markdown viewer
+</code></pre></div>
+
+<p><strong>Option 2: Convert to PDF</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># Using Pandoc (free tool)</span>
+pandoc<span class="w"> </span>report.md<span class="w"> </span>-o<span class="w"> </span>report.pdf
+</code></pre></div>
+
+<p><strong>Option 3: Convert to Word</strong></p>
+<div class="codehilite"><pre><span></span><code>pandoc<span class="w"> </span>report.md<span class="w"> </span>-o<span class="w"> </span>report.docx
+</code></pre></div>
+
+<p><strong>Option 4: View in Browser</strong></p>
+<div class="codehilite"><pre><span></span><code>- Drag report.md into Chrome/Edge
+- Install Markdown Viewer extension
+</code></pre></div>
+
+<h3 id="report-structure">Report Structure</h3>
+<p><strong>Executive Summary (Page 1)</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="o">-</span><span class="w"> </span><span class="n">Total</span><span class="w"> </span><span class="n">clashes</span><span class="p">:</span><span class="w"> </span><span class="mi">252</span>
+<span class="o">-</span><span class="w"> </span><span class="n">Cascade</span><span class="w"> </span><span class="n">groups</span><span class="p">:</span><span class="w"> </span><span class="mi">13</span><span class="w"> </span><span class="p">(</span><span class="mi">62</span><span class="w"> </span><span class="n">clashes</span><span class="w"> </span><span class="n">grouped</span><span class="p">)</span>
+<span class="o">-</span><span class="w"> </span><span class="n">Ungrouped</span><span class="p">:</span><span class="w"> </span><span class="mi">190</span><span class="w"> </span><span class="n">isolated</span><span class="w"> </span><span class="n">clashes</span>
+<span class="o">-</span><span class="w"> </span><span class="n">Estimated</span><span class="w"> </span><span class="n">cost</span><span class="p">:</span><span class="w"> </span><span class="o">$</span><span class="mi">26</span><span class="p">,</span><span class="mi">169</span><span class="w"> </span><span class="p">(</span><span class="n">design</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">construction</span><span class="p">)</span>
+<span class="o">-</span><span class="w"> </span><span class="n">ROI</span><span class="p">:</span><span class="w"> </span><span class="mf">1.2</span><span class="n">x</span><span class="w"> </span><span class="p">(</span><span class="n">every</span><span class="w"> </span><span class="o">$</span><span class="mi">1</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">design</span><span class="w"> </span><span class="n">saves</span><span class="w"> </span><span class="o">$</span><span class="mf">1.20</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">field</span><span class="p">)</span>
+</code></pre></div>
+
+<p><strong>Per Cascade Group (Pages 2+)</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="err">##</span><span class="w"> </span><span class="k">GROUP</span><span class="w"> </span><span class="mi">1</span><span class="err">:</span><span class="w"> </span><span class="k">CASCADE</span><span class="w"> </span><span class="n">CLASH</span><span class="w"> </span><span class="n">PATTERN</span>
+
+<span class="n">Root</span><span class="w"> </span><span class="n">Cause</span><span class="w"> </span><span class="k">Element</span><span class="err">:</span><span class="w"> </span><span class="n">Opening</span><span class="w"> </span><span class="p">(</span><span class="nl">GUID</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="n">eD_GMhN</span><span class="p">)</span>
+<span class="nl">Impact</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="w"> </span><span class="n">clashes</span>
+<span class="nl">Severity</span><span class="p">:</span><span class="w"> </span><span class="n">HIGH</span>
+
+<span class="n">Affected</span><span class="w"> </span><span class="n">Neighboring</span><span class="w"> </span><span class="nl">Elements</span><span class="p">:</span>
+<span class="o">|</span><span class="w"> </span><span class="err">#</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="k">Element</span><span class="w"> </span><span class="n">A</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="k">Element</span><span class="w"> </span><span class="n">B</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">Disciplines</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">Status</span><span class="w"> </span><span class="o">|</span>
+<span class="o">|---|-----------|-----------|-------------|--------|</span>
+<span class="o">|</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="o">[</span><span class="n">Pipe Fitting (Aras 02)</span><span class="o">]</span><span class="p">(</span><span class="n">snapshots</span><span class="o">/</span><span class="n">group_1_overview</span><span class="p">.</span><span class="n">png</span><span class="p">)</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="o">[</span><span class="n">Opening</span><span class="o">]</span><span class="p">(</span><span class="n">snapshots</span><span class="o">/</span><span class="n">group_1_overview</span><span class="p">.</span><span class="n">png</span><span class="p">)</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">Plumbing</span><span class="w"> </span><span class="n">vs</span><span class="w"> </span><span class="n">Architecture</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="k">NEW</span><span class="w"> </span><span class="o">|</span>
+<span class="o">|</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="o">[</span><span class="n">Pipe Segment (Aras 02)</span><span class="o">]</span><span class="p">(</span><span class="n">snapshots</span><span class="o">/</span><span class="n">group_1_overview</span><span class="p">.</span><span class="n">png</span><span class="p">)</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="o">[</span><span class="n">Opening</span><span class="o">]</span><span class="p">(</span><span class="n">snapshots</span><span class="o">/</span><span class="n">group_1_overview</span><span class="p">.</span><span class="n">png</span><span class="p">)</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">Plumbing</span><span class="w"> </span><span class="n">vs</span><span class="w"> </span><span class="n">Architecture</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="k">NEW</span><span class="w"> </span><span class="o">|</span>
+
+<span class="o">[</span><span class="n">Snapshot: Red highlighted elements in 3D view</span><span class="o">]</span>
+
+<span class="n">Resolution</span><span class="w"> </span><span class="nl">Strategy</span><span class="p">:</span>
+<span class="o">-</span><span class="w"> </span><span class="k">Option</span><span class="w"> </span><span class="mi">1</span><span class="err">:</span><span class="w"> </span><span class="n">Adjust</span><span class="w"> </span><span class="n">opening</span><span class="w"> </span><span class="k">position</span><span class="w"> </span><span class="p">(</span><span class="nl">Cost</span><span class="p">:</span><span class="w"> </span><span class="err">$</span><span class="mi">400</span><span class="p">)</span>
+<span class="o">-</span><span class="w"> </span><span class="k">Option</span><span class="w"> </span><span class="mi">2</span><span class="err">:</span><span class="w"> </span><span class="n">Reroute</span><span class="w"> </span><span class="n">plumbing</span><span class="w"> </span><span class="p">(</span><span class="o">~</span><span class="err">$</span><span class="mi">1</span><span class="p">,</span><span class="mi">200</span><span class="p">)</span>
+
+<span class="nl">Recommendation</span><span class="p">:</span><span class="w"> </span><span class="n">Adjust</span><span class="w"> </span><span class="n">opening</span><span class="w"> </span><span class="p">(</span><span class="n">cheaper</span><span class="p">,</span><span class="w"> </span><span class="k">less</span><span class="w"> </span><span class="k">cascade</span><span class="w"> </span><span class="n">impact</span><span class="p">)</span>
+</code></pre></div>
+
+<h3 id="using-reports-in-coordination-meetings">Using Reports in Coordination Meetings</h3>
+<p><strong>Typical Agenda:</strong></p>
+<ol>
+<li><strong>Present Executive Summary (5 min)</strong></li>
+<li>Show stakeholders total clashes, cost impact</li>
+<li>
+<p>Highlight cascade groups vs isolated issues</p>
+</li>
+<li>
+<p><strong>Review High-Priority Groups (20 min)</strong></p>
+</li>
+<li>Show snapshots on screen</li>
+<li>Discuss root causes</li>
+<li>
+<p>Assign responsibility per discipline</p>
+</li>
+<li>
+<p><strong>Assign Actions (10 min)</strong></p>
+</li>
+<li>MEP: Resolve Groups 1-5 (25 clashes)</li>
+<li>Structure: Resolve Groups 6-8 (15 clashes)</li>
+<li>
+<p>Architecture: Adjust openings in Groups 1, 3</p>
+</li>
+<li>
+<p><strong>Set Deadlines</strong></p>
+</li>
+<li>Critical: Resolve by Friday</li>
+<li>Major: Resolve by next week</li>
+<li>Normal: Ongoing</li>
+</ol>
+<p><strong>Pro Tip</strong>: Print PDF report and distribute to all attendees</p>
+<hr />
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="bcf-import-failed-in-navisworks">"BCF Import Failed in Navisworks"</h3>
+<p><strong>Symptoms:</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="n">Error</span><span class="p">:</span> <span class="s2">&quot;Cannot import BCF file&quot;</span>
+</code></pre></div>
+
+<p><strong>Solutions:</strong></p>
+<ol>
+<li><strong>Check BCF Version</strong></li>
+<li>Bonsai exports BCF 2.1</li>
+<li>Navisworks 2021+ supports BCF 2.1</li>
+<li>
+<p>Older Navisworks → Upgrade or use Solibri</p>
+</li>
+<li>
+<p><strong>Verify ZIP Structure</strong>
+   <code>clash_export.bcfzip
+   ├── bcf.version (XML)
+   ├── markup.bcf (XML)
+   └── [topic-guid]/
+       ├── markup.bcf
+       └── snapshot.png</code></p>
+</li>
+<li>
+<p><strong>Try Manual Extraction</strong></p>
+</li>
+<li>Rename <code>.bcfzip</code> → <code>.zip</code></li>
+<li>Extract contents</li>
+<li>Import individual markup.bcf files</li>
+</ol>
+<h3 id="viewpoints-dont-match-in-navisworks">"Viewpoints Don't Match in Navisworks"</h3>
+<p><strong>Symptoms:</strong>
+- BCF imports successfully
+- Clicking topic → Viewport doesn't move correctly</p>
+<p><strong>Cause</strong>: Coordinate system mismatch</p>
+<p><strong>Solution:</strong>
+1. Verify Navisworks units match IFC units (meters)
+2. Check if federated model has correct origin
+3. Re-export IFC with consistent coordinates</p>
+<h3 id="element-guids-not-found">"Element GUIDs Not Found"</h3>
+<p><strong>Symptoms:</strong>
+- BCF imports
+- Viewpoint works
+- But elements not highlighted/selected</p>
+<p><strong>Cause</strong>: Navisworks doesn't have matching IFC elements</p>
+<p><strong>Solution:</strong>
+1. <strong>Check IFC is Loaded</strong>
+   - Navisworks → Selection Tree → Verify IFC files present
+2. <strong>Verify GUID Matching</strong>
+   - Bonsai uses IFC GUIDs (GlobalId)
+   - Navisworks must have <strong>same IFC files</strong> Bonsai used
+3. <strong>Reload Models</strong>
+   - File → Append → Add IFC files
+   - Refresh Selection Tree</p>
+<h3 id="snapshots-look-different">"Snapshots Look Different"</h3>
+<p><strong>Expected Behavior</strong>: Bonsai snapshots are Blender-rendered, Navisworks uses different rendering engine</p>
+<p><strong>Not a Bug</strong>: Visual style differs, but viewpoint data is accurate</p>
+<p><strong>If Concerned</strong>:
+- Use Viewpoint data (camera position) as source of truth
+- Snapshots are reference only</p>
+<hr />
+<h2 id="faq">FAQ</h2>
+<h3 id="can-bonsai-replace-navisworks">Can Bonsai replace Navisworks?</h3>
+<p><strong>Short Answer</strong>: Not entirely, but it can <strong>reduce Navisworks seats</strong> significantly.</p>
+<p><strong>Long Answer</strong>:
+- <strong>Batch Clash Detection</strong>: ✅ Bonsai is faster (R-tree indexing)
+- <strong>Intelligent Analysis</strong>: ✅ Bonsai's cascade grouping &gt; Navisworks manual grouping
+- <strong>Daily Review</strong>: ❌ Navisworks has better 3D navigation for end users
+- <strong>Coordination Meetings</strong>: ⚠️ Either works (preference-based)</p>
+<p><strong>Recommended Split</strong>:
+- <strong>1 Bonsai seat</strong> (coordinator): Batch detection + analysis
+- <strong>2-3 Navisworks seats</strong> (team leads): Daily review + meetings
+- <strong>Everyone else</strong>: BCF import into Revit/Solibri/free viewers</p>
+<p><strong>Savings</strong>: $7,200/year (avoiding 2 Navisworks licenses)</p>
+<h3 id="does-bonsai-support-bcf-30">Does Bonsai support BCF 3.0?</h3>
+<p><strong>Currently</strong>: BCF 2.1 only</p>
+<p><strong>Reason</strong>: BCF 2.1 is industry standard (2014), widely supported</p>
+<p><strong>BCF 3.0</strong>: Newer (2019), limited adoption (Solibri, BIMcollab)</p>
+<p><strong>Autodesk Support</strong>:
+- Navisworks 2024: BCF 2.1 ✅, BCF 3.0 ❌
+- BIM 360: BCF 2.1 ✅, BCF 3.0 ⚠️ (partial)</p>
+<p><strong>Roadmap</strong>: BCF 3.0 support planned for Bonsai v2.0 (2026)</p>
+<h3 id="can-i-edit-clash-reports">Can I edit clash reports?</h3>
+<p><strong>Yes!</strong> Reports are <strong>editable Markdown (.md) files</strong></p>
+<p><strong>Common Edits</strong>:</p>
+<div class="codehilite"><pre><span></span><code><span class="k">1.</span> Add project-specific notes
+<span class="k">2.</span> Customize resolution strategies
+<span class="k">3.</span> Update cost estimates
+<span class="k">4.</span> Add meeting action items
+</code></pre></div>
+
+<p><strong>Workflow</strong>:
+1. Open <code>report.md</code> in text editor (VS Code, Notepad++)
+2. Edit sections (Markdown syntax)
+3. Save file
+4. Convert to PDF: <code>pandoc report.md -o report.pdf</code>
+5. Distribute to team</p>
+<h3 id="what-if-clashes-are-resolved-in-revit-not-navisworks">What if clashes are resolved in Revit, not Navisworks?</h3>
+<p><strong>Workflow:</strong></p>
+<ol>
+<li><strong>Receive BCF from Bonsai</strong> → <code>clashes.bcfzip</code></li>
+<li><strong>Import into Revit</strong>:</li>
+<li>Add-Ins → BCF Manager → Import</li>
+<li><strong>Resolve Clashes in Revit</strong>:</li>
+<li>Modify elements directly</li>
+<li>Update BCF status in BCF Browser</li>
+<li><strong>Export Updated BCF</strong>:</li>
+<li>BCF Manager → Export</li>
+<li><strong>Send to Coordinator</strong>:</li>
+<li>Email <code>clashes_RESOLVED.bcfzip</code></li>
+</ol>
+<p><strong>Bonsai Verification</strong>:
+- Coordinator imports updated BCF
+- Re-exports IFC from Revit
+- Re-runs clash detection to verify</p>
+<h3 id="how-do-i-share-reports-with-non-technical-stakeholders">How do I share reports with non-technical stakeholders?</h3>
+<p><strong>Problem</strong>: Stakeholders don't use BIM software</p>
+<p><strong>Solution: Convert to Familiar Formats</strong></p>
+<p><strong>Option 1: PDF Report</strong></p>
+<div class="codehilite"><pre><span></span><code>pandoc<span class="w"> </span>report.md<span class="w"> </span>-o<span class="w"> </span>clash_report.pdf
+</code></pre></div>
+
+<ul>
+<li>✅ Universal format (print, email, archive)</li>
+<li>✅ Embeds snapshots automatically</li>
+<li>✅ Readable by anyone</li>
+</ul>
+<p><strong>Option 2: PowerPoint (for meetings)</strong></p>
+<div class="codehilite"><pre><span></span><code>pandoc<span class="w"> </span>report.md<span class="w"> </span>-o<span class="w"> </span>presentation.pptx
+</code></pre></div>
+
+<ul>
+<li>✅ Edit slides in PowerPoint</li>
+<li>✅ Add company branding</li>
+<li>✅ Present in coordination meetings</li>
+</ul>
+<p><strong>Option 3: Excel (for tracking)</strong>
+- Export clash table to CSV
+- Import into Excel for status tracking
+- Add formulas for % resolved</p>
+<p><strong>Option 4: Email Summary</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="n">Subject</span><span class="o">:</span><span class="w"> </span><span class="n">Clash</span><span class="w"> </span><span class="n">Detection</span><span class="w"> </span><span class="n">Summary</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">Week</span><span class="w"> </span><span class="mi">12</span>
+
+<span class="n">Executive</span><span class="w"> </span><span class="n">Summary</span><span class="o">:</span>
+<span class="o">-</span><span class="w"> </span><span class="mi">252</span><span class="w"> </span><span class="n">clashes</span><span class="w"> </span><span class="n">detected</span>
+<span class="o">-</span><span class="w"> </span><span class="mi">13</span><span class="w"> </span><span class="n">cascade</span><span class="w"> </span><span class="n">groups</span><span class="w"> </span><span class="n">identified</span>
+<span class="o">-</span><span class="w"> </span><span class="n">Estimated</span><span class="w"> </span><span class="n">impact</span><span class="o">:</span><span class="w"> </span><span class="n">$26</span><span class="o">,</span><span class="mi">000</span>
+
+<span class="n">Action</span><span class="w"> </span><span class="n">Required</span><span class="o">:</span>
+<span class="o">-</span><span class="w"> </span><span class="n">MEP</span><span class="w"> </span><span class="n">Team</span><span class="o">:</span><span class="w"> </span><span class="n">Resolve</span><span class="w"> </span><span class="mi">62</span><span class="w"> </span><span class="n">clashes</span><span class="w"> </span><span class="o">(</span><span class="n">Groups</span><span class="w"> </span><span class="mi">1</span><span class="o">-</span><span class="mi">5</span><span class="o">)</span>
+<span class="o">-</span><span class="w"> </span><span class="n">Structure</span><span class="o">:</span><span class="w"> </span><span class="n">Resolve</span><span class="w"> </span><span class="mi">15</span><span class="w"> </span><span class="n">clashes</span><span class="w"> </span><span class="o">(</span><span class="n">Groups</span><span class="w"> </span><span class="mi">6</span><span class="o">-</span><span class="mi">8</span><span class="o">)</span>
+
+<span class="n">Deadline</span><span class="o">:</span><span class="w"> </span><span class="n">Friday</span><span class="o">,</span><span class="w"> </span><span class="mi">5</span><span class="w"> </span><span class="n">PM</span>
+
+<span class="n">Full</span><span class="w"> </span><span class="n">report</span><span class="w"> </span><span class="n">attached</span><span class="w"> </span><span class="o">(</span><span class="n">PDF</span><span class="o">)</span>
+</code></pre></div>
+
+<hr />
+<h2 id="additional-resources">Additional Resources</h2>
+<h3 id="bonsai-documentation">Bonsai Documentation</h3>
+<ul>
+<li><strong>Official Docs</strong>: <a href="https://docs.bonsaibim.org">https://docs.bonsaibim.org</a> <em>(hypothetical)</em></li>
+<li><strong>GitHub Repo</strong>: <a href="https://github.com/IfcOpenShell/IfcOpenShell">https://github.com/IfcOpenShell/IfcOpenShell</a></li>
+<li><strong>Community Forum</strong>: BlenderBIM Add-on discussions</li>
+</ul>
+<h3 id="bcf-resources">BCF Resources</h3>
+<ul>
+<li><strong>buildingSMART BCF Spec</strong>: <a href="https://www.buildingsmart.org/standards/bsi-standards/bim-collaboration-format-bcf/">https://www.buildingsmart.org/standards/bsi-standards/bim-collaboration-format-bcf/</a></li>
+<li><strong>BCF Viewers</strong>: BIMcollab Zoom (free), Solibri Anywhere (free)</li>
+</ul>
+<h3 id="autodesk-resources">Autodesk Resources</h3>
+<ul>
+<li><strong>Navisworks BCF Guide</strong>: Autodesk Knowledge Network</li>
+<li><strong>Revit BCF Manager</strong>: Add-Ins documentation</li>
+<li><strong>BIM 360 BCF Workflow</strong>: Autodesk Construction Cloud docs</li>
+</ul>
+<hr />
+<h2 id="support-contact">Support &amp; Contact</h2>
+<p><strong>For Bonsai Issues</strong>:
+- GitHub Issues: <a href="https://github.com/IfcOpenShell/IfcOpenShell/issues">IfcOpenShell/IfcOpenShell/issues</a>
+- Community Forum: OSArch.org</p>
+<p><strong>For BCF Compatibility Issues</strong>:
+- Email: [your-support-email]
+- Include: BCF file, Navisworks version, error message</p>
+<p><strong>For Training</strong>:
+- Contact BIM coordination team for onboarding sessions</p>
+<hr />
+<p><strong>Document End</strong> | Version 1.0 | 2025-11-07</p>
+</body>
+</html>
