@@ -333,12 +333,12 @@ class DisciplineClashCandidate(PropertyGroup):
 
 
 # These properties are registered into BIMClashProperties in the clash module
-# via the register_federation_properties() function called from federation_analysis/__init__.py
+# via the register_federation_properties() function called from federation/__init__.py
 
 def register_federation_properties():
     """
     Register federation analysis properties into the existing BIMClashProperties.
-    Called from federation_analysis/__init__.py during module registration.
+    Called from federation/__init__.py during module registration.
     """
     from bonsai.bim.module.clash.prop import BIMClashProperties
 
@@ -468,7 +468,7 @@ def register_federation_properties():
 def unregister_federation_properties():
     """
     Unregister federation analysis properties from BIMClashProperties.
-    Called from federation_analysis/__init__.py during module unregistration.
+    Called from federation/__init__.py during module unregistration.
     """
     from bonsai.bim.module.clash.prop import BIMClashProperties
 

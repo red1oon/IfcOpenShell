@@ -2424,7 +2424,7 @@ class BIM_OT_visualize_selected_discipline_clashes(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from bonsai.bim.module.federation_analysis.clash import gizmo
+        from bonsai.bim.module.federation.clash import gizmo
 
         props = tool.Clash.get_clash_props()
 
@@ -2499,9 +2499,9 @@ class BIM_OT_clear_discipline_clash_visualization(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from bonsai.bim.module.federation_analysis.clash import visualization
-        from bonsai.bim.module.federation_analysis.clash import gizmo
-        from bonsai.bim.module.federation_analysis.visualization import federation_viz_helper
+        from bonsai.bim.module.federation.clash import visualization
+        from bonsai.bim.module.federation.clash import gizmo
+        from bonsai.bim.module.federation.visualization import federation_viz_helper
 
         # Clear GPU overlays
         visualization.disable_visualization()
@@ -2524,7 +2524,7 @@ class BIM_OT_enable_clash_gpu_visualization(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from bonsai.bim.module.federation_analysis.clash import visualization
+        from bonsai.bim.module.federation.clash import visualization
 
         props = tool.Clash.get_clash_props()
 
@@ -2554,7 +2554,7 @@ class BIM_OT_disable_clash_gpu_visualization(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from bonsai.bim.module.federation_analysis.clash import visualization
+        from bonsai.bim.module.federation.clash import visualization
 
         visualization.disable_visualization()
 
@@ -2570,7 +2570,7 @@ class BIM_OT_enable_clash_gizmo_visualization(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from bonsai.bim.module.federation_analysis.clash import gizmo
+        from bonsai.bim.module.federation.clash import gizmo
 
         props = tool.Clash.get_clash_props()
 
@@ -2620,7 +2620,7 @@ class BIM_OT_disable_clash_gizmo_visualization(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from bonsai.bim.module.federation_analysis.clash import gizmo
+        from bonsai.bim.module.federation.clash import gizmo
 
         props = tool.Clash.get_clash_props()
         # Property is set inside disable_clash_gizmos()
@@ -2748,7 +2748,7 @@ class BIM_OT_enable_semantic_proxy_visualization(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from bonsai.bim.module.federation_analysis.visualization import semantic_shapes
+        from bonsai.bim.module.federation.visualization import semantic_shapes
 
         props = tool.Clash.get_clash_props()
         fed_props = context.scene.BIMFederationProperties
@@ -2793,7 +2793,7 @@ class BIM_OT_disable_semantic_proxy_visualization(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from bonsai.bim.module.federation_analysis.visualization import semantic_shapes
+        from bonsai.bim.module.federation.visualization import semantic_shapes
 
         props = tool.Clash.get_clash_props()
 
@@ -2814,7 +2814,7 @@ class BIM_OT_enable_full_geometry_visualization(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from bonsai.bim.module.federation_analysis.visualization import semantic_shapes
+        from bonsai.bim.module.federation.visualization import semantic_shapes
 
         props = tool.Clash.get_clash_props()
         fed_props = context.scene.BIMFederationProperties
@@ -2859,7 +2859,7 @@ class BIM_OT_disable_full_geometry_visualization(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from bonsai.bim.module.federation_analysis.visualization import semantic_shapes
+        from bonsai.bim.module.federation.visualization import semantic_shapes
 
         props = tool.Clash.get_clash_props()
 
@@ -2885,7 +2885,7 @@ class BIM_OT_analyze_clash_groups(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from bonsai.bim.module.federation_analysis.clash import clash_grouping
+        from bonsai.bim.module.federation.clash import clash_grouping
 
         props = tool.Clash.get_clash_props()
 
@@ -2903,7 +2903,7 @@ class BIM_OT_analyze_clash_groups(bpy.types.Operator):
 
         try:
             # Verify database schema exists (must be initialized manually)
-            from bonsai.bim.module.federation_analysis.clash import resolution_database
+            from bonsai.bim.module.federation.clash import resolution_database
             db_manager = resolution_database.ResolutionDatabase(db_path)
 
             if not db_manager.verify_schema():
@@ -3025,7 +3025,7 @@ class BIM_OT_suggest_resolutions(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        from bonsai.bim.module.federation_analysis.clash import resolution_engine
+        from bonsai.bim.module.federation.clash import resolution_engine
 
         props = tool.Clash.get_clash_props()
 
@@ -4183,7 +4183,7 @@ class BIM_OT_export_comprehensive_boq(bpy.types.Operator):
             self.report({'INFO'}, "Generating comprehensive BOQ report...")
 
             # Import BOQ exporter
-            from bonsai.bim.module.federation_analysis.dataintelligence.comprehensive_boq_export import ComprehensiveBOQExporter
+            from bonsai.bim.module.federation.dataintelligence.comprehensive_boq_export import ComprehensiveBOQExporter
 
             # Generate timestamped output
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
