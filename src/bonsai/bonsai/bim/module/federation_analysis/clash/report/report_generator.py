@@ -16,7 +16,7 @@ import json
 import csv
 
 # Import standard IFC label mapper (reusable across modules)
-from ..ifc_label_mapper import get_friendly_label, get_discipline_label
+from ...ifc_label_mapper import get_friendly_label, get_discipline_label
 
 
 class ReportGenerator:
@@ -397,6 +397,7 @@ class ReportGenerator:
 | **Analyst** | {meta['analyst_name']} |
 | **Database** | {meta['database_file']} ({meta['database_size_mb']}MB, {meta['total_elements']:,} elements) |
 | **Report Type** | Intelligent Clash Resolution Analysis (POC) |
+"""
 
     def _build_executive_summary(self, data: Dict) -> str:
         """Build executive summary section."""
@@ -409,6 +410,16 @@ class ReportGenerator:
         total_savings = summary['total_construction_cost']
         roi = total_savings / summary['total_design_cost'] if summary['total_design_cost'] > 0 else 0
 
+        # Format numbers with proper units to avoid f-string parsing issues
+        cascade_eff = f"{summary['cascade_efficiency']:.1f}%"
+        design_hours = f"{summary['total_design_hours']:.1f} hours"
+        design_cost = f"${summary['total_design_cost']:,.2f} USD"
+        avg_rate_fmt = f"${avg_rate:.0f}/hr average"
+        construction_cost = f"${summary['total_construction_cost']:,.2f} USD"
+        total_impact = f"${summary['total_design_cost'] + summary['total_construction_cost']:,.2f} USD"
+        roi_fmt = f"{roi:.1f}x"
+        roi_savings = f"${roi:.2f}"
+
         return f"""---
 
 ## EXECUTIVE SUMMARY
@@ -417,22 +428,22 @@ class ReportGenerator:
 
 **Groups Identified:** {summary['total_groups']} cascade groups
 **Total Clashes Analyzed:** {summary['total_analyzed']} clashes
-**Clashes Grouped:** {summary['total_clashes_in_groups']} clashes ({summary['cascade_efficiency']:.1f}% cascade efficiency)
+**Clashes Grouped:** {summary['total_clashes_in_groups']} clashes ({cascade_eff} cascade efficiency)
 **Ungrouped Clashes:** {summary['ungrouped_clashes']} isolated clashes
 
 ### Financial Impact (Estimated)
 
 | Category | Amount | Notes |
 |----------|--------|-------|
-| **Design Phase Effort** | {summary['total_design_hours']:.1f} hours | Coordination + modeling |
-| **Design Phase Cost** | ${summary['total_design_cost']:,.2f} USD | @ ${avg_rate:.0f}/hr average |
-| **Construction Cost Variance** | ${summary['total_construction_cost']:,.2f} USD | Rework avoided if addressed now |
-| **Total Project Impact** | ${summary['total_design_cost'] + summary['total_construction_cost']:,.2f} USD | Design + construction |
+| **Design Phase Effort** | {design_hours} | Coordination + modeling |
+| **Design Phase Cost** | {design_cost} | @ {avg_rate_fmt} |
+| **Construction Cost Variance** | {construction_cost} | Rework avoided if addressed now |
+| **Total Project Impact** | {total_impact} | Design + construction |
 
 ### ROI Assessment
 
-**Return on Investment:** {roi:.1f}x
-- Every $1 spent on design coordination saves ${roi:.2f} in construction rework
+**Return on Investment:** {roi_fmt}
+- Every $1 spent on design coordination saves {roi_savings} in construction rework
 - Early coordination prevents costly field changes
 
 ### Recommended Actions

@@ -53,9 +53,10 @@ classes = (
     operator.SelectSmartGroup,
     operator.SelectSmartGroupedClashesPath,
     operator.SmartClashGroup,
-    operator.BIM_OT_analyze_clash_groups,
-    operator.BIM_OT_suggest_resolutions,
-    operator.BIM_OT_select_resolution_option,
+    # NOTE: Clash adjustment operators moved to federation_analysis module (2025-11-07):
+    # - BIM_OT_analyze_clash_groups
+    # - BIM_OT_suggest_resolutions
+    # - BIM_OT_select_resolution_option
     prop.Clash,
     prop.ClashSource,
     prop.ClashSet,

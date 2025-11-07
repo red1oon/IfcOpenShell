@@ -7,9 +7,12 @@ Each snapshot shows the clashing elements highlighted in the 3D context.
 
 import bpy
 import mathutils
+import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import tempfile
+
+logger = logging.getLogger(__name__)
 
 
 class SnapshotRenderer:
@@ -130,7 +133,7 @@ class SnapshotRenderer:
             # Position viewport to clash location
             positioned = self.set_viewport_to_viewpoint(viewpoint_data)
             if not positioned:
-                print(f"  Warning: Could not position viewport for clash {clash_id}")
+                logger.debug(f"Could not position viewport for clash {clash_id} (using default view)")
 
             # Force viewport redraw to ensure camera position is applied
             for area in bpy.context.screen.areas:
@@ -817,5 +820,5 @@ class SnapshotRenderer:
             return False
 
         except Exception as e:
-            print(f"  Failed to set viewport: {e}")
+            logger.debug(f"Failed to set viewport: {e}")
             return False
