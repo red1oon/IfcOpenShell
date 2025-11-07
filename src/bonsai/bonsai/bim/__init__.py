@@ -87,7 +87,6 @@ modules = {
     "light": None,
     "alignment": None,
     "federation": None,
-    "federation_analysis": None,
     "mep_engineering": None,
     # Uncomment this line to enable loading of the demo module. Happy hacking!
     # The name "demo" must correlate to a folder name in `bim/module/`.

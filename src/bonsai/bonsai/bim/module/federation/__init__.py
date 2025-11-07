@@ -17,22 +17,35 @@
 # along with Bonsai.  If not, see <http://www.gnu.org/licenses/>.
 
 """
-Qualified Path: src/bonsai/bonsai/bim/module/federation/__init__.py
+Federation Module - Multi-Model Coordination & Analysis
+--------------------------------------------------------
+Consolidated module for federated BIM workflows including:
 
-Federation Module - Multi-Model Coordination
---------------------------------------------
-Enables spatial queries across multiple discipline IFC files without merging,
-solving spatial hierarchy mismatch problems through coordinate-based queries.
+Core Infrastructure:
+- Spatial indexing and preprocessing (core/)
+- Multi-stage geometry loading (loading/)
+- Database extraction and querying
+
+Analysis Features:
+- Clash detection with intelligent grouping (clash/)
+- BCF 2.1 export with snapshots (bcf/)
+- Bill of Quantities export (boq/)
+- Interactive 3D visualization (visualization/)
+
+This module enables spatial queries across multiple discipline IFC files without
+merging, solving spatial hierarchy mismatch problems through coordinate-based queries.
 """
 
 import bpy
 from bpy.app.handlers import persistent
 from pathlib import Path
 from . import ui, prop, operator, discipline_legend
-from .unified_progressive_loader import GlassOutlineLoader
+from .loading.unified_progressive_loader import GlassOutlineLoader
+from .clash import gizmo
 
 # Expose classes so main __init__.py can find them
 classes = (
+    # Core Federation Properties & Operators
     prop.FederatedFile,
     prop.BIMFederationProperties,
     operator.AddFederatedFile,
@@ -54,10 +67,65 @@ classes = (
     operator.ExtractSampleDatabase,
     operator.ExtractFullDatabase,
     operator.RedoSampleExtraction,
-    # NOTE: Legend modal operator removed - use Outliner for discipline toggling
     GlassOutlineLoader,
+
+    # Clash Detection Operators
+    operator.BIM_OT_clash_by_discipline,
+    operator.BIM_OT_select_discipline_clash,
+    operator.BIM_OT_analyze_bbox_candidates,
+    operator.BIM_OT_visualize_selected_discipline_clashes,
+    operator.BIM_OT_deselect_all_clashes,
+    operator.BIM_OT_clear_discipline_clash_visualization,
+    operator.BIM_OT_enable_clash_gpu_visualization,
+    operator.BIM_OT_disable_clash_gpu_visualization,
+    operator.BIM_OT_enable_clash_gizmo_visualization,
+    operator.BIM_OT_disable_clash_gizmo_visualization,
+    operator.BIM_OT_load_clash_geometry,
+
+    # Visualization Operators
+    operator.BIM_OT_enable_bbox_visualization,
+    operator.BIM_OT_disable_bbox_visualization,
+    operator.BIM_OT_enable_semantic_proxy_visualization,
+    operator.BIM_OT_disable_semantic_proxy_visualization,
+    operator.BIM_OT_enable_full_geometry_visualization,
+    operator.BIM_OT_disable_full_geometry_visualization,
+
+    # Gizmo operators and menu
+    gizmo.BIM_OT_change_clash_status,
+    gizmo.BIM_OT_navigate_clash,
+    gizmo.BIM_MT_clash_gizmo_context_menu,
+    gizmo.ClashMarkerGizmo,
+    gizmo.ClashMarkerGizmoGroup,
+
+    # Clash Resolution Operators
+    operator.BIM_OT_analyze_clash_groups,
+    operator.BIM_OT_suggest_resolutions,
+    operator.BIM_OT_select_resolution_option,
+    operator.BIM_OT_preview_resolution,
+    operator.BIM_OT_apply_resolution,
+    operator.BIM_OT_submit_resolution_feedback,
+    operator.BIM_OT_change_preset,
+    operator.BIM_OT_clear_preview,
+
+    # BCF Export
+    operator.BIM_OT_export_bcf,
+
+    # Report Generation
+    operator.BIM_OT_generate_clash_resolution_report,
+
+    # BOQ (Bill of Quantities) Export
+    operator.BIM_OT_export_comprehensive_boq,
+    operator.BIM_OT_open_boq_report,
+    operator.BIM_OT_regenerate_boq_report,
+
+    # UI Panels and Lists
     ui.BIM_PT_federation,
     ui.BIM_UL_federated_files,
+    ui.BIM_UL_discipline_clashes,
+    ui.BIM_PT_federation_clash_detection,
+    ui.BIM_PT_federation_lod_visualization,
+    ui.BIM_PT_clash_adjustment,
+    ui.BIM_PT_boq_export,
 )
 
 @persistent
@@ -77,7 +145,7 @@ def restore_federation_index_on_load(dummy):
     # Check if database path is set and file exists
     if props.federation_database_path and Path(props.federation_database_path).exists():
         try:
-            from .spatial_index import FederationIndex
+            from .core.spatial_index import FederationIndex
 
             # Only register if not already loaded
             if not hasattr(bpy.types.WindowManager, 'federation_index'):
@@ -108,6 +176,8 @@ def register():
     # Register load handler to restore federation index
     if restore_federation_index_on_load not in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.append(restore_federation_index_on_load)
+
+    print("✓ federation module registered (consolidated)")
 
 def unregister():
     """Called when addon is disabled - cleanup"""

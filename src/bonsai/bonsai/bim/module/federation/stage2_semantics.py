@@ -38,7 +38,7 @@ import time
 from mathutils import Vector, Euler
 from typing import List, Optional, Callable, Dict
 from . import semantic_utils
-from ..federation_analysis.visualization import shape_templates
+from .visualization import shape_templates
 
 
 # Priority system for progressive loading (same as chunked version)

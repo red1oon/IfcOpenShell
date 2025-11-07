@@ -27,12 +27,6 @@ endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON) # not necessary, but encouraged
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_program(CCACHE_FOUND ccache)
-if(CCACHE_FOUND)
-    set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
-    message(STATUS "`ccache` is found, using it as a compiler launcher.")
-endif()
-
 add_definitions(-D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 
 if(POLICY CMP0141) # 3.25+
@@ -110,6 +104,9 @@ endif()
 
 project(IfcOpenShell VERSION ${RELEASE_VERSION})
 
+# Make sure CMake modules in this project are found first
+list(PREPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR})
+
 if(MINIMAL_BUILD)
     message(STATUS "Setting options for minimal build")
     set(BUILD_GEOMSERVER OFF)
@@ -127,8 +124,10 @@ if((BUILD_CONVERT OR BUILD_GEOMSERVER OR BUILD_IFCPYTHON) AND(NOT BUILD_IFCGEOM)
     set(BUILD_IFCGEOM ON)
 endif()
 
+find_program(CCACHE_FOUND ccache)
 if(CCACHE_FOUND)
-    set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
+    message(STATUS "`ccache` is found, using it as a compiler launcher.")
+    set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CCACHE_FOUND}")
     if(MSVC)
         # By default Visual Studio generators will use /Zi which is not compatible
         # with ccache, so tell Visual Studio to use /Z7 instead.
@@ -212,6 +211,8 @@ if(NOT MINIMAL_BUILD)
     UNIFY_ENVVARS_AND_CACHE(LIBXML2_INCLUDE_DIR)
     UNIFY_ENVVARS_AND_CACHE(LIBXML2_LIBRARIES)
     UNIFY_ENVVARS_AND_CACHE(PCRE_LIBRARY_DIR)
+    UNIFY_ENVVARS_AND_CACHE(PYTHON_INCLUDE_DIR)
+    UNIFY_ENVVARS_AND_CACHE(PYTHON_LIBRARY)
     UNIFY_ENVVARS_AND_CACHE(PYTHON_EXECUTABLE)
     UNIFY_ENVVARS_AND_CACHE(HDF5_INCLUDE_DIR)
     UNIFY_ENVVARS_AND_CACHE(HDF5_LIBRARY_DIR)
@@ -428,7 +429,7 @@ if(WASM_BUILD)
 else()
     # @todo review this, shouldn't this be all possible header-only now?
     # ... or rewritten using C++17 features?
-    set(BOOST_COMPONENTS system program_options regex thread date_time)
+    set(BOOST_COMPONENTS system program_options regex thread date_time iostreams)
 endif()
 
 if(USE_MMAP)
@@ -453,8 +454,11 @@ if(NOT MINIMAL_BUILD)
     clear_wasm_sysroot()
     if(IFCXML_SUPPORT)
         if((NOT LIBXML2_INCLUDE_DIR AND NOT LIBXML2_LIBRARIES))
-            # First try config mode (probably works with vcpkg, Conan, macOS brew installs, but not on ubuntu 22.04?)
+            # First try config mode (probably works with vcpkg, Conan, macOS brew installs, but not on ubuntu 22.04)
+            # CONFIG is provided using root path, so no need to clear sysroot here.
+            restore_wasm_sysroot()
             find_package(LibXml2 QUIET CONFIG)
+            clear_wasm_sysroot()
 
             if(NOT LibXml2_FOUND)
                 # Fallback to CMake's builtin FindLibXml2 module (works on Ubuntu)
@@ -729,91 +733,7 @@ endif()
 
 
 if(HDF5_SUPPORT)
-    if("${HDF5_INCLUDE_DIR}" STREQUAL "")
-        message(STATUS "No HDF5 include directory specified")
-    else()
-        set(HDF5_INCLUDE_DIR "${HDF5_INCLUDE_DIR}" CACHE FILEPATH "HDF5 header files")
-    endif()
-
-    if("${HDF5_LIBRARY_DIR}" STREQUAL "")
-        message(STATUS "No HDF5 library directory specified")
-    else()
-        set(HDF5_LIBRARY_DIR "${HDF5_LIBRARY_DIR}" CACHE FILEPATH "HDF5 library files")
-    endif()
-
-    if(HDF5_LIBRARY_DIR)
-        # result of the HDF5 ctest package
-        # Find zlib using cmake find_library. How should this be implemented?
-        # FIND_LIBRARY(NAMES z libz libz_debug PATHS ... NO_DEFAULT_PATH)
-        if("$ENV{CONDA_BUILD}" STREQUAL "")
-            # result of the HDF5 ctest package
-            if(WIN32)
-                set(zlib_post lib)
-                set(lib_ext lib)
-            else()
-                set(lib_ext a)
-            endif()
-
-            if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
-                set(debug_postfix "_debug")
-            endif()
-
-            set(HDF5_LIBRARIES
-                "${HDF5_LIBRARY_DIR}/libhdf5_cpp${debug_postfix}.${lib_ext}"
-                "${HDF5_LIBRARY_DIR}/libhdf5${debug_postfix}.${lib_ext}"
-                "${HDF5_LIBRARY_DIR}/libz${zlib_post}${debug_postfix}.${lib_ext}"
-                "${HDF5_LIBRARY_DIR}/libsz${debug_postfix}.${lib_ext}"
-                "${HDF5_LIBRARY_DIR}/libaec${debug_postfix}.${lib_ext}"
-            )
-
-        else()
-            message(STATUS "Packaging hdf5 and zlib for conda distribution")
-
-            if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-                # macOS
-                set(zlib_post libz)
-                set(lib_ext dylib)
-                set(HDF5_LIBRARIES
-                "${HDF5_LIBRARY_DIR}/libhdf5_cpp.${lib_ext}"
-                "${HDF5_LIBRARY_DIR}/libhdf5.${lib_ext}"
-                "${HDF5_LIBRARY_DIR}/${zlib_post}.${lib_ext}"
-            )
-            else()
-                # linux and windows
-                # Find HDF5 package
-                find_package(HDF5 REQUIRED COMPONENTS C CXX)
-                # Find ZLIB package
-                find_package(ZLIB REQUIRED)
-                # Include directories
-                include_directories(${HDF5_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS})
-                # Link libraries
-                set(HDF5_LIBRARIES ${HDF5_LIBRARIES} ${ZLIB_LIBRARIES})
-                message(STATUS "HDF5 libraries: ${HDF5_LIBRARIES}")
-            endif()
-        endif()
-    endif()
-
-    if(NOT HDF5_INCLUDE_DIR OR NOT HDF5_LIBRARY_DIR)
-        # First try to find it as a config.
-        find_package(HDF5 CONFIG)
-        if(HDF5_DIR)
-            message(STATUS "HDF5: found config at '${HDF5_DIR}'.")
-            set(HDF5_LIBRARIES hdf5_cpp-static)
-        else()
-            # If it failed, still try to find as a module.
-            # E.g. on Ubuntu `libhdf5-dev` doesn't provie hdf5-config.cmake.
-            # Will automatically fill HDF5_LIBRARIES and HDF5_INCLUDE_DIR.
-            find_package(HDF5 COMPONENTS CXX)
-            if(NOT HDF5_INCLUDE_DIR)
-                message(
-                    FATAL_ERROR
-                    "HDF5_INCLUDE_DIR is not provided (current value: '${HDF5_INCLUDE_DIR}'). "
-                    "HDF5_LIBRARY_DIR is not provided (current value: '${HDF5_LIBRARY_DIR}'). "
-                    "Also could not find HDF5 package (neither module or config)."
-                )
-            endif()
-        endif()
-    endif()
+    find_package(HDF5 REQUIRED COMPONENTS C CXX)
 
     add_definitions(-DWITH_HDF5)
     set(SWIG_DEFINES ${SWIG_DEFINES} -DWITH_HDF5)
@@ -947,7 +867,7 @@ endif()
 
 
 include_directories(${INCLUDE_DIRECTORIES} ${OCC_INCLUDE_DIR} ${OPENCOLLADA_INCLUDE_DIRS}
-	${Boost_INCLUDE_DIRS} ${LIBXML2_INCLUDE_DIR} ${JSON_INCLUDE_DIR} ${HDF5_INCLUDE_DIR}
+	${Boost_INCLUDE_DIRS} ${LIBXML2_INCLUDE_DIR} ${JSON_INCLUDE_DIR} ${HDF5_INCLUDE_DIRS}
     ${EIGEN_DIR} ${CGAL_INCLUDE_DIR} ${GMP_INCLUDE_DIR} ${MPFR_INCLUDE_DIR} ${USD_INCLUDE_DIR}
     ${TBB_INCLUDE_DIR}
 )
@@ -1308,7 +1228,7 @@ if(BUILD_GEOMSERVER)
     file(GLOB H_FILES ../src/ifcgeomserver/*.h)
     set(SOURCE_FILES ${CPP_FILES} ${H_FILES})
     add_executable(IfcGeomServer ${SOURCE_FILES})
-    target_link_libraries(IfcGeomServer IfcGeom IfcParse Serializers ${kernel_libraries} ${OPENCASCADE_LIBRARIES} ${Boost_LIBRARIES})
+    target_link_libraries(IfcGeomServer IfcGeom IfcParse ${kernel_libraries} ${OPENCASCADE_LIBRARIES} ${Boost_LIBRARIES})
 
     if((NOT WIN32) AND BUILD_SHARED_LIBS)
         SET_INSTALL_RPATHS(IfcGeomServer "${IFCOPENSHELL_LIBRARY_DIR};${OCC_LIBRARY_DIR};${Boost_LIBRARY_DIRS}")

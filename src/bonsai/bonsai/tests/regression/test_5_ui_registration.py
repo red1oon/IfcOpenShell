@@ -85,7 +85,7 @@ def test_federation_panel_registered(db_path=None):
     try:
         sys.path.insert(0, str(Path.home() / "Projects/IfcOpenShell/src"))
 
-        from bonsai.bim.module.federation_analysis import classes
+        from bonsai.bim.module.federation import classes
 
         class_names = [cls.__name__ for cls in classes]
 
