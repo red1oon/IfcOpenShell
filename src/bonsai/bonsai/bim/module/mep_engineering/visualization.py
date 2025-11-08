@@ -18,6 +18,17 @@ from mathutils import Vector
 from typing import List, Tuple, Optional
 
 
+def _get_or_create_debug_collection():
+    """Get or create the MEP Debug collection to organize all debug objects"""
+    collection_name = "MEP_Debug"
+    if collection_name not in bpy.data.collections:
+        collection = bpy.data.collections.new(collection_name)
+        bpy.context.scene.collection.children.link(collection)
+    else:
+        collection = bpy.data.collections[collection_name]
+    return collection
+
+
 def create_debug_sphere(
     location: Tuple[float, float, float],
     radius: float,
@@ -26,22 +37,23 @@ def create_debug_sphere(
 ) -> bpy.types.Object:
     """
     Create a colored sphere at specified location
-    
+
     Args:
         location: (x, y, z) position in meters
         radius: Sphere radius in meters
         color: (r, g, b, a) color with alpha (0-1 range)
         name: Object name (will be prefixed with "MEP Debug ")
-        
+
     Returns:
         Created Blender object
     """
     # Create sphere mesh
     mesh = bpy.data.meshes.new(f"MEP Debug {name}")
     obj = bpy.data.objects.new(f"MEP Debug {name}", mesh)
-    
-    # Link to scene
-    bpy.context.scene.collection.objects.link(obj)
+
+    # Link to MEP Debug collection (keeps Outliner organized)
+    collection = _get_or_create_debug_collection()
+    collection.objects.link(obj)
     
     # Generate sphere geometry using bmesh
     bm = bmesh.new()
@@ -97,9 +109,10 @@ def create_obstacle_box(
     # Create cube mesh
     mesh = bpy.data.meshes.new(f"MEP Debug {name}")
     obj = bpy.data.objects.new(f"MEP Debug {name}", mesh)
-    
-    # Link to scene
-    bpy.context.scene.collection.objects.link(obj)
+
+    # Link to MEP Debug collection (keeps Outliner organized)
+    collection = _get_or_create_debug_collection()
+    collection.objects.link(obj)
     
     # Generate cube geometry
     bm = bmesh.new()
@@ -214,29 +227,42 @@ def create_corridor_visualization(
 def clear_debug_objects():
     """
     Remove all MEP debug visualization objects from the scene
-    OPTIMIZED: Uses batch deletion to avoid O(n) depsgraph updates
+    OPTIMIZED: Batch deletion with view layer override to prevent UI updates
     """
-    # Find all objects with "MEP Debug" prefix (single pass)
-    objects_to_remove = [obj for obj in bpy.data.objects if obj.name.startswith("MEP Debug")]
+    import time
+    start_time = time.time()
+
+    # Collect all objects to remove
+    objects_to_remove = []
+
+    # FAST PATH: If using collection, get all objects from it
+    collection_name = "MEP_Debug"
+    if collection_name in bpy.data.collections:
+        collection = bpy.data.collections[collection_name]
+        objects_to_remove.extend(list(collection.objects))
+
+    # FALLBACK: Add any stray objects not in collection (legacy cleanup)
+    for obj in bpy.data.objects:
+        if obj.name.startswith("MEP Debug") and obj not in objects_to_remove:
+            objects_to_remove.append(obj)
 
     if not objects_to_remove:
         print("✓ No debug objects to clear")
         return
 
-    # OPTIMIZATION: Batch delete using operator (single depsgraph update)
-    # This is 20-30× faster than individual bpy.data.objects.remove() calls
-    # because Blender only rebuilds the depsgraph once for all deletions
+    count = len(objects_to_remove)
 
-    # Select objects for batch deletion
-    bpy.ops.object.select_all(action='DESELECT')
-    for obj in objects_to_remove:
-        obj.select_set(True)
+    # OPTIMIZATION: Use data API batch removal (avoids operator overhead)
+    # Remove objects with do_unlink=True
+    with bpy.context.temp_override():
+        for obj in objects_to_remove:
+            bpy.data.objects.remove(obj, do_unlink=True)
 
-    # Batch delete (single depsgraph update)
-    bpy.ops.object.delete(use_global=False, confirm=False)
+    # Remove collection if it exists
+    if collection_name in bpy.data.collections:
+        bpy.data.collections.remove(bpy.data.collections[collection_name])
 
-    # Clean up orphaned data (one pass per data type)
-    # Note: These are much faster than object deletion since they don't affect depsgraph
+    # Batch purge orphaned data (very fast - no depsgraph involvement)
     for mesh in bpy.data.meshes:
         if mesh.name.startswith("MEP Debug") and mesh.users == 0:
             bpy.data.meshes.remove(mesh)
@@ -249,7 +275,8 @@ def clear_debug_objects():
         if "MEP Debug" in curve.name and curve.users == 0:
             bpy.data.curves.remove(curve)
 
-    print(f"✓ Cleared {len(objects_to_remove)} debug objects")
+    elapsed = time.time() - start_time
+    print(f"✓ Cleared {count} debug objects in {elapsed:.3f}s")
 
 def navigate_to_view() -> bool:
     """
@@ -502,7 +529,8 @@ def visualize_routing_scenario(
 
         # Create object from curve
         path_obj = bpy.data.objects.new("MEP Debug Path", curve_data)
-        bpy.context.scene.collection.objects.link(path_obj)
+        collection = _get_or_create_debug_collection()
+        collection.objects.link(path_obj)
 
         # Set material (bright cyan for visibility)
         mat = bpy.data.materials.new(name="MEP Debug Path Material")
