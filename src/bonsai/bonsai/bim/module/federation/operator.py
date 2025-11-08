@@ -1550,43 +1550,33 @@ class ReloadFederationViewport(bpy.types.Operator):
 
 
 class UnloadFederationViewport(bpy.types.Operator):
-    """Unload all federation viewport layers and free memory"""
+    """Unload BBox preview only (Stage 1 - fast layer)"""
     bl_idname = "bim.unload_federation_viewport"
-    bl_label = "Unload All Layers"
-    bl_description = "Remove all 3 visualization layers and free memory (~153 MB)"
+    bl_label = "Unload Preview"
+    bl_description = "Remove BBox preview (GPU batches). Stage 2/3 geometry uses Outliner hide/show."
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        # Start logging to timestamped file
-        from . import logging_utils
-        log_path = logging_utils.start_file_logging()
-        print(f"📝 Logging to: {log_path}")
-
         try:
             # Disable legend if active
             from . import discipline_legend
             if discipline_legend.is_legend_enabled():
                 discipline_legend.disable_legend()
+                print("✓ Discipline legend disabled")
 
-            # Disable bbox visualization if active
+            # Disable BBox visualization ONLY (Stage 1 - instant GPU batches)
             from . import bbox_visualization
             if bbox_visualization.is_bbox_visualization_enabled():
                 bbox_visualization.disable_bbox_visualization()
+                self.report({'INFO'}, "BBox preview unloaded (Stage 1)")
+                print("✓ BBox preview cleared (GPU batches freed)")
+            else:
+                self.report({'INFO'}, "No BBox preview to unload")
+                print("ℹ No BBox preview active")
 
-            from .visualization_manager import VisualizationManager
+            # NOTE: Stage 2/3 geometry NOT unloaded - use Outliner to hide/show
+            # viz_mgr.unload_all_layers() is intentionally removed
 
-            props = context.scene.BIMFederationProperties
-            viz_mgr = VisualizationManager(props.federation_database_path)
-
-            # Unload all layers
-            print("\n🗑️  Unloading all visualization layers...")
-            viz_mgr.unload_all_layers()
-
-            # Reset solid_loaded flag (allows re-loading Solid button)
-            props.solid_loaded = False
-
-            self.report({'INFO'}, "Unloaded all visualization layers")
-            logging_utils.stop_file_logging()
             return {'FINISHED'}
 
         except Exception as e:
@@ -1595,7 +1585,6 @@ class UnloadFederationViewport(bpy.types.Operator):
             traceback.print_exc()
 
             self.report({'ERROR'}, f"Unload failed: {str(e)}")
-            logging_utils.stop_file_logging()
             return {'CANCELLED'}
 
 
