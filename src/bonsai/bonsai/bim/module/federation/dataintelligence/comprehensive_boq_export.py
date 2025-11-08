@@ -8,9 +8,11 @@ import sqlite3
 import sys
 from datetime import datetime
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side, GradientFill
 from openpyxl.utils import get_column_letter
-from openpyxl.chart import PieChart, BarChart, Reference
+from openpyxl.chart import PieChart, BarChart, Reference, DoughnutChart
+from openpyxl.formatting.rule import ColorScaleRule, DataBarRule, CellIsRule
+from openpyxl.worksheet.datavalidation import DataValidation
 
 # ============================================================================
 # MALAYSIAN CONSTRUCTION PRICING DATABASE (2024 Market Rates)
@@ -222,16 +224,56 @@ class ComprehensiveBOQExporter:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.output_path = output_path or f"BOQ_Comprehensive_{timestamp}.xlsx"
 
+        # Enhanced professional color scheme
         self.colors = {
-            'title': '1F4E78',
-            'material': '70AD47',  # Green
-            'labor': 'FFC000',     # Orange
-            'equipment': '5B9BD5',  # Blue
-            'total': 'C00000',      # Red
-            'header': '4472C4',
+            'primary': '2C3E50',      # Dark blue-gray (professional)
+            'accent': '3498DB',        # Bright blue
+            'success': '27AE60',       # Green
+            'warning': 'F39C12',       # Orange
+            'danger': 'E74C3C',        # Red
+            'material': '16A085',      # Teal green
+            'labor': 'E67E22',         # Dark orange
+            'equipment': '2980B9',     # Deep blue
+            'total': 'C0392B',         # Dark red
+            'header': '34495E',        # Dark gray-blue
+            'light': 'ECF0F1',         # Light gray
+            'highlight': 'F1C40F',     # Yellow
+            'kpi_good': 'D5F4E6',      # Light green
+            'kpi_warn': 'FCF3CF',      # Light yellow
+            'kpi_bad': 'FADBD8',       # Light red
+            # Legacy compatibility
+            'title': '2C3E50',
         }
 
         self.sheet_refs = {}
+
+        # Thin border for grid
+        self.thin_border = Border(
+            left=Side(style='thin', color='D0D3D4'),
+            right=Side(style='thin', color='D0D3D4'),
+            top=Side(style='thin', color='D0D3D4'),
+            bottom=Side(style='thin', color='D0D3D4')
+        )
+
+        # Medium border for headers
+        self.medium_border = Border(
+            left=Side(style='medium', color='34495E'),
+            right=Side(style='medium', color='34495E'),
+            top=Side(style='medium', color='34495E'),
+            bottom=Side(style='medium', color='34495E')
+        )
+
+    def apply_zebra_striping(self, ws, start_row, end_row, start_col=1, end_col=9):
+        """Apply alternating row colors for readability"""
+        for row in range(start_row, end_row + 1):
+            if row % 2 == 0:
+                fill = PatternFill(start_color=self.colors['light'],
+                                 end_color=self.colors['light'], fill_type='solid')
+                for col in range(start_col, end_col + 1):
+                    cell = ws.cell(row, col)
+                    # Don't override yellow editable cells or existing colored fills
+                    if cell.fill.start_color.rgb in [None, '00000000', 'FFFFFFFF']:
+                        cell.fill = fill
 
     def calculate_labor_cost(self, ifc_class: str, quantity: float):
         """Calculate labor cost and crew-days"""
@@ -276,97 +318,125 @@ class ComprehensiveBOQExporter:
         return equipment_cost, equipment_data['description']
 
     def create_cover_sheet(self, project_name: str):
-        """Enhanced cover sheet"""
-        ws = self.wb.create_sheet("Cover Sheet", 0)
+        """Professional cover sheet with branding area"""
+        ws = self.wb.create_sheet("📄 Cover Sheet", 0)
 
-        ws.merge_cells('A1:F1')
-        title = ws['A1']
+        # Logo/Company area (placeholder)
+        ws.merge_cells('A1:B4')
+        logo_cell = ws['A1']
+        logo_cell.value = "🏗️\nCOMPANY\nLOGO"
+        logo_cell.font = Font(name='Calibri Light', size=16, bold=True, color='7F8C8D')
+        logo_cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        logo_cell.fill = PatternFill(start_color=self.colors['light'],
+                                     end_color=self.colors['light'], fill_type='solid')
+        logo_cell.border = self.thin_border
+
+        # Title section with professional typography
+        ws.merge_cells('C1:H1')
+        title = ws['C1']
         title.value = "COMPREHENSIVE BILL OF QUANTITIES"
-        title.font = Font(size=22, bold=True, color='FFFFFF')
-        title.fill = PatternFill(start_color=self.colors['title'], end_color=self.colors['title'], fill_type='solid')
+        title.font = Font(name='Calibri Light', size=28, bold=True, color='FFFFFF')
+        title.fill = PatternFill(start_color=self.colors['primary'],
+                                end_color=self.colors['primary'], fill_type='solid')
         title.alignment = Alignment(horizontal='center', vertical='center')
-        ws.row_dimensions[1].height = 35
+        ws.row_dimensions[1].height = 45
 
-        ws.merge_cells('A2:F2')
-        ws['A2'] = f"Project: {project_name}"
-        ws['A2'].font = Font(size=14, bold=True)
-        ws['A2'].alignment = Alignment(horizontal='center')
+        ws.merge_cells('C2:H2')
+        ws['C2'] = f"Project: {project_name}"
+        ws['C2'].font = Font(name='Calibri', size=18, bold=True, color=self.colors['primary'])
+        ws['C2'].alignment = Alignment(horizontal='center', vertical='center')
+        ws.row_dimensions[2].height = 28
 
-        row = 4
-        content = [
-            ("", "", ""),
-            ("COST BREAKDOWN METHODOLOGY", "", ""),
-            ("", "", ""),
-            ("1. MATERIAL COSTS", "", ""),
-            ("Source:", "CIDB National Construction Cost Centre (N3C) 2024", ""),
-            ("Reference:", "BCISM Cost Book 2022-2024 (inflated +3%)", ""),
-            ("Includes:", "Delivery, wastage allowance (5-10% by material type)", ""),
-            ("", "", ""),
-            ("2. LABOR COSTS", "", ""),
-            ("Source:", "MBAM-CIDB Labour Wage Survey 2024", ""),
-            ("Basis:", "Basic wage + 30% (EPF 13%, SOCSO 2%, benefits 15%)", ""),
-            ("Productivity:", "CIDB productivity standards by trade", ""),
-            ("Crew Composition:", "Skilled workers + helpers as per trade standards", ""),
-            ("", "", ""),
-            ("3. EQUIPMENT/PLANT HIRE", "", ""),
-            ("Source:", "CIDB N3C Machinery Hire Rates 2024", ""),
-            ("Allocation:", "Based on work type and duration requirements", ""),
-            ("Rates:", "Per day (8 hours), operator cost included where stated", ""),
-            ("", "", ""),
-            ("COST SUMMARY STRUCTURE", "", ""),
-            ("Sheet 1:", "Cover Sheet (this page)", ""),
-            ("Sheet 2:", "Executive Summary - Total costs with charts", ""),
-            ("Sheet 3:", "Materials Cost Summary", "Detailed material breakdown"),
-            ("Sheet 4:", "Labor Cost Summary", "Crew allocation & man-days"),
-            ("Sheet 5:", "Equipment Cost Summary", "Plant hire requirements"),
-            ("Sheet 6+:", "Detailed BOQ by Discipline", "Line-by-line analysis"),
-            ("", "", ""),
-            ("PRICING STANDARDS & REFERENCES", "", ""),
-            ("BOQ Format:", "PWD Form 203A Malaysia", ""),
-            ("Measurement:", "SMM2 (Standard Method of Measurement)", ""),
-            ("Pricing Date:", "Q4 2024", ""),
-            ("Currency:", "Malaysian Ringgit (RM)", ""),
-            ("Validity:", "60 days from date of issue", ""),
-            ("", "", ""),
-            ("EXCLUSIONS", "", ""),
-            ("• GST/SST (apply as per prevailing tax law)", "", ""),
-            ("• Preliminary & General items (add 8-12%)", "", ""),
-            ("• Profit & attendance (add 10-15%)", "", ""),
-            ("• Escalation beyond 60 days", "", ""),
-            ("• Site-specific conditions not shown in drawings", "", ""),
+        ws.merge_cells('C3:H3')
+        ws['C3'] = f"Report Date: {datetime.now().strftime('%d %B %Y')}"
+        ws['C3'].font = Font(name='Calibri', size=11, italic=True, color='7F8C8D')
+        ws['C3'].alignment = Alignment(horizontal='center', vertical='center')
+        ws.row_dimensions[3].height = 20
+
+        ws.merge_cells('C4:H4')
+        ws['C4'] = "Status: DRAFT FOR REVIEW"
+        ws['C4'].font = Font(name='Calibri', size=12, bold=True, color=self.colors['warning'])
+        ws['C4'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['C4'].fill = PatternFill(start_color=self.colors['kpi_warn'],
+                                   end_color=self.colors['kpi_warn'], fill_type='solid')
+        ws.row_dimensions[4].height = 22
+
+        # Content with better formatting
+        row = 6
+        sections = [
+            {"type": "header", "label": "📊 COST BREAKDOWN METHODOLOGY", "color": self.colors['accent'], "size": 14},
+            {"type": "blank"},
+            {"type": "subheader", "label": "💰 1. MATERIAL COSTS", "color": self.colors['material'], "size": 12},
+            {"type": "data", "label": "Source:", "value": "CIDB National Construction Cost Centre (N3C) 2024"},
+            {"type": "data", "label": "Reference:", "value": "BCISM Cost Book 2022-2024 (inflated +3%)"},
+            {"type": "data", "label": "Includes:", "value": "Delivery, wastage allowance, site handling"},
+            {"type": "blank"},
+            {"type": "subheader", "label": "👷 2. LABOR COSTS", "color": self.colors['labor'], "size": 12},
+            {"type": "data", "label": "Source:", "value": "MBAM-CIDB Labour Wage Survey 2024"},
+            {"type": "data", "label": "Basis:", "value": "Basic wage + 30% (EPF 13%, SOCSO 2%, benefits 15%)"},
+            {"type": "data", "label": "Productivity:", "value": "CIDB productivity standards by trade"},
+            {"type": "data", "label": "Crew:", "value": "Skilled workers + helpers per trade standards"},
+            {"type": "blank"},
+            {"type": "subheader", "label": "🚜 3. EQUIPMENT/PLANT HIRE", "color": self.colors['equipment'], "size": 12},
+            {"type": "data", "label": "Source:", "value": "CIDB N3C Machinery Hire Rates 2024"},
+            {"type": "data", "label": "Allocation:", "value": "Based on work type and duration"},
+            {"type": "data", "label": "Rates:", "value": "Per day (8 hours), operator included where stated"},
+            {"type": "blank"},
+            {"type": "header", "label": "📑 REPORT STRUCTURE", "color": self.colors['accent'], "size": 14},
+            {"type": "blank"},
+            {"type": "data", "label": "Sheet:", "value": "Description"},
+            {"type": "data", "label": "📄 Cover Sheet", "value": "This page - Methodology & standards"},
+            {"type": "data", "label": "📈 Executive Dashboard", "value": "KPI cards, charts, high-level summary"},
+            {"type": "data", "label": "💼 Work Packages", "value": "Grouped by construction phase"},
+            {"type": "data", "label": "💰 Material Summary", "value": "Detailed material breakdown"},
+            {"type": "data", "label": "👷 Labor Summary", "value": "Crew allocation & man-days"},
+            {"type": "data", "label": "🚜 Equipment Summary", "value": "Plant hire requirements"},
+            {"type": "data", "label": "📋 BOQ - [Discipline]", "value": "Line-by-line BOQ per discipline"},
+            {"type": "blank"},
+            {"type": "header", "label": "⚠️ IMPORTANT NOTES", "color": self.colors['warning'], "size": 14},
+            {"type": "blank"},
+            {"type": "data", "label": "Exclusions:", "value": "GST/SST, Preliminaries (8-12%), Profit (10-15%)"},
+            {"type": "data", "label": "Validity:", "value": "60 days from date of issue"},
+            {"type": "data", "label": "Standards:", "value": "PWD Form 203A, SMM2 measurement"},
+            {"type": "data", "label": "Editable Cells:", "value": "Yellow highlighted = User can adjust rates"},
+            {"type": "data", "label": "Pricing Date:", "value": "Q4 2024, Malaysian Ringgit (RM)"},
         ]
 
-        for label, value, note in content:
-            if not label:
+        for item in sections:
+            item_type = item.get("type")
+
+            if item_type == "blank":
                 row += 1
                 continue
-
-            if "METHODOLOGY" in label or "SUMMARY" in label or "STANDARDS" in label or "EXCLUSIONS" in label:
-                ws.merge_cells(f'A{row}:F{row}')
-                ws[f'A{row}'] = label
-                ws[f'A{row}'].font = Font(size=13, bold=True, color='FFFFFF')
-                ws[f'A{row}'].fill = PatternFill(start_color=self.colors['header'], end_color=self.colors['header'], fill_type='solid')
+            elif item_type == "header":
+                ws.merge_cells(f'A{row}:H{row}')
+                ws[f'A{row}'] = item["label"]
+                ws[f'A{row}'].font = Font(size=item["size"], bold=True, color='FFFFFF')
+                ws[f'A{row}'].fill = PatternFill(start_color=item["color"],
+                                                 end_color=item["color"], fill_type='solid')
+                ws[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
+                ws.row_dimensions[row].height = 25
+            elif item_type == "subheader":
+                ws.merge_cells(f'A{row}:H{row}')
+                ws[f'A{row}'] = item["label"]
+                ws[f'A{row}'].font = Font(size=item["size"], bold=True, color='FFFFFF')
+                ws[f'A{row}'].fill = PatternFill(start_color=item["color"],
+                                                 end_color=item["color"], fill_type='solid')
+                ws[f'A{row}'].alignment = Alignment(horizontal='left', vertical='center')
                 ws.row_dimensions[row].height = 22
-            elif "." in label and label[0].isdigit():  # Section numbers
-                ws.merge_cells(f'A{row}:F{row}')
-                ws[f'A{row}'] = label
-                ws[f'A{row}'].font = Font(size=12, bold=True, color='FFFFFF')
-                ws[f'A{row}'].fill = PatternFill(start_color=self.colors['material'], end_color=self.colors['material'], fill_type='solid')
-            elif label.startswith('•'):
-                ws[f'A{row}'] = label
-                ws[f'A{row}'].font = Font(size=10)
-            else:
-                ws[f'A{row}'] = label
-                ws[f'B{row}'] = value
-                ws[f'C{row}'] = note
-                ws[f'A{row}'].font = Font(bold=True if label in ['Source:', 'Reference:', 'Basis:'] else False, size=10)
-                ws[f'C{row}'].font = Font(size=9, italic=True)
+            elif item_type == "data":
+                ws[f'A{row}'] = item["label"]
+                ws[f'B{row}'] = item["value"]
+                ws[f'A{row}'].font = Font(size=10, bold=True)
+                ws[f'B{row}'].font = Font(size=10)
+                ws.merge_cells(f'B{row}:H{row}')
 
             row += 1
 
-        ws.column_dimensions['A'].width = 22
-        ws.column_dimensions['B'].width = 50
-        ws.column_dimensions['C'].width = 35
+        # Set column widths
+        ws.column_dimensions['A'].width = 20
+        for col in ['B', 'C', 'D', 'E', 'F', 'G', 'H']:
+            ws.column_dimensions[col].width = 15
 
         return ws
 
@@ -594,6 +664,150 @@ class ComprehensiveBOQExporter:
         ws.add_chart(bar, 'H23')
 
         ws.freeze_panes = 'A4'
+
+        return ws
+
+    def create_work_packages_sheet(self, db_path: str):
+        """Work packages grouped by construction phase - for scheduling & milestone payments"""
+        ws = self.wb.create_sheet("💼 Work Packages")
+
+        # Title
+        ws.merge_cells('A1:H1')
+        ws['A1'] = "WORK PACKAGES - CONSTRUCTION PHASING"
+        ws['A1'].font = Font(size=18, bold=True, color='FFFFFF')
+        ws['A1'].fill = PatternFill(start_color=self.colors['accent'],
+                                   end_color=self.colors['accent'], fill_type='solid')
+        ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
+        ws.row_dimensions[1].height = 30
+
+        ws.merge_cells('A2:H2')
+        ws['A2'] = "Organized by typical construction sequence for scheduling"
+        ws['A2'].font = Font(size=10, italic=True, color='7F8C8D')
+        ws['A2'].alignment = Alignment(horizontal='center')
+
+        # Work package definitions
+        packages = [
+            {
+                'name': 'PACKAGE 1: SUBSTRUCTURE',
+                'disciplines': ['STR'],
+                'elements': ['IfcColumn', 'IfcBeam'],  # Lower level structure
+                'color': '8E44AD',
+                'icon': '🏗️'
+            },
+            {
+                'name': 'PACKAGE 2: SUPERSTRUCTURE',
+                'disciplines': ['STR', 'ARC'],
+                'elements': ['IfcSlab', 'IfcWall', 'IfcWallStandardCase', 'IfcCurtainWall', 'IfcRoof'],
+                'color': '2980B9',
+                'icon': '🏢'
+            },
+            {
+                'name': 'PACKAGE 3: MEP ROUGH-IN',
+                'disciplines': ['ACMV', 'SP', 'ELEC', 'FP', 'LPG'],
+                'elements': ['IfcDuct', 'IfcDuctSegment', 'IfcPipe', 'IfcPipeSegment', 'IfcCableCarrier'],
+                'color': 'D35400',
+                'icon': '⚙️'
+            },
+            {
+                'name': 'PACKAGE 4: FINISHES',
+                'disciplines': ['ARC', 'CW'],
+                'elements': ['IfcCovering', 'IfcDoor', 'IfcWindow'],
+                'color': '27AE60',
+                'icon': '🎨'
+            },
+            {
+                'name': 'PACKAGE 5: MEP FINAL FIX',
+                'disciplines': ['ACMV', 'ELEC'],
+                'elements': ['IfcFlowTerminal', 'IfcLightFixture', 'IfcOutlet'],
+                'color': 'C0392B',
+                'icon': '💡'
+            },
+        ]
+
+        row = 4
+
+        for pkg in packages:
+            # Package header
+            ws.merge_cells(f'A{row}:H{row}')
+            ws[f'A{row}'] = f"{pkg['icon']} {pkg['name']}"
+            ws[f'A{row}'].font = Font(size=13, bold=True, color='FFFFFF')
+            ws[f'A{row}'].fill = PatternFill(start_color=pkg['color'],
+                                            end_color=pkg['color'], fill_type='solid')
+            ws[f'A{row}'].alignment = Alignment(horizontal='left', vertical='center')
+            ws.row_dimensions[row].height = 25
+            row += 1
+
+            # Column headers
+            headers = ['Discipline', 'Element Type', 'Quantity', 'UOM', 'Material', 'Labor', 'Equipment', 'Total (RM)']
+            for col, header in enumerate(headers, start=1):
+                cell = ws.cell(row, col, header)
+                cell.font = Font(bold=True, color='FFFFFF', size=9)
+                cell.fill = PatternFill(start_color=self.colors['header'],
+                                       end_color=self.colors['header'], fill_type='solid')
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+                cell.border = self.thin_border
+            row += 1
+
+            # Query data for this package
+            conn = sqlite3.connect(db_path)
+            cursor = conn.execute(f"""
+                SELECT discipline, ifc_class, total_quantity, uom
+                FROM simple_qto
+                WHERE discipline IN ({','.join('?' * len(pkg['disciplines']))})
+                AND ifc_class IN ({','.join('?' * len(pkg['elements']))})
+                ORDER BY discipline, total_quantity DESC
+            """, pkg['disciplines'] + pkg['elements'])
+
+            pkg_start = row
+            for disc, ifc_class, qty, uom in cursor.fetchall():
+                mat = MATERIAL_COSTS.get(ifc_class, {'rate': 0})
+                mat_cost = qty * mat['rate']
+                labor_cost, labor_days, _, _ = self.calculate_labor_cost(ifc_class, qty)
+                equip_cost, _ = self.calculate_equipment_cost(ifc_class, labor_days)
+                total_cost = mat_cost + labor_cost + equip_cost
+
+                ws.cell(row, 1, disc)
+                ws.cell(row, 2, ifc_class)
+                ws.cell(row, 3, qty).number_format = '#,##0.00'
+                ws.cell(row, 4, uom)
+                ws.cell(row, 5, mat_cost).number_format = '#,##0'
+                ws.cell(row, 6, labor_cost).number_format = '#,##0'
+                ws.cell(row, 7, equip_cost).number_format = '#,##0'
+                ws.cell(row, 8, total_cost).number_format = '#,##0'
+
+                for col in range(1, 9):
+                    ws.cell(row, col).border = self.thin_border
+
+                row += 1
+
+            conn.close()
+            pkg_end = row - 1
+
+            if pkg_end >= pkg_start:
+                # Package subtotal
+                ws[f'A{row}'] = f"SUBTOTAL - {pkg['name'].split(':')[1].strip()}"
+                ws[f'A{row}'].font = Font(bold=True, size=10)
+                ws.merge_cells(f'A{row}:D{row}')
+
+                for col in range(5, 9):
+                    cell = ws.cell(row, col)
+                    cell.value = f"=SUM({get_column_letter(col)}{pkg_start}:{get_column_letter(col)}{pkg_end})"
+                    cell.number_format = '#,##0'
+                    cell.font = Font(bold=True, size=10)
+                    cell.fill = PatternFill(start_color=self.colors['light'],
+                                           end_color=self.colors['light'], fill_type='solid')
+                    cell.border = self.thin_border
+
+                row += 1
+
+            row += 1  # Gap between packages
+
+        # Column widths
+        widths = [15, 25, 12, 8, 14, 14, 14, 16]
+        for col, width in enumerate(widths, start=1):
+            ws.column_dimensions[get_column_letter(col)].width = width
+
+        ws.freeze_panes = 'A5'
 
         return ws
 
@@ -985,6 +1199,7 @@ class ComprehensiveBOQExporter:
         # Summary sheets
         print(f"\nCreating summary sheets...")
         self.create_executive_summary(db_path, disciplines)
+        self.create_work_packages_sheet(db_path)  # NEW: Construction phasing
         self.create_material_summary(db_path, disciplines)
         self.create_labor_summary(db_path, disciplines)
         self.create_equipment_summary(db_path, disciplines)
