@@ -285,6 +285,12 @@ class VisualizationManager:
                     if disc_coll.name in bpy.context.scene.collection.children:
                         bpy.context.scene.collection.children.unlink(disc_coll)
 
+                    # Unlink from old "Federation" parent (if exists)
+                    if "Federation" in bpy.data.collections:
+                        old_fed = bpy.data.collections["Federation"]
+                        if disc_coll.name in old_fed.children:
+                            old_fed.children.unlink(disc_coll)
+
                     # Link under layer parent
                     if disc_coll.name not in layer_coll.children:
                         layer_coll.children.link(disc_coll)
@@ -294,6 +300,13 @@ class VisualizationManager:
             templates_coll = bpy.data.collections["Templates"]
             if templates_coll.name in bpy.context.scene.collection.children:
                 bpy.context.scene.collection.children.unlink(templates_coll)
+
+            # Unlink from old "Federation" parent (if exists)
+            if "Federation" in bpy.data.collections:
+                old_fed = bpy.data.collections["Federation"]
+                if templates_coll.name in old_fed.children:
+                    old_fed.children.unlink(templates_coll)
+
             if templates_coll.name not in layer_coll.children:
                 layer_coll.children.link(templates_coll)
 
