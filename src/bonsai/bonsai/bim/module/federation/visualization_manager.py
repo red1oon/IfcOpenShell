@@ -273,7 +273,7 @@ class VisualizationManager:
             layer_coll = bpy.data.collections[layer_name]
 
         # Move discipline collections under layer parent
-        disciplines = ['ACMV', 'ARC', 'CW', 'ELEC', 'FP', 'SP', 'STR']
+        disciplines = ['ACMV', 'ARC', 'CW', 'ELEC', 'FP', 'SP', 'STR', 'LPG']
 
         for disc in disciplines:
             # Look for newly created discipline collections
