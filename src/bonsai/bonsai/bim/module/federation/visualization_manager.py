@@ -297,6 +297,15 @@ class VisualizationManager:
             if templates_coll.name not in layer_coll.children:
                 layer_coll.children.link(templates_coll)
 
+        # Remove empty "Federation" parent if we created "Federation_Semantics"
+        # This prevents duplicate empty collections in Outliner
+        if layer_name == "Federation_Semantics" and "Federation" in bpy.data.collections:
+            old_parent = bpy.data.collections["Federation"]
+            # Only remove if it's empty (all children moved to new parent)
+            if len(old_parent.children) == 0 and len(old_parent.objects) == 0:
+                bpy.data.collections.remove(old_parent)
+                print(f"  ✓ Removed empty 'Federation' parent collection")
+
     def _count_objects_recursive(self, collection):
         """Count all objects in collection and sub-collections"""
         count = len(collection.objects)
