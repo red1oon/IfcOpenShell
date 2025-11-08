@@ -422,7 +422,7 @@ class BIM_PT_federation_clash_detection(Panel):
 
                 # Get database path for label lookups
                 fed_props = context.scene.BIMFederationProperties
-                db_path = fed_props.federation_database_path if fed_props.federation_database_path else None
+                db_path = bpy.path.abspath(fed_props.federation_database_path) if fed_props.federation_database_path else None
 
                 # Get friendly class names
                 friendly_class_a = get_friendly_label(candidate.ifc_class_a, db_path=db_path)
@@ -584,7 +584,7 @@ class BIM_UL_discipline_clashes(UIList):
             # Element A | Element B - Show friendly IFC class names
             # Get database path for label lookups
             fed_props = context.scene.BIMFederationProperties
-            db_path = fed_props.federation_database_path if fed_props.federation_database_path else None
+            db_path = bpy.path.abspath(fed_props.federation_database_path) if fed_props.federation_database_path else None
             # Get friendly labels
             friendly_a = get_friendly_label(item.ifc_class_a, db_path=db_path)
             friendly_b = get_friendly_label(item.ifc_class_b, db_path=db_path)
@@ -866,7 +866,7 @@ class BIM_UL_resolution_options(UIList):
             import re
 
             fed_props = context.scene.BIMFederationProperties
-            db_path = fed_props.federation_database_path if fed_props.federation_database_path else None
+            db_path = bpy.path.abspath(fed_props.federation_database_path) if fed_props.federation_database_path else None
 
             def replace_ifc_class(match):
                 ifc_class = match.group(1)
@@ -935,7 +935,7 @@ class BIM_PT_boq_export(Panel):
 
         # Get federation database path
         fed_props = context.scene.BIMFederationProperties
-        db_path = fed_props.federation_database_path
+        db_path = bpy.path.abspath(fed_props.federation_database_path) if fed_props.federation_database_path else None
 
         # Check BOQ status
         import os

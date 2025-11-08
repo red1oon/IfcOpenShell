@@ -391,7 +391,9 @@ class LoadFederationIndex(Operator):
         if not props.federation_database_path:
             cls.poll_message_set("Set federation database path first")
             return False
-        if not Path(props.federation_database_path).exists():
+        # Resolve Blender's // relative path prefix
+        db_path_resolved = bpy.path.abspath(props.federation_database_path)
+        if not Path(db_path_resolved).exists():
             cls.poll_message_set("Database file does not exist. Run preprocessing first")
             return False
         return True
@@ -701,7 +703,8 @@ class QueryFederationIndex(Operator):
             import sqlite3
 
             props = context.scene.BIMFederationProperties
-            db_path = Path(props.federation_database_path)
+            # Resolve Blender's // relative path prefix
+            db_path = Path(bpy.path.abspath(props.federation_database_path))
 
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
@@ -1216,74 +1219,50 @@ class LoadSolidFederationViewport(bpy.types.Operator):
             self.report({'ERROR'}, "No federation database selected")
             return {'CANCELLED'}
 
+        # Check if blend cache already exists - inform user instead of re-baking
+        from . import blend_cache
+        from pathlib import Path
+        db_path = bpy.path.abspath(props.federation_database_path)
+        cache_path = Path(blend_cache.get_cache_path(db_path, mode="solid"))
+
+        if cache_path.exists():
+            self.report({'INFO'}, "Cache already exists. Delete .blend file to bake again, or File → Open to use it.")
+            print(f"\n💡 Solid cache already exists: {cache_path.name}")
+            print(f"   To re-bake: Delete the .blend file")
+            print(f"   To use: File → Open → {cache_path.name}")
+            return {'CANCELLED'}
+
         # Start logging
         from . import logging_utils
         log_path = logging_utils.start_file_logging()
         print(f"📝 Logging to: {log_path}")
 
-        # AUTO-CACHE SYSTEM: Check if cache exists, if not create it
-        from . import blend_cache
-        # Resolve Blender's // relative path prefix
-        db_path = bpy.path.abspath(props.federation_database_path)
-
-        # Check if cache exists and is fresh
-        if blend_cache.should_use_cache(db_path):
-            # Load from cache (fast!)
-            print("\n✅ Loading from .blend cache (fast mode)...")
-            try:
-                blend_cache.load_from_cache(context, db_path)
-
-                # Register federation index for MEP routing (if not already)
-                if not hasattr(bpy.types.WindowManager, 'federation_index'):
-                    print("  Registering federation index for MEP routing...")
-                    from .core.spatial_index import FederationIndex
-                    index = FederationIndex(db_path)
-                    index.build()
-                    bpy.types.WindowManager.federation_index = index
-                    stats = index.get_statistics()
-                    print(f"  ✓ Federation index registered: {stats.get('total_elements', 0):,} elements")
-
-                # Enable Test Conduit button
-                props.index_loaded = True
-
-                logging_utils.stop_file_logging()
-                return {'FINISHED'}
-            except Exception as e:
-                print(f"⚠️  Cache loading failed: {e}")
-                print("   Falling back to cache creation...")
-
-        # NO CACHE or cache stale - Create it now (synchronous, appears in viewport when done)
-        print("\n🔨 Creating .blend cache for solid geometry...")
-        print("   This will take ~70 seconds (one-time operation)")
-        print("   Geometry will appear in viewport when complete")
-        print("   Next time: Instant load from cache (~15s)\n")
+        # NO CACHE - Start background baking (viewport stays free!)
+        print("\n🚀 Starting background cache baking...")
+        print("   Your viewport stays responsive - continue using Preview mode!")
+        print("   Open .blend when ready (~40s)\n")
 
         try:
-            blend_cache.create_cache(
-                context,
-                db_path,
-                mode="solid",
-                report_fn=lambda msg: self.report({'INFO'}, msg)
+            # Start background baking process
+            cache_path = blend_cache.start_background_baking(db_path, mode="solid")
+
+            # Start modal monitor to track progress
+            bpy.ops.bim.monitor_cache_baking(
+                'INVOKE_DEFAULT',
+                cache_path=cache_path,
+                db_path=db_path,
+                mode="solid"
             )
-            # Cache created AND linked to scene - geometry already in viewport!
 
-            # Register federation index for MEP routing (if not already)
-            if not hasattr(bpy.types.WindowManager, 'federation_index'):
-                print("  Registering federation index for MEP routing...")
-                from .core.spatial_index import FederationIndex
-                index = FederationIndex(db_path)
-                index.build()
-                bpy.types.WindowManager.federation_index = index
-                stats = index.get_statistics()
-                print(f"  ✓ Federation index registered: {stats.get('total_elements', 0):,} elements")
-
-            # Enable Test Conduit button
-            props.index_loaded = True
-
+            msg = "Background baking started! Continue working - cache will be ready soon."
+            self.report({'INFO'}, msg)
+            print(f"✅ {msg}")
+            print(f"   Open the .blend file when ready for full geometry analysis")
             logging_utils.stop_file_logging()
             return {'FINISHED'}
+
         except Exception as e:
-            print(f"❌ Cache creation failed: {e}")
+            print(f"⚠️ Background baking failed to start: {e}")
             print("   Falling back to procedural loading...")
 
         # Fallback to old procedural loading if cache fails
@@ -1399,74 +1378,47 @@ class LoadFullFederationViewport(bpy.types.Operator):
             self.report({'ERROR'}, "No federation database selected")
             return {'CANCELLED'}
 
+        # Check if blend cache already exists - inform user instead of re-baking
+        from . import blend_cache
+        from pathlib import Path
+        db_path = bpy.path.abspath(props.federation_database_path)
+        cache_path = Path(blend_cache.get_cache_path(db_path, mode="full"))
+
+        if cache_path.exists():
+            self.report({'INFO'}, "Cache already exists. Delete .blend file to bake again, or File → Open to use it.")
+            print(f"\n💡 Full cache already exists: {cache_path.name}")
+            print(f"   To re-bake: Delete the .blend file")
+            print(f"   To use: File → Open → {cache_path.name}")
+            return {'CANCELLED'}
+
         # Start logging
         from . import logging_utils
         log_path = logging_utils.start_file_logging()
         print(f"📝 Logging to: {log_path}")
 
-        # AUTO-CACHE SYSTEM: Check if cache exists, if not create it
-        from . import blend_cache
-        # Resolve Blender's // relative path prefix
-        db_path = bpy.path.abspath(props.federation_database_path)
-
-        # Check if cache exists and is fresh
-        if blend_cache.should_use_cache(db_path):
-            # Load from cache (fast!)
-            print("\n✅ Loading from .blend cache (fast mode)...")
-            try:
-                blend_cache.load_from_cache(context, db_path)
-
-                # Register federation index for MEP routing (if not already)
-                if not hasattr(bpy.types.WindowManager, 'federation_index'):
-                    print("  Registering federation index for MEP routing...")
-                    from .core.spatial_index import FederationIndex
-                    index = FederationIndex(db_path)
-                    index.build()
-                    bpy.types.WindowManager.federation_index = index
-                    stats = index.get_statistics()
-                    print(f"  ✓ Federation index registered: {stats.get('total_elements', 0):,} elements")
-
-                # Enable Test Conduit button
-                props.index_loaded = True
-
-                logging_utils.stop_file_logging()
-                return {'FINISHED'}
-            except Exception as e:
-                print(f"⚠️  Cache loading failed: {e}")
-                print("   Falling back to cache creation...")
-
-        # NO CACHE or cache stale - Create it now (synchronous, appears in viewport when done)
-        print("\n🔨 Creating .blend cache for full geometry...")
-        print("   This will take ~70 seconds (one-time operation)")
-        print("   Geometry will appear in viewport when complete")
-        print("   Next time: Instant load from cache (~15s)\n")
+        # NO CACHE - Start background baking (viewport stays free!)
+        print("\n🚀 Starting background cache baking...")
+        print("   Your viewport will stay responsive!")
+        print("   Open .blend when ready (~70s)\n")
 
         try:
-            blend_cache.create_cache(
-                context,
-                db_path,
-                mode="full",
-                report_fn=lambda msg: self.report({'INFO'}, msg)
+            # Start background baking process
+            cache_path = blend_cache.start_background_baking(db_path, mode="full")
+
+            # Start modal monitor (non-blocking)
+            bpy.ops.bim.monitor_cache_baking(
+                'INVOKE_DEFAULT',
+                cache_path=cache_path,
+                db_path=db_path,
+                mode="full"
             )
-            # Cache created AND linked to scene - geometry already in viewport!
 
-            # Register federation index for MEP routing (if not already)
-            if not hasattr(bpy.types.WindowManager, 'federation_index'):
-                print("  Registering federation index for MEP routing...")
-                from .core.spatial_index import FederationIndex
-                index = FederationIndex(db_path)
-                index.build()
-                bpy.types.WindowManager.federation_index = index
-                stats = index.get_statistics()
-                print(f"  ✓ Federation index registered: {stats.get('total_elements', 0):,} elements")
-
-            # Enable Test Conduit button
-            props.index_loaded = True
-
+            self.report({'INFO'}, "✅ Background baking started! Open .blend when ready.")
             logging_utils.stop_file_logging()
             return {'FINISHED'}
+
         except Exception as e:
-            print(f"❌ Cache creation failed: {e}")
+            print(f"❌ Background baking failed to start: {e}")
             print("   Falling back to tessellated loading...")
 
         # Fallback to old tessellated loading if cache fails
@@ -1827,7 +1779,8 @@ class ExtractSampleDatabase(bpy.types.Operator):
 
             # Determine output database path
             if props.federation_database_path:
-                base_db = Path(props.federation_database_path)
+                # Resolve Blender's // relative path prefix
+                base_db = Path(bpy.path.abspath(props.federation_database_path))
                 sample_db = base_db.parent / f"sample_{base_db.stem}.db"
             else:
                 sample_db = scripts_dir.parent / "DatabaseFiles" / "sample_extraction.db"
@@ -3133,6 +3086,9 @@ class BIM_OT_analyze_clash_groups(bpy.types.Operator):
                 print(f"    Status: {', '.join(f'{k}={v}' for k, v in group.status_summary.items())}")
             print(f"{'='*60}\n")
 
+            # Set flag to show resolution options UI
+            props.clash_groups_analyzed = True
+
             self.report({'INFO'}, f"Found {len(groups)} cascade groups ({summary['grouping_efficiency']:.1f}% efficiency)")
             return {'FINISHED'}
 
@@ -4298,10 +4254,25 @@ class BIM_OT_export_comprehensive_boq(bpy.types.Operator):
 
         if not has_qto_table:
             self.report({'INFO'}, "Running QTO analysis first...")
-            # TODO: Call QTO analysis operator when available
-            # For now, inform user to run extraction first
-            self.report({'WARNING'}, "Database needs QTO analysis. Please run database extraction first.")
-            return {'CANCELLED'}
+            try:
+                # Import and run QTO extraction
+                from bonsai.bim.module.federation.dataintelligence.simple_qto_extract import extract_simple_qto
+
+                print("\n" + "="*70)
+                print("QTO EXTRACTION REQUIRED")
+                print("="*70)
+                print("Database lacks quantity takeoff data. Running extraction now...")
+                print("This may take a few minutes depending on database size.\n")
+
+                extract_simple_qto(db_path)
+
+                print("\n✓ QTO extraction complete. Proceeding with BOQ generation...\n")
+                self.report({'INFO'}, "QTO extraction complete. Generating BOQ...")
+
+            except Exception as e:
+                logger.exception("QTO extraction failed")
+                self.report({'ERROR'}, f"QTO extraction failed: {str(e)}")
+                return {'CANCELLED'}
 
         # Generate BOQ
         try:
