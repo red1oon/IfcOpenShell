@@ -312,12 +312,22 @@ class VisualizationManager:
 
         # Remove empty "Federation" parent if we created "Federation_Semantics"
         # This prevents duplicate empty collections in Outliner
+        print(f"\n🔍 DEBUG: Checking Federation cleanup...")
+        print(f"  layer_name = {layer_name}")
+        print(f"  'Federation' exists? {'Federation' in bpy.data.collections}")
+
         if layer_name == "Federation_Semantics" and "Federation" in bpy.data.collections:
             old_parent = bpy.data.collections["Federation"]
+            print(f"  Federation children count: {len(old_parent.children)}")
+            print(f"  Federation objects count: {len(old_parent.objects)}")
+            print(f"  Federation children: {[c.name for c in old_parent.children]}")
+
             # Only remove if it's empty (all children moved to new parent)
             if len(old_parent.children) == 0 and len(old_parent.objects) == 0:
                 bpy.data.collections.remove(old_parent)
                 print(f"  ✓ Removed empty 'Federation' parent collection")
+            else:
+                print(f"  ⚠ Federation NOT empty - cannot remove")
 
     def _count_objects_recursive(self, collection):
         """Count all objects in collection and sub-collections"""
