@@ -1246,34 +1246,12 @@ class LoadSolidFederationViewport(bpy.types.Operator):
 
             # Clean up any existing federation hierarchies (prevents Outliner duplication)
             def remove_coll_fast(coll):
-                """Recursively remove collection and all children (OPTIMIZED: batch delete)"""
-                # Collect all objects and collections recursively FIRST
-                all_objects = []
-                all_collections = []
-
-                def collect_recursive(c):
-                    all_collections.append(c)
-                    all_objects.extend(c.objects)
-                    for child in c.children:
-                        collect_recursive(child)
-
-                collect_recursive(coll)
-
-                # BATCH DELETE: Select all objects, delete in one operation (20-30× faster)
-                if all_objects:
-                    # Deselect everything first
-                    bpy.ops.object.select_all(action='DESELECT')
-
-                    # Select all objects to delete
-                    for obj in all_objects:
-                        obj.select_set(True)
-
-                    # Delete all selected objects in one batch (single depsgraph update)
-                    bpy.ops.object.delete()
-
-                # Remove collections (bottom-up to avoid parent dependency issues)
-                for c in reversed(all_collections):
-                    bpy.data.collections.remove(c, do_unlink=True)
+                """Recursively remove collection and all children"""
+                for child in list(coll.children):
+                    remove_coll_fast(child)
+                for obj in list(coll.objects):
+                    bpy.data.objects.remove(obj, do_unlink=True)
+                bpy.data.collections.remove(coll, do_unlink=True)
 
             # Remove federation parent collections
             for coll_name in ['Federation', 'Federation_Semantics']:
