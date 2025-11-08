@@ -31,31 +31,32 @@ from .ifc_label_mapper import get_friendly_label, get_discipline_label
 
 class BIM_UL_federated_files(UIList):
     """UI List for displaying federated files"""
-    
+
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
         if item:
             row = layout.row(align=True)
-            
+
             # Preprocessed indicator
             if item.is_preprocessed:
                 row.label(text="", icon="CHECKMARK")
             else:
                 row.label(text="", icon="BLANK1")
-            
+
             # Discipline tag
             col = row.column()
             col.alert = not bool(item.discipline)
             col.prop(item, "discipline", text="", emboss=False)
-            
+
             # Filename (alert if empty)
             col = row.column()
             col.alert = not bool(item.name)
             if item.name:
                 from pathlib import Path
+
                 col.label(text=Path(item.name).name)
             else:
                 col.label(text="(no file selected)")
-            
+
             # Element count
             if item.element_count > 0:
                 row.label(text=f"{item.element_count:,}")
@@ -65,6 +66,7 @@ class BIM_UL_federated_files(UIList):
 
 class BIM_PT_federation(Panel):
     """Multi-Model Federation panel"""
+
     bl_label = "Federation Management"
     bl_idname = "BIM_PT_federation"
     bl_space_type = "PROPERTIES"
@@ -73,26 +75,26 @@ class BIM_PT_federation(Panel):
     bl_options = {"DEFAULT_CLOSED"}
     # Nest under Federation tab
     bl_parent_id = "BIM_PT_tab_federation"
-    
+
     def draw(self, context):
         layout = self.layout
         props = context.scene.BIMFederationProperties
-        
+
         # Header info
         if props.index_loaded:
             box = layout.box()
             row = box.row()
             row.label(text="Federation Active", icon="CHECKMARK")
-            
+
             col = box.column(align=True)
             col.label(text=f"Elements: {props.total_elements:,}")
             col.label(text=f"Disciplines: {props.loaded_disciplines}")
         else:
             box = layout.box()
             box.label(text="Federation Not Loaded", icon="INFO")
-        
+
         layout.separator()
-        
+
         # Federated files section
         box = layout.box()
         box.label(text="Federated IFC Files", icon="OUTLINER_OB_POINTCLOUD")
@@ -100,36 +102,37 @@ class BIM_PT_federation(Panel):
         row = box.row(align=True)
         row.operator("bim.add_federated_file", icon="ADD", text="Add File")
         row.operator("bim.select_federated_folder", icon="FILEBROWSER", text="Scan Folder")
-        
+
         if props.federated_files:
             # File list
             box.template_list(
-                "BIM_UL_federated_files", "",
-                props, "federated_files",
-                props, "active_federated_file_index"
+                "BIM_UL_federated_files", "", props, "federated_files", props, "active_federated_file_index"
             )
-            
+
             # File operations
             if props.active_federated_file_index < len(props.federated_files):
                 active_file = props.federated_files[props.active_federated_file_index]
-                
+
                 row = box.row(align=True)
                 op = row.operator("bim.select_federated_file", icon="FILE_FOLDER", text="Select File")
                 op.index = props.active_federated_file_index
-                
+
                 op = row.operator("bim.remove_federated_file", icon="X", text="Remove")
                 op.index = props.active_federated_file_index
-        
+
         layout.separator()
 
         # Statistics section (collapsible)
         if props.index_loaded:
             box = layout.box()
             row = box.row()
-            row.prop(props, "show_statistics",
-                    icon="TRIA_DOWN" if props.show_statistics else "TRIA_RIGHT",
-                    text="Federation Statistics",
-                    emboss=False)
+            row.prop(
+                props,
+                "show_statistics",
+                icon="TRIA_DOWN" if props.show_statistics else "TRIA_RIGHT",
+                text="Federation Statistics",
+                emboss=False,
+            )
 
             if props.show_statistics:
                 col = box.column(align=True)
@@ -139,6 +142,7 @@ class BIM_PT_federation(Panel):
                 for fed_file in props.federated_files:
                     if fed_file.is_preprocessed:
                         from pathlib import Path
+
                         row = col.row()
                         row.label(text=f"  {fed_file.discipline}:")
                         row.label(text=f"{fed_file.element_count:,} elements")
@@ -178,6 +182,7 @@ class BIM_PT_federation(Panel):
             inner_box.label(text="Preprocessing in progress...", icon="TIME")
             if props.progress_json_path:
                 from pathlib import Path
+
                 inner_box.label(text=f"Progress: {Path(props.progress_json_path).name}")
 
         # Database Extraction
@@ -227,10 +232,13 @@ class BIM_PT_federation(Panel):
         layout.separator()
         box = layout.box()
         row = box.row()
-        row.prop(props, "show_help",
-                icon="TRIA_DOWN" if props.show_help else "TRIA_RIGHT",
-                text="Help & Usage Tips",
-                emboss=False)
+        row.prop(
+            props,
+            "show_help",
+            icon="TRIA_DOWN" if props.show_help else "TRIA_RIGHT",
+            text="Help & Usage Tips",
+            emboss=False,
+        )
 
         if props.show_help:
             col = box.column(align=True)
@@ -244,7 +252,9 @@ class BIM_PT_federation(Panel):
             col.label(text="Extraction Options:")
             col.label(text="• Full: All elements, production-ready")
             col.label(text="• Sample: ELEC-anchored test region")
-            col.label(text="• Redo: Try different sample region")# Bonsai - OpenBIM Blender Add-on
+            col.label(text="• Redo: Try different sample region")  # Bonsai - OpenBIM Blender Add-on
+
+
 # Copyright (C) 2020, 2021 Dion Moult <dion@thinkmoult.com>
 #
 # This file is part of Bonsai.
@@ -292,7 +302,7 @@ class BIM_PT_federation_clash_detection(Panel):
         row.prop(props, "clash_preset", text="")
 
         # Custom discipline selection
-        if props.clash_preset == 'CUSTOM':
+        if props.clash_preset == "CUSTOM":
             row = box.row(align=True)
             row.prop(props, "discipline_a", text="")
             row.label(text="vs")
@@ -304,9 +314,7 @@ class BIM_PT_federation_clash_detection(Panel):
 
         # Run button
         row = box.row()
-        row.operator("bim.clash_by_discipline",
-                     text="Run Clash Detection",
-                     icon="PLAY")
+        row.operator("bim.clash_by_discipline", text="Run Clash Detection", icon="PLAY")
 
         # Display discipline clash results
         if props.discipline_clash_loaded and props.discipline_clash_candidates:
@@ -317,11 +325,10 @@ class BIM_PT_federation_clash_detection(Panel):
             # Filter hint
             filter_row = result_box.row()
             filter_row.scale_y = 0.8
-            filter_row.label(text="💡 Use filter box (🔍) to search: 'wall', 'door', 'ifcwall*', etc.", icon='INFO')
+            filter_row.label(text="💡 Use filter box (🔍) to search: 'wall', 'door', 'ifcwall*', etc.", icon="INFO")
 
             # Header row
             header = result_box.row(align=True)
-            header.label(text="#")
             header.label(text="☐")  # Checkbox column header
             header.label(text="Element A")
             header.label(text="Element B")
@@ -334,7 +341,7 @@ class BIM_PT_federation_clash_detection(Panel):
                 props,
                 "discipline_clash_candidates",
                 props,
-                "active_discipline_clash_index"
+                "active_discipline_clash_index",
             )
 
             # Count selected clashes
@@ -366,26 +373,20 @@ class BIM_PT_federation_clash_detection(Panel):
 
             # GPU Overlay Visualization
             gpu_row = viz_box.row(align=True)
-            gpu_row.operator("bim.enable_clash_gpu_visualization",
-                           text="GPU Overlay",
-                           icon="RESTRICT_VIEW_OFF")
-            gpu_row.operator("bim.disable_clash_gpu_visualization",
-                           text="",
-                           icon="X")
+            gpu_row.operator("bim.enable_clash_gpu_visualization", text="GPU Overlay", icon="RESTRICT_VIEW_OFF")
+            gpu_row.operator("bim.disable_clash_gpu_visualization", text="", icon="X")
 
             # Gizmo Visualization (Interactive 3D Markers) - Now with lazy loading!
             gizmo_row = viz_box.row(align=True)
-            gizmo_row.operator("bim.enable_clash_gizmo_visualization",
-                             text="Interactive Gizmos",
-                             icon="PIVOT_INDIVIDUAL")
-            gizmo_row.operator("bim.disable_clash_gizmo_visualization",
-                             text="",
-                             icon="X")
+            gizmo_row.operator(
+                "bim.enable_clash_gizmo_visualization", text="Interactive Gizmos", icon="PIVOT_INDIVIDUAL"
+            )
+            gizmo_row.operator("bim.disable_clash_gizmo_visualization", text="", icon="X")
 
             # Info about gizmo features
             info_col = viz_box.column(align=True)
             info_col.scale_y = 0.7
-            info_col.label(text="💡 Gizmo features:", icon='INFO')
+            info_col.label(text="💡 Gizmo features:", icon="INFO")
             info_col.label(text="  • Left-click to jump to clash")
             info_col.label(text="  • Right-click for context menu")
             info_col.label(text="  • Color-coded: Red=New, Orange=Active, Yellow=Reviewed, Green=Resolved")
@@ -396,14 +397,12 @@ class BIM_PT_federation_clash_detection(Panel):
             bcf_box.label(text="BCF Export", icon="EXPORT")
 
             bcf_row = bcf_box.row()
-            bcf_row.operator("bim.export_bcf",
-                           text="Export to BCF 2.1",
-                           icon="FILE_TICK")
+            bcf_row.operator("bim.export_bcf", text="Export to BCF 2.1", icon="FILE_TICK")
 
             # Info about BCF
             bcf_info = bcf_box.column(align=True)
             bcf_info.scale_y = 0.7
-            bcf_info.label(text="💡 BCF (BIM Collaboration Format):", icon='INFO')
+            bcf_info.label(text="💡 BCF (BIM Collaboration Format):", icon="INFO")
             bcf_info.label(text="  • Industry standard for issue tracking")
             bcf_info.label(text="  • Compatible with Navisworks, Solibri, BIMcollab")
             bcf_info.label(text="  • Includes 3D viewpoints and clash metadata")
@@ -463,7 +462,7 @@ class BIM_PT_federation_lod_visualization(Panel):
         if not fed_props.federation_database_path:
             info_row = lod_box.row()
             info_row.alert = True
-            info_row.label(text="⚠ Set database in Multi-Model Federation panel first", icon='ERROR')
+            info_row.label(text="⚠ Set database in Multi-Model Federation panel first", icon="ERROR")
             info_row = lod_box.row()
             info_row.label(text="   (Scene Properties → Multi-Model Federation)")
             return
@@ -473,16 +472,12 @@ class BIM_PT_federation_lod_visualization(Panel):
         row.prop(props, "lod_visualization_mode", text="")
 
         # BBox Wireframe controls (Level 0)
-        if props.lod_visualization_mode == 'BBOX_WIREFRAME':
+        if props.lod_visualization_mode == "BBOX_WIREFRAME":
             row = lod_box.row(align=True)
             if props.bbox_visualization_enabled:
-                row.operator("bim.disable_bbox_visualization",
-                           text="Disable BBox View",
-                           icon='HIDE_ON')
+                row.operator("bim.disable_bbox_visualization", text="Disable BBox View", icon="HIDE_ON")
             else:
-                row.operator("bim.enable_bbox_visualization",
-                           text="Enable BBox View",
-                           icon='HIDE_OFF')
+                row.operator("bim.enable_bbox_visualization", text="Enable BBox View", icon="HIDE_OFF")
 
             # Element limit (for testing)
             row = lod_box.row()
@@ -490,7 +485,7 @@ class BIM_PT_federation_lod_visualization(Panel):
             if props.bbox_element_limit == 0:
                 hint_row = lod_box.row()
                 hint_row.scale_y = 0.6
-                hint_row.label(text="💡 0 = All elements (44K+)", icon='INFO')
+                hint_row.label(text="💡 0 = All elements (44K+)", icon="INFO")
 
             # Stats toggle
             row = lod_box.row()
@@ -499,23 +494,23 @@ class BIM_PT_federation_lod_visualization(Panel):
             # Info
             info_col = lod_box.column(align=True)
             info_col.scale_y = 0.7
-            info_col.label(text="💡 BBox Wireframe:", icon='INFO')
+            info_col.label(text="💡 BBox Wireframe:", icon="INFO")
             info_col.label(text="  • Instant loading (<3 seconds)")
             info_col.label(text="  • <10 MB memory usage")
             info_col.label(text="  • Color-coded by discipline")
             info_col.label(text="  • ACMV=Cyan, FP=Red, ELEC=Yellow")
 
         # Semantic Proxies (Level 1) - Basic Templates
-        elif props.lod_visualization_mode == 'SEMANTIC_PROXY':
+        elif props.lod_visualization_mode == "SEMANTIC_PROXY":
             row = lod_box.row(align=True)
             if props.bbox_visualization_enabled:  # Reuse flag for any visualization mode
-                row.operator("bim.disable_semantic_proxy_visualization",
-                           text="Disable Semantic Proxies",
-                           icon='HIDE_ON')
+                row.operator(
+                    "bim.disable_semantic_proxy_visualization", text="Disable Semantic Proxies", icon="HIDE_ON"
+                )
             else:
-                row.operator("bim.enable_semantic_proxy_visualization",
-                           text="Enable Semantic Proxies",
-                           icon='MESH_CUBE')
+                row.operator(
+                    "bim.enable_semantic_proxy_visualization", text="Enable Semantic Proxies", icon="MESH_CUBE"
+                )
 
             # Element limit (for testing)
             row = lod_box.row()
@@ -523,12 +518,12 @@ class BIM_PT_federation_lod_visualization(Panel):
             if props.bbox_element_limit == 0:
                 hint_row = lod_box.row()
                 hint_row.scale_y = 0.6
-                hint_row.label(text="💡 0 = All elements (database-driven)", icon='INFO')
+                hint_row.label(text="💡 0 = All elements (database-driven)", icon="INFO")
 
             # Info
             info_col = lod_box.column(align=True)
             info_col.scale_y = 0.7
-            info_col.label(text="💡 Semantic Proxies:", icon='INFO')
+            info_col.label(text="💡 Semantic Proxies:", icon="INFO")
             info_col.label(text="  • Basic procedural shapes from templates")
             info_col.label(text="  • Cylinders for round ducts/pipes")
             info_col.label(text="  • Boxes for rectangular ducts/trays")
@@ -536,16 +531,12 @@ class BIM_PT_federation_lod_visualization(Panel):
             info_col.label(text="  • Memory: ~100-200MB per 1000 elements")
 
         # Full IFC Geometry (Level 2) - Load from database
-        elif props.lod_visualization_mode == 'FULL_GEOMETRY':
+        elif props.lod_visualization_mode == "FULL_GEOMETRY":
             row = lod_box.row(align=True)
             if props.bbox_visualization_enabled:  # Reuse flag for any visualization mode
-                row.operator("bim.disable_full_geometry_visualization",
-                           text="Disable Full Geometry",
-                           icon='HIDE_ON')
+                row.operator("bim.disable_full_geometry_visualization", text="Disable Full Geometry", icon="HIDE_ON")
             else:
-                row.operator("bim.enable_full_geometry_visualization",
-                           text="Enable Full Geometry",
-                           icon='IMPORT')
+                row.operator("bim.enable_full_geometry_visualization", text="Enable Full Geometry", icon="IMPORT")
 
             # Element limit (for testing)
             row = lod_box.row()
@@ -553,12 +544,12 @@ class BIM_PT_federation_lod_visualization(Panel):
             if props.bbox_element_limit == 0:
                 hint_row = lod_box.row()
                 hint_row.scale_y = 0.6
-                hint_row.label(text="💡 0 = All elements (may take time)", icon='INFO')
+                hint_row.label(text="💡 0 = All elements (may take time)", icon="INFO")
 
             # Info
             info_col = lod_box.column(align=True)
             info_col.scale_y = 0.7
-            info_col.label(text="💡 Full Geometry:", icon='INFO')
+            info_col.label(text="💡 Full Geometry:", icon="INFO")
             info_col.label(text="  • Detailed procedural shapes with flanges/dampers")
             info_col.label(text="  • Higher poly count, smoother geometry")
             info_col.label(text="  • Database-driven (no IFC files)")
@@ -585,9 +576,7 @@ class BIM_UL_discipline_clashes(UIList):
         fit_flag,
     ) -> None:
         if item:
-            # Number column
             row = layout.row(align=True)
-            row.label(text=str(index + 1), translate=False)
 
             # Checkbox column
             row.prop(item, "selected", text="")
@@ -622,7 +611,8 @@ class BIM_UL_discipline_clashes(UIList):
 
                 # Simple wildcard support: convert * to regex
                 import re
-                pattern = filter_text.replace('*', '.*')
+
+                pattern = filter_text.replace("*", ".*")
 
                 if not re.search(pattern, searchable):
                     flt_flags[idx] &= ~self.bitflag_filter_item  # Hide this item
@@ -632,6 +622,7 @@ class BIM_UL_discipline_clashes(UIList):
 
 class BIM_PT_clash_adjustment(Panel):
     """Panel for intelligent clash grouping and resolution suggestions"""
+
     bl_label = "Intelligent Clash Adjustment"
     bl_idname = "BIM_PT_clash_adjustment"
     bl_space_type = "PROPERTIES"
@@ -648,7 +639,7 @@ class BIM_PT_clash_adjustment(Panel):
         # Check if we have clashes loaded
         if not props.discipline_clash_loaded or not props.discipline_clash_candidates:
             info_box = layout.box()
-            info_box.label(text="⚠ Run clash detection first", icon='INFO')
+            info_box.label(text="⚠ Run clash detection first", icon="INFO")
             info_box.label(text="  (Use 'Quick Clash by Discipline' above)")
             return
 
@@ -691,12 +682,10 @@ class BIM_PT_clash_adjustment(Panel):
         # Analyze button
         row = grouping_box.row()
         row.scale_y = 1.5
-        row.operator("bim.analyze_clash_groups",
-                     text="Analyze Clash Groups",
-                     icon="AUTO")
+        row.operator("bim.analyze_clash_groups", text="Analyze Clash Groups", icon="AUTO")
 
         # Show grouping results if available
-        if hasattr(props, 'clash_groups_analyzed') and props.clash_groups_analyzed:
+        if hasattr(props, "clash_groups_analyzed") and props.clash_groups_analyzed:
             result_box = layout.box()
             result_box.label(text="Grouping Results:", icon="CHECKMARK")
             result_box.label(text="  (Check Blender console for details)")
@@ -719,9 +708,7 @@ class BIM_PT_clash_adjustment(Panel):
             # Suggest resolutions button
             row = resolution_box.row()
             row.scale_y = 1.5
-            row.operator("bim.suggest_resolutions",
-                        text="Generate Resolution Options",
-                        icon="OUTLINER_DATA_LIGHTPROBE")
+            row.operator("bim.suggest_resolutions", text="Generate Resolution Options", icon="OUTLINER_DATA_LIGHTPROBE")
 
             layout.separator()
 
@@ -747,21 +734,15 @@ class BIM_PT_clash_adjustment(Panel):
             row.enabled = bool(props.selected_resolution_option_id)
 
             # Preview button
-            row.operator("bim.preview_resolution",
-                        text="Preview 3D",
-                        icon="HIDE_OFF")
+            row.operator("bim.preview_resolution", text="Preview 3D", icon="HIDE_OFF")
 
             # Apply button
-            row.operator("bim.apply_resolution",
-                        text="Apply",
-                        icon="CHECKMARK")
+            row.operator("bim.apply_resolution", text="Apply", icon="CHECKMARK")
 
             # Clear preview button
             row = action_box.row()
             row.scale_y = 1.0
-            row.operator("bim.clear_preview",
-                        text="Clear Preview",
-                        icon="X")
+            row.operator("bim.clear_preview", text="Clear Preview", icon="X")
 
             # ================================================================
             # PHASE 2: FEEDBACK PANEL
@@ -791,9 +772,7 @@ class BIM_PT_clash_adjustment(Panel):
                 # Submit feedback button
                 row = feedback_box.row()
                 row.scale_y = 1.5
-                row.operator("bim.submit_resolution_feedback",
-                            text="Submit Feedback",
-                            icon="EXPORT")
+                row.operator("bim.submit_resolution_feedback", text="Submit Feedback", icon="EXPORT")
 
             # ================================================================
             # REPORT GENERATION
@@ -814,9 +793,7 @@ class BIM_PT_clash_adjustment(Panel):
             # Generate report button
             row = report_box.row()
             row.scale_y = 1.5
-            row.operator("bim.generate_clash_resolution_report",
-                        text="Generate Report",
-                        icon="FILE_TEXT")
+            row.operator("bim.generate_clash_resolution_report", text="Generate Report", icon="FILE_TEXT")
 
             # Snapshot note
             note_col = report_box.column(align=True)
@@ -847,17 +824,12 @@ class BIM_UL_clash_groups(UIList):
             row.label(text=f"Group {index + 1}", icon="GROUP")
 
             # Severity indicator
-            severity_icons = {
-                'CRITICAL': 'ERROR',
-                'HIGH': 'ERROR',
-                'MEDIUM': 'INFO',
-                'LOW': 'CHECKMARK'
-            }
-            severity = getattr(item, 'severity', 'MEDIUM')
-            row.label(text=severity, icon=severity_icons.get(severity, 'INFO'))
+            severity_icons = {"CRITICAL": "ERROR", "HIGH": "ERROR", "MEDIUM": "INFO", "LOW": "CHECKMARK"}
+            severity = getattr(item, "severity", "MEDIUM")
+            row.label(text=severity, icon=severity_icons.get(severity, "INFO"))
 
             # Clash count
-            clash_count = getattr(item, 'clash_count', 0)
+            clash_count = getattr(item, "clash_count", 0)
             row.label(text=f"{clash_count} clashes")
         else:
             layout.label(text="", translate=False)
@@ -888,10 +860,11 @@ class BIM_UL_resolution_options(UIList):
                 row.label(text=f"Option {index + 1}")
 
             # Resolution type - Replace IFC class names with friendly labels
-            resolution_type = getattr(item, 'resolution_type', 'Unknown')
+            resolution_type = getattr(item, "resolution_type", "Unknown")
 
             # Parse and replace IFC class names (e.g., "IfcOpeningElement(8)" -> "Opening(8)")
             import re
+
             fed_props = context.scene.BIMFederationProperties
             db_path = fed_props.federation_database_path if fed_props.federation_database_path else None
 
@@ -900,12 +873,12 @@ class BIM_UL_resolution_options(UIList):
                 count = match.group(2)
                 friendly = get_friendly_label(ifc_class, db_path=db_path)
                 # Pluralize if count > 1
-                plural = friendly + 's' if int(count) > 1 else friendly
+                plural = friendly + "s" if int(count) > 1 else friendly
                 return f"{count} {plural}"
 
             # Replace pattern like "IfcOpeningElement(8) Coordinate $1.1k 10h MED"
             # with "8 Openings → Coordinate ($1.1k, 10h, MED)"
-            friendly_resolution_type = re.sub(r'(Ifc\w+)\((\d+)\)', replace_ifc_class, resolution_type)
+            friendly_resolution_type = re.sub(r"(Ifc\w+)\((\d+)\)", replace_ifc_class, resolution_type)
 
             # Reformat: Extract action and details, add arrow
             # Pattern: "5 HVAC Duct Segments Reroute Mep $0.9k 7h MED"
@@ -914,7 +887,7 @@ class BIM_UL_resolution_options(UIList):
             if len(parts) >= 3:
                 # Find where the action starts (after the element description)
                 # Simple heuristic: action words are "Coordinate", "Reroute", "Lower", etc.
-                action_words = ['Coordinate', 'Reroute', 'Lower', 'Raise', 'Resize', 'Move']
+                action_words = ["Coordinate", "Reroute", "Lower", "Raise", "Resize", "Move"]
                 action_idx = None
                 for i, part in enumerate(parts):
                     if any(part.startswith(word) for word in action_words):
@@ -922,36 +895,32 @@ class BIM_UL_resolution_options(UIList):
                         break
 
                 if action_idx:
-                    element_part = ' '.join(parts[:action_idx])  # "5 HVAC Duct Segments"
-                    action_part = ' '.join(parts[action_idx:])    # "Reroute Mep $0.9k 7h MED"
+                    element_part = " ".join(parts[:action_idx])  # "5 HVAC Duct Segments"
+                    action_part = " ".join(parts[action_idx:])  # "Reroute Mep $0.9k 7h MED"
 
                     # Extract cost, time, confidence if present
-                    cost_match = re.search(r'\$[\d.]+k?', action_part)
-                    time_match = re.search(r'\d+\.?\d*h', action_part)
-                    conf_match = re.search(r'(LOW|MED|HIGH|CRITICAL)', action_part)
+                    cost_match = re.search(r"\$[\d.]+k?", action_part)
+                    time_match = re.search(r"\d+\.?\d*h", action_part)
+                    conf_match = re.search(r"(LOW|MED|HIGH|CRITICAL)", action_part)
 
                     if cost_match and time_match and conf_match:
-                        action_name = action_part[:cost_match.start()].strip()
+                        action_name = action_part[: cost_match.start()].strip()
                         details = f"({cost_match.group()}, {time_match.group()}, {conf_match.group()})"
                         friendly_resolution_type = f"{element_part} → {action_name} {details}"
 
             row.label(text=friendly_resolution_type)
 
             # Risk level
-            risk_icons = {
-                'CRITICAL': 'ERROR',
-                'HIGH': 'ERROR',
-                'MEDIUM': 'INFO',
-                'LOW': 'CHECKMARK'
-            }
-            risk = getattr(item, 'risk_level', 'MEDIUM')
-            row.label(text=risk, icon=risk_icons.get(risk, 'INFO'))
+            risk_icons = {"CRITICAL": "ERROR", "HIGH": "ERROR", "MEDIUM": "INFO", "LOW": "CHECKMARK"}
+            risk = getattr(item, "risk_level", "MEDIUM")
+            row.label(text=risk, icon=risk_icons.get(risk, "INFO"))
         else:
             layout.label(text="", translate=False)
 
 
 class BIM_PT_boq_export(Panel):
     """Bill of Quantities Export Panel"""
+
     bl_label = "Bill of Quantities (BOQ)"
     bl_idname = "BIM_PT_boq_export"
     bl_space_type = "PROPERTIES"
@@ -990,12 +959,11 @@ class BIM_PT_boq_export(Panel):
         # Check if database has simple_qto table with data
         if db_path and os.path.exists(db_path):
             import sqlite3
+
             try:
                 conn = sqlite3.connect(db_path)
                 # Check if table exists
-                cursor = conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name='simple_qto'"
-                )
+                cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='simple_qto'")
                 table_exists = cursor.fetchone() is not None
 
                 # Check if table has data
@@ -1017,7 +985,7 @@ class BIM_PT_boq_export(Panel):
 
         # Status indicator (right-aligned)
         status_row = row.row()
-        status_row.alignment = 'RIGHT'
+        status_row.alignment = "RIGHT"
         if boq_exists and has_qto_table:
             status_row.label(text="Ready", icon="CHECKMARK")
         else:
@@ -1026,7 +994,7 @@ class BIM_PT_boq_export(Panel):
         # Info text
         info_col = box.column(align=True)
         info_col.scale_y = 0.7
-        info_col.label(text="💡 Malaysian standards (CIDB 2024)", icon='INFO')
+        info_col.label(text="💡 Malaysian standards (CIDB 2024)", icon="INFO")
         info_col.label(text="   Materials + Labor + Equipment breakdown")
 
         box.separator()
@@ -1035,7 +1003,7 @@ class BIM_PT_boq_export(Panel):
         if not db_path or not os.path.exists(db_path):
             warn_row = box.row()
             warn_row.alert = True
-            warn_row.label(text="⚠ Set database in Multi-Model Federation panel first", icon='ERROR')
+            warn_row.label(text="⚠ Set database in Multi-Model Federation panel first", icon="ERROR")
             return
 
         # Buttons - conditional layout
@@ -1056,9 +1024,7 @@ class BIM_PT_boq_export(Panel):
             # Single button: Generate
             row = box.row()
             row.scale_y = 1.5
-            row.operator("bim.export_comprehensive_boq",
-                         text="Generate BOQ Report",
-                         icon="DOCUMENTS")
+            row.operator("bim.export_comprehensive_boq", text="Generate BOQ Report", icon="DOCUMENTS")
 
             # Helper text
             hint = box.column(align=True)
