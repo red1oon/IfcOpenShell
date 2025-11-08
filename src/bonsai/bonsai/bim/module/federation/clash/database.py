@@ -18,7 +18,8 @@ def get_clash_database_path() -> Path:
     fed_props = bpy.context.scene.BIMFederationProperties
 
     if fed_props.federation_database_path:
-        fed_db = Path(fed_props.federation_database_path)
+        # Resolve Blender's // relative path prefix
+        fed_db = Path(bpy.path.abspath(fed_props.federation_database_path))
         # Create clash_status.db in same directory
         return fed_db.parent / "clash_status.db"
     else:

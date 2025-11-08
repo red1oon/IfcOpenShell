@@ -24,6 +24,7 @@ from bpy.props import (
     StringProperty,
     BoolProperty,
     IntProperty,
+    FloatProperty,
     CollectionProperty,
     PointerProperty,
     EnumProperty,
@@ -335,6 +336,24 @@ class DisciplineClashCandidate(PropertyGroup):
 # These properties are registered into BIMClashProperties in the clash module
 # via the register_federation_properties() function called from federation/__init__.py
 
+def get_resolution_options(context):
+    """Get available resolution options for the EnumProperty dropdown"""
+    items = [("NONE", "Select Option...", "No option selected")]
+
+    # TODO: Query database for actual resolution options
+    # For now, return placeholder
+    return items
+
+
+def update_selected_resolution(self, context):
+    """Update the selected_resolution_option_id when dropdown changes"""
+    props = context.scene.BIMClashProperties
+    if props.selected_resolution_dropdown != "NONE":
+        props.selected_resolution_option_id = props.selected_resolution_dropdown
+    else:
+        props.selected_resolution_option_id = ""
+
+
 def register_federation_properties():
     """
     Register federation analysis properties into the existing BIMClashProperties.
@@ -464,6 +483,69 @@ def register_federation_properties():
         default=True
     )
 
+    # Intelligent clash adjustment properties
+    BIMClashProperties.active_preset_name = StringProperty(
+        name="Active Preset Name",
+        description="Currently active cost/adjustment preset",
+        default="US Market"
+    )
+
+    BIMClashProperties.show_learned_estimates = BoolProperty(
+        name="Show Learned Estimates",
+        description="Use machine learning estimates for clash resolution costs",
+        default=True
+    )
+
+    # Clash groups analysis state
+    BIMClashProperties.clash_groups_analyzed = BoolProperty(
+        name="Clash Groups Analyzed",
+        description="Whether clash groups have been analyzed",
+        default=False
+    )
+
+    # Resolution option selection
+    BIMClashProperties.selected_resolution_option_id = StringProperty(
+        name="Selected Resolution Option ID",
+        description="ID of the selected resolution option from the database",
+        default=""
+    )
+
+    BIMClashProperties.selected_resolution_dropdown = EnumProperty(
+        name="Resolution Options",
+        description="Available resolution options for the selected clash group",
+        items=lambda self, context: get_resolution_options(context),
+        update=lambda self, context: update_selected_resolution(self, context)
+    )
+
+    # Feedback panel
+    BIMClashProperties.show_feedback_panel = BoolProperty(
+        name="Show Feedback Panel",
+        description="Show feedback panel for resolution quality tracking",
+        default=False
+    )
+
+    BIMClashProperties.resolution_rating = IntProperty(
+        name="Resolution Rating",
+        description="Quality rating of the resolution (1-5 stars)",
+        default=3,
+        min=1,
+        max=5
+    )
+
+    BIMClashProperties.actual_hours = FloatProperty(
+        name="Actual Hours",
+        description="Actual hours spent on resolution implementation",
+        default=0.0,
+        min=0.0,
+        soft_max=100.0
+    )
+
+    BIMClashProperties.variance_notes = StringProperty(
+        name="Variance Notes",
+        description="Optional notes about why actual time differed from estimate",
+        default=""
+    )
+
 
 def unregister_federation_properties():
     """
@@ -487,6 +569,15 @@ def unregister_federation_properties():
         'bbox_visualization_enabled',
         'bbox_element_limit',
         'show_lod_stats',
+        'active_preset_name',
+        'show_learned_estimates',
+        'clash_groups_analyzed',
+        'selected_resolution_option_id',
+        'selected_resolution_dropdown',
+        'show_feedback_panel',
+        'resolution_rating',
+        'actual_hours',
+        'variance_notes',
     ]
 
     for prop_name in props_to_remove:

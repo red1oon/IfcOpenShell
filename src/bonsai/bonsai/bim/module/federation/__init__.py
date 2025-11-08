@@ -39,7 +39,7 @@ merging, solving spatial hierarchy mismatch problems through coordinate-based qu
 import bpy
 from bpy.app.handlers import persistent
 from pathlib import Path
-from . import ui, prop, operator, discipline_legend
+from . import ui, prop, operator, discipline_legend, cache_monitor
 from .loading.unified_progressive_loader import GlassOutlineLoader
 from .clash import gizmo
 
@@ -47,6 +47,7 @@ from .clash import gizmo
 classes = (
     # Core Federation Properties & Operators
     prop.FederatedFile,
+    prop.DisciplineClashCandidate,
     prop.BIMFederationProperties,
     operator.AddFederatedFile,
     operator.RemoveFederatedFile,
@@ -68,6 +69,9 @@ classes = (
     operator.ExtractFullDatabase,
     operator.RedoSampleExtraction,
     GlassOutlineLoader,
+
+    # Cache monitoring
+    cache_monitor.MonitorCacheBaking,
 
     # Clash Detection Operators
     operator.BIM_OT_clash_by_discipline,
@@ -143,27 +147,35 @@ def restore_federation_index_on_load(dummy):
     props = bpy.context.scene.BIMFederationProperties
 
     # Check if database path is set and file exists
-    if props.federation_database_path and Path(props.federation_database_path).exists():
-        try:
-            from .core.spatial_index import FederationIndex
+    if props.federation_database_path:
+        # Resolve Blender's // relative path prefix
+        db_path_resolved = bpy.path.abspath(props.federation_database_path)
 
-            # Only register if not already loaded
-            if not hasattr(bpy.types.WindowManager, 'federation_index'):
-                print(f"Restoring federation index: {props.federation_database_path}")
+        if Path(db_path_resolved).exists():
+            try:
+                from .core.spatial_index import FederationIndex
 
-                index = FederationIndex(props.federation_database_path)
-                index.build()
+                # Only register if not already loaded
+                if not hasattr(bpy.types.WindowManager, 'federation_index'):
+                    print(f"Restoring federation index: {db_path_resolved}")
 
-                bpy.types.WindowManager.federation_index = index
+                    index = FederationIndex(db_path_resolved)
+                    index.build()
 
-                stats = index.get_statistics()
-                props.index_loaded = True
-                props.total_elements = stats['total_elements']
-                props.loaded_disciplines = ', '.join(stats['disciplines'])
+                    bpy.types.WindowManager.federation_index = index
 
-                print(f"✓ Federation index restored: {stats['total_elements']:,} elements")
-        except Exception as e:
-            print(f"⚠ Could not restore federation index: {e}")
+                    stats = index.get_statistics()
+                    props.index_loaded = True
+                    props.total_elements = stats['total_elements']
+                    props.loaded_disciplines = ', '.join(stats['disciplines'])
+
+                    # Update displayed path to resolved absolute path (remove // prefix)
+                    props.federation_database_path = db_path_resolved
+
+                    print(f"✓ Federation index restored: {stats['total_elements']:,} elements")
+                    print(f"  Database path updated to: {db_path_resolved}")
+            except Exception as e:
+                print(f"⚠ Could not restore federation index: {e}")
 
 
 def register():
@@ -172,6 +184,9 @@ def register():
     bpy.types.Scene.BIMFederationProperties = bpy.props.PointerProperty(
         type=prop.BIMFederationProperties
     )
+
+    # Register federation analysis properties on BIMClashProperties
+    prop.register_federation_properties()
 
     # Register load handler to restore federation index
     if restore_federation_index_on_load not in bpy.app.handlers.load_post:
@@ -184,6 +199,9 @@ def unregister():
     # Remove load handler
     if restore_federation_index_on_load in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.remove(restore_federation_index_on_load)
+
+    # Unregister federation analysis properties from BIMClashProperties
+    prop.unregister_federation_properties()
 
     # Remove properties from Scene
     del bpy.types.Scene.BIMFederationProperties

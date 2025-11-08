@@ -272,6 +272,11 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
     print(f"✓ Created {obj_count:,} objects in {len(discipline_collections)} disciplines in {obj_time:.2f}s")
     print(f"  Disciplines: {', '.join(sorted(discipline_collections.keys()))}")
 
+    # Store database path in scene properties (absolute path)
+    props = context.scene.BIMFederationProperties
+    props.federation_database_path = str(db_path)
+    print(f"Stored database path in scene properties: {db_path}")
+
     # Save .blend
     print(f"Saving cache to {cache_path}...")
     save_start = time.time()

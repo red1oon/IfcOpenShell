@@ -207,7 +207,7 @@ def _create_mesh_from_data(geometry_hash: str, verts_blob: bytes, faces_blob: by
 
     return (geometry_hash, mesh)
 
-def create_all_template_meshes_parallel(db_conn: sqlite3.Connection, max_workers: int = 4) -> Dict[str, bpy.types.Mesh]:
+def create_all_template_meshes_parallel(db_conn: sqlite3.Connection, max_workers: int = 4, progress_callback: Optional[Callable] = None) -> Dict[str, bpy.types.Mesh]:
     """
     Pre-create all unique template meshes in parallel.
 
@@ -218,6 +218,7 @@ def create_all_template_meshes_parallel(db_conn: sqlite3.Connection, max_workers
     Args:
         db_conn: Database connection
         max_workers: Number of parallel workers (default: 4)
+        progress_callback: Optional callback(current, total, message)
 
     Returns:
         Dictionary mapping geometry_hash -> mesh
@@ -259,7 +260,12 @@ def create_all_template_meshes_parallel(db_conn: sqlite3.Connection, max_workers
                 elapsed = time.time() - start_time
                 rate = completed / elapsed if elapsed > 0 else 0
                 remaining = (total_unique - completed) / rate if rate > 0 else 0
-                print(f"  {completed:,}/{total_unique:,} meshes created ({rate:.1f}/s, {remaining:.1f}s remaining)")
+                progress_pct = int((completed / total_unique) * 100)
+                print(f"  {completed:,}/{total_unique:,} meshes created ({rate:.1f}/s, {remaining:.1f}s remaining, {progress_pct}%)")
+
+                # Call progress callback if provided
+                if progress_callback:
+                    progress_callback(completed, total_unique, f"Creating meshes: {completed:,}/{total_unique:,}")
 
     elapsed = time.time() - start_time
     print(f"  ✓ Created {len(meshes):,} template meshes in {elapsed:.2f}s ({elapsed/max(len(meshes),1)*1000:.2f}ms per mesh)")
@@ -506,7 +512,7 @@ def load_tessellated_shapes_instanced(db_path: str,
 
     print(f"\n🚀 OPTIMIZATION: Parallel mesh creation enabled ({max_workers} workers)")
     mesh_creation_start = time.time()
-    parallel_meshes = create_all_template_meshes_parallel(db_conn, max_workers=max_workers)
+    parallel_meshes = create_all_template_meshes_parallel(db_conn, max_workers=max_workers, progress_callback=progress_callback)
     mesh_creation_elapsed = time.time() - mesh_creation_start
     print(f"✓ Mesh creation complete: {mesh_creation_elapsed:.2f}s ({mesh_creation_elapsed/max(len(parallel_meshes),1)*1000:.2f}ms per mesh)")
 

@@ -585,7 +585,8 @@ class ClashMarkerGizmoGroup(GizmoGroup):
 
         # Check if gizmo visualization is enabled
         props = context.scene.BIMClashProperties
-        if not props.gizmo_visualization_enabled:
+        # Use hasattr to handle old .blend files that don't have this property yet
+        if not getattr(props, 'gizmo_visualization_enabled', False):
             return False
 
         # Access active_object to trigger dependency tracking
@@ -621,8 +622,8 @@ class ClashMarkerGizmoGroup(GizmoGroup):
         """
         props = context.scene.BIMClashProperties
 
-        # Check if we have clash data
-        if not props.discipline_clash_candidates:
+        # Check if we have clash data (use getattr for old .blend files)
+        if not getattr(props, 'discipline_clash_candidates', None):
             logger.info("No clash candidates to visualize")
             # Clear gizmos only when no data (safe - user action)
             if self._gizmo_cache:
