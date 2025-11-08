@@ -1157,7 +1157,9 @@ class PreviewFederationViewport(bpy.types.Operator):
             if not hasattr(bpy.types.WindowManager, 'federation_index'):
                 print("  Registering federation index for MEP routing...")
                 from .core.spatial_index import FederationIndex
-                index = FederationIndex(props.federation_database_path)
+                # Resolve Blender's // relative path prefix
+                db_path_resolved = bpy.path.abspath(props.federation_database_path)
+                index = FederationIndex(db_path_resolved)
                 index.build()
                 bpy.types.WindowManager.federation_index = index
                 stats = index.get_statistics()
@@ -1219,6 +1221,72 @@ class LoadSolidFederationViewport(bpy.types.Operator):
         log_path = logging_utils.start_file_logging()
         print(f"📝 Logging to: {log_path}")
 
+        # AUTO-CACHE SYSTEM: Check if cache exists, if not create it
+        from . import blend_cache
+        # Resolve Blender's // relative path prefix
+        db_path = bpy.path.abspath(props.federation_database_path)
+
+        # Check if cache exists and is fresh
+        if blend_cache.should_use_cache(db_path):
+            # Load from cache (fast!)
+            print("\n✅ Loading from .blend cache (fast mode)...")
+            try:
+                blend_cache.load_from_cache(context, db_path)
+
+                # Register federation index for MEP routing (if not already)
+                if not hasattr(bpy.types.WindowManager, 'federation_index'):
+                    print("  Registering federation index for MEP routing...")
+                    from .core.spatial_index import FederationIndex
+                    index = FederationIndex(db_path)
+                    index.build()
+                    bpy.types.WindowManager.federation_index = index
+                    stats = index.get_statistics()
+                    print(f"  ✓ Federation index registered: {stats.get('total_elements', 0):,} elements")
+
+                # Enable Test Conduit button
+                props.index_loaded = True
+
+                logging_utils.stop_file_logging()
+                return {'FINISHED'}
+            except Exception as e:
+                print(f"⚠️  Cache loading failed: {e}")
+                print("   Falling back to cache creation...")
+
+        # NO CACHE or cache stale - Create it now (synchronous, appears in viewport when done)
+        print("\n🔨 Creating .blend cache for solid geometry...")
+        print("   This will take ~70 seconds (one-time operation)")
+        print("   Geometry will appear in viewport when complete")
+        print("   Next time: Instant load from cache (~15s)\n")
+
+        try:
+            blend_cache.create_cache(
+                context,
+                db_path,
+                mode="solid",
+                report_fn=lambda msg: self.report({'INFO'}, msg)
+            )
+            # Cache created AND linked to scene - geometry already in viewport!
+
+            # Register federation index for MEP routing (if not already)
+            if not hasattr(bpy.types.WindowManager, 'federation_index'):
+                print("  Registering federation index for MEP routing...")
+                from .core.spatial_index import FederationIndex
+                index = FederationIndex(db_path)
+                index.build()
+                bpy.types.WindowManager.federation_index = index
+                stats = index.get_statistics()
+                print(f"  ✓ Federation index registered: {stats.get('total_elements', 0):,} elements")
+
+            # Enable Test Conduit button
+            props.index_loaded = True
+
+            logging_utils.stop_file_logging()
+            return {'FINISHED'}
+        except Exception as e:
+            print(f"❌ Cache creation failed: {e}")
+            print("   Falling back to procedural loading...")
+
+        # Fallback to old procedural loading if cache fails
         try:
             print(f"\n{'='*70}")
             print("SOLID MODE: Procedural GPU-Instanced Boxes")
@@ -1234,7 +1302,9 @@ class LoadSolidFederationViewport(bpy.types.Operator):
             if not hasattr(bpy.types.WindowManager, 'federation_index'):
                 print("  Registering federation index for MEP routing...")
                 from .core.spatial_index import FederationIndex
-                index = FederationIndex(props.federation_database_path)
+                # Resolve Blender's // relative path prefix
+                db_path_resolved = bpy.path.abspath(props.federation_database_path)
+                index = FederationIndex(db_path_resolved)
                 index.build()
                 bpy.types.WindowManager.federation_index = index
                 stats = index.get_statistics()
@@ -1334,6 +1404,72 @@ class LoadFullFederationViewport(bpy.types.Operator):
         log_path = logging_utils.start_file_logging()
         print(f"📝 Logging to: {log_path}")
 
+        # AUTO-CACHE SYSTEM: Check if cache exists, if not create it
+        from . import blend_cache
+        # Resolve Blender's // relative path prefix
+        db_path = bpy.path.abspath(props.federation_database_path)
+
+        # Check if cache exists and is fresh
+        if blend_cache.should_use_cache(db_path):
+            # Load from cache (fast!)
+            print("\n✅ Loading from .blend cache (fast mode)...")
+            try:
+                blend_cache.load_from_cache(context, db_path)
+
+                # Register federation index for MEP routing (if not already)
+                if not hasattr(bpy.types.WindowManager, 'federation_index'):
+                    print("  Registering federation index for MEP routing...")
+                    from .core.spatial_index import FederationIndex
+                    index = FederationIndex(db_path)
+                    index.build()
+                    bpy.types.WindowManager.federation_index = index
+                    stats = index.get_statistics()
+                    print(f"  ✓ Federation index registered: {stats.get('total_elements', 0):,} elements")
+
+                # Enable Test Conduit button
+                props.index_loaded = True
+
+                logging_utils.stop_file_logging()
+                return {'FINISHED'}
+            except Exception as e:
+                print(f"⚠️  Cache loading failed: {e}")
+                print("   Falling back to cache creation...")
+
+        # NO CACHE or cache stale - Create it now (synchronous, appears in viewport when done)
+        print("\n🔨 Creating .blend cache for full geometry...")
+        print("   This will take ~70 seconds (one-time operation)")
+        print("   Geometry will appear in viewport when complete")
+        print("   Next time: Instant load from cache (~15s)\n")
+
+        try:
+            blend_cache.create_cache(
+                context,
+                db_path,
+                mode="full",
+                report_fn=lambda msg: self.report({'INFO'}, msg)
+            )
+            # Cache created AND linked to scene - geometry already in viewport!
+
+            # Register federation index for MEP routing (if not already)
+            if not hasattr(bpy.types.WindowManager, 'federation_index'):
+                print("  Registering federation index for MEP routing...")
+                from .core.spatial_index import FederationIndex
+                index = FederationIndex(db_path)
+                index.build()
+                bpy.types.WindowManager.federation_index = index
+                stats = index.get_statistics()
+                print(f"  ✓ Federation index registered: {stats.get('total_elements', 0):,} elements")
+
+            # Enable Test Conduit button
+            props.index_loaded = True
+
+            logging_utils.stop_file_logging()
+            return {'FINISHED'}
+        except Exception as e:
+            print(f"❌ Cache creation failed: {e}")
+            print("   Falling back to tessellated loading...")
+
+        # Fallback to old tessellated loading if cache fails
         try:
             print(f"\n{'='*70}")
             print("FULL GEOMETRY MODE: Exact Tessellated IFC Mesh")
