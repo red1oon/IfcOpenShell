@@ -372,10 +372,10 @@ def get_resolution_options(context):
 
         # Get federation database path
         props = context.scene.BIMFederationProperties
-        if not props.index_loaded or not hasattr(props, 'database_file'):
+        if not props.index_loaded:
             return items
 
-        db_path = props.database_file
+        db_path = props.federation_database_path
         if not db_path or not Path(db_path).exists():
             return items
 

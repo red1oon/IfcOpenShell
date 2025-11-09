@@ -520,7 +520,7 @@ class ReportGenerator:
                 disciplines = f"{disc_a} vs {disc_b}"
 
                 # Link element names to group snapshot
-                snapshot_link = f"snapshots/group_{group_id}_overview.png"
+                snapshot_link = f"snapshots/group_{group['group_id']}_overview.png"
                 sections.append(f"| {idx} | [{elem_a_display}]({snapshot_link}) | [{elem_b_display}]({snapshot_link}) | {disciplines} | {member['status']} |")
 
         # Resolution options
