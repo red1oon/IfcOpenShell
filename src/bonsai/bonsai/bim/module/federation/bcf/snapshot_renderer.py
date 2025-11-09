@@ -152,19 +152,44 @@ class SnapshotRenderer:
             # Create temp file for screenshot
             temp_path = Path(tempfile.gettempdir()) / f"cascade_group_viewport.png"
 
-            # Take viewport screenshot
-            bpy.ops.screen.screenshot(filepath=str(temp_path), full=True)
+            # Take viewport screenshot using render (more reliable than screen.screenshot)
+            try:
+                # Store original render settings
+                original_filepath = bpy.context.scene.render.filepath
+                original_resolution_x = bpy.context.scene.render.resolution_x
+                original_resolution_y = bpy.context.scene.render.resolution_y
+
+                # Configure for viewport capture
+                bpy.context.scene.render.filepath = str(temp_path)
+
+                # Use OpenGL render for speed (captures viewport as-is)
+                bpy.ops.render.opengl(write_still=True, view_context=True)
+
+                # Restore original settings
+                bpy.context.scene.render.filepath = original_filepath
+
+            except Exception as e:
+                print(f"  ⚠️  OpenGL render failed, trying screenshot fallback: {e}")
+                try:
+                    # Fallback to screenshot (may not work in all contexts)
+                    bpy.ops.screen.screenshot(filepath=str(temp_path), full=True)
+                except Exception as e2:
+                    print(f"  ✗ Screenshot also failed: {e2}")
+                    return None
 
             # Read screenshot
             if not temp_path.exists():
-                print(f"  Error: Screenshot not saved to {temp_path}")
+                print(f"  ✗ Error: Screenshot not saved to {temp_path}")
                 return None
 
             with open(temp_path, 'rb') as f:
                 image_data = f.read()
 
             # Cleanup
-            temp_path.unlink()
+            try:
+                temp_path.unlink()
+            except:
+                pass  # Ignore cleanup errors
 
             # Restore element highlighting
             if highlighted_objects:
