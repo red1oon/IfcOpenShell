@@ -18,6 +18,7 @@ Blender interface panels for multi-model federation management.
 
 from __future__ import annotations
 import bpy
+import os
 import bonsai.tool as tool
 from bpy.types import Panel, UIList
 from typing import TYPE_CHECKING
@@ -1075,7 +1076,6 @@ class BIM_PT_nlp_query(Panel):
         box.separator()
 
         # Check database
-        import os
         if not db_path or not os.path.exists(db_path):
             warn_row = box.row()
             warn_row.alert = True
@@ -1101,7 +1101,7 @@ class BIM_PT_nlp_query(Panel):
         suggest_box.label(text="Suggested Queries:", icon="LIGHT")
 
         # Create two columns for suggested queries
-        col_split = suggest_box.column_split(factor=0.5)
+        col_split = suggest_box.split(factor=0.5)
 
         # Column 1
         col1 = col_split.column()
@@ -1109,10 +1109,10 @@ class BIM_PT_nlp_query(Panel):
 
         queries_col1 = [
             "How many beams?",
-            "Count doors on level 1",
-            "Find ducts from Carrier",
-            "Show ACMV elements",
-            "Total length of pipes",
+            "How many doors?",
+            "Find lights from Linergy",
+            "Total building cost",
+            "Floor area",
         ]
 
         for query in queries_col1:
@@ -1124,11 +1124,11 @@ class BIM_PT_nlp_query(Panel):
         col2.scale_y = 0.9
 
         queries_col2 = [
-            "Beams on floor 2",
-            "Search for fire doors",
+            "How much concrete?",
+            "Cost of ACMV work",
             "Which disciplines exist?",
-            "Total area of walls",
-            "List structural items",
+            "Search for AHU",
+            "Show ACMV elements",
         ]
 
         for query in queries_col2:

@@ -9,6 +9,76 @@ import re
 from typing import Dict, List, Tuple, Optional
 
 
+# Storey name normalization mapping
+# Maps common floor/level terms to likely database values
+# This is extensible - users can add their own language terms
+STOREY_MAPPINGS = {
+    # English number words (universal)
+    'first': ['01', '1', 'first', 'premier', 'primera', 'erste'],
+    'second': ['02', '2', 'second', 'deuxième', 'segunda', 'zweite'],
+    'third': ['03', '3', 'third', 'troisième', 'tercera', 'dritte'],
+    'fourth': ['04', '4', 'fourth', 'quatrième', 'cuarta', 'vierte'],
+    'ground': ['00', '0', 'ground', 'tanah', 'jalan', 'erdgeschoss', 'rez', 'planta baja'],
+    'roof': ['roof', 'bumbung', 'dach', 'toit', 'cubierta'],
+    'basement': ['basement', 'b1', 'b01', 'sous-sol', 'sotano', 'keller'],
+
+    # Malaysian/Malay terms
+    'tanah': ['tanah', 'ground', '0', '00'],
+    'bumbung': ['bumbung', 'roof'],
+    'jalan': ['jalan', 'ground', 'street'],
+    'kedai': ['kedai', 'shop', 'retail'],
+
+    # Numeric patterns (universal)
+    '0': ['00', '0', 'ground', 'g'],
+    '1': ['01', '1', 'first', 'l1'],
+    '2': ['02', '2', 'second', 'l2'],
+    '3': ['03', '3', 'third', 'l3'],
+    '4': ['04', '4', 'fourth', 'l4'],
+    '5': ['05', '5', 'fifth', 'l5'],
+    '6': ['06', '6', 'sixth', 'l6'],
+}
+
+
+def normalize_storey_name(storey_input: str) -> str:
+    """
+    Convert user floor/level input to SQL LIKE pattern that matches database storey names.
+
+    This function provides intelligent mapping for multi-language support while maintaining
+    a fallback for direct matching. Users with ANY IFC file can benefit from this.
+
+    How it works:
+    1. Check if input matches a known term (e.g., "first", "ground", "tanah")
+    2. If matched, return multiple alternatives to search for
+    3. If not matched, return input as-is for direct fuzzy matching
+
+    Universal applicability:
+    - English IFC with "Level 1": User says "first floor" → matches via '01' or '1'
+    - French IFC with "Étage 1": User says "etage 1" → direct fuzzy match
+    - Malaysian IFC with "Aras Tanah": User says "ground" → matches via 'tanah'
+    - German IFC with "Erdgeschoss": User says "ground" → matches via 'erdgeschoss'
+    - ANY IFC: User says exact name → direct fuzzy match (always works!)
+
+    Examples:
+        'first' → '01|1|first|premier|primera' (multi-language coverage)
+        'ground' → '00|0|ground|tanah|erdgeschoss|...' (broad matching)
+        'aras 01' → 'aras 01' (direct passthrough - works for any custom naming)
+        'my custom level' → 'my custom level' (fallback - always works!)
+    """
+    storey_lower = storey_input.strip().lower()
+
+    # Remove common prefixes/suffixes
+    storey_lower = re.sub(r'\b(st|nd|rd|th)\b', '', storey_lower).strip()
+
+    # Check if it's a mapped term
+    if storey_lower in STOREY_MAPPINGS:
+        # Return SQL OR pattern: (storey LIKE '%01%' OR storey LIKE '%1%' OR storey LIKE '%first%')
+        alternatives = STOREY_MAPPINGS[storey_lower]
+        return '|'.join(alternatives)  # Will be processed by query executor
+
+    # Default: return as-is for fuzzy matching
+    return storey_input
+
+
 class QueryPattern:
     """Base class for query patterns."""
 
@@ -32,33 +102,53 @@ class QueryPattern:
 # Element Count Patterns
 ELEMENT_COUNT_PATTERNS = [
     # Storey-specific patterns must come FIRST to match before generic patterns
+    # Supports: level, storey, floor, aras (Malaysian term)
     QueryPattern(
-        pattern=r"(?:how many|count|total|number of) (?P<element_type>\w+) on (?P<storey_num>\d+(?:st|nd|rd|th)?|first|second|third|\w+) (?:level|storey|floor)",
+        pattern=r"(?:how many|count|total|number of) (?P<element_type>\w+) on (?:the )?(?P<storey_name>(?:aras\s+)?(?:\d+(?:st|nd|rd|th)?|first|second|third|ground|tanah|bumbung|jalan|kedai|\w+)) (?:level|storey|floor|aras)?",
         sql_template="""
-            SELECT 'STOREY_NOT_AVAILABLE' as result_type
+            SELECT e.ifc_class, COUNT(*) as count, s.storey
+            FROM elements_meta e
+            JOIN spatial_structure s ON e.guid = s.guid
+            WHERE LOWER(e.ifc_class) LIKE LOWER('%{element_type}%')
+            AND LOWER(s.storey) LIKE LOWER('%{storey_name}%')
+            GROUP BY e.ifc_class, s.storey
         """,
-        description="Storey information not available in database"
+        description="Count elements by type on specific storey"
     ),
     QueryPattern(
-        pattern=r"count (?P<element_type>\w+) (?:in|on|at) (?:level|storey|floor) (?P<storey_num>\d+|[\w\s]+)",
+        pattern=r"count (?P<element_type>\w+) (?:in|on|at) (?:level|storey|floor|aras) (?P<storey_name>[\w\s]+)",
         sql_template="""
-            SELECT 'STOREY_NOT_AVAILABLE' as result_type
+            SELECT e.ifc_class, COUNT(*) as count, s.storey
+            FROM elements_meta e
+            JOIN spatial_structure s ON e.guid = s.guid
+            WHERE LOWER(e.ifc_class) LIKE LOWER('%{element_type}%')
+            AND LOWER(s.storey) LIKE LOWER('%{storey_name}%')
+            GROUP BY e.ifc_class, s.storey
         """,
-        description="Storey information not available in database"
+        description="Count elements on specific storey"
     ),
     QueryPattern(
-        pattern=r"(?P<element_type>\w+) on (?:level|storey|floor) (?P<storey_num>\d+|\w+)",
+        pattern=r"(?P<element_type>\w+) on (?:level|storey|floor|aras) (?P<storey_name>[\w\s]+)",
         sql_template="""
-            SELECT 'STOREY_NOT_AVAILABLE' as result_type
+            SELECT e.guid, e.ifc_class, e.element_name, s.storey
+            FROM elements_meta e
+            JOIN spatial_structure s ON e.guid = s.guid
+            WHERE LOWER(e.ifc_class) LIKE LOWER('%{element_type}%')
+            AND LOWER(s.storey) LIKE LOWER('%{storey_name}%')
+            LIMIT 100
         """,
-        description="Storey information not available in database"
+        description="List elements on specific storey"
     ),
     QueryPattern(
-        pattern=r"(?:area|rooms?|spaces?) on (?:level|storey|floor) (?P<storey_num>\d+|first|second|third|1st|2nd|3rd|\w+)",
+        pattern=r"(?:area|rooms?|spaces?) on (?:level|storey|floor|aras) (?P<storey_name>[\w\s]+)",
         sql_template="""
-            SELECT 'STOREY_NOT_AVAILABLE' as result_type
+            SELECT s.storey, COUNT(*) as space_count
+            FROM spatial_structure s
+            WHERE LOWER(s.storey) LIKE LOWER('%{storey_name}%')
+            AND s.space IS NOT NULL
+            GROUP BY s.storey
         """,
-        description="Storey information not available in database"
+        description="Count rooms/spaces on specific storey"
     ),
     # Generic element count patterns come AFTER storey patterns
     QueryPattern(
@@ -212,11 +302,16 @@ COST_PATTERNS = [
 MATERIAL_PATTERNS = [
     # Storey-specific area queries come FIRST
     QueryPattern(
-        pattern=r"area on (?P<storey_num>first|second|third|1st|2nd|3rd|\d+(?:st|nd|rd|th)?) (?:level|storey|floor)",
+        pattern=r"area on (?:level|storey|floor|aras) (?P<storey_name>[\w\s]+)",
         sql_template="""
-            SELECT 'STOREY_NOT_AVAILABLE' as result_type
+            SELECT s.storey, SUM(q.total_quantity) as total_area, q.uom
+            FROM simple_qto q
+            JOIN spatial_structure s ON q.guid = s.guid
+            WHERE LOWER(s.storey) LIKE LOWER('%{storey_name}%')
+            AND q.measurement_type = 'AREA'
+            GROUP BY s.storey, q.uom
         """,
-        description="Storey information not available in database"
+        description="Calculate area for specific storey"
     ),
     QueryPattern(
         pattern=r"(?:how much|how many|total|quantity of) (?P<material>concrete|steel|glass|aluminum)",

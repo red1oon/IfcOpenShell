@@ -7,7 +7,7 @@ and the FTS5 full-text search capabilities of the extracted database.
 
 import re
 from typing import Dict, List, Optional, Tuple
-from .query_patterns import find_matching_pattern, QueryPattern
+from .query_patterns import find_matching_pattern, QueryPattern, normalize_storey_name
 
 
 class NLPQueryParser:
@@ -107,6 +107,25 @@ class NLPQueryParser:
         for key, value in params.items():
             # Sanitize value to prevent SQL injection
             safe_value = self._sanitize_value(value)
+
+            # Singularize element_type for IFC class matching (e.g., "plates" -> "plate")
+            if key == 'element_type':
+                safe_value = self._singularize(safe_value)
+
+            # Normalize storey_name for multi-language support (e.g., "first" -> matches "Aras 01" or "FIRST FLOOR")
+            if key == 'storey_name':
+                normalized = normalize_storey_name(safe_value)
+                if '|' in normalized:
+                    # Multiple alternatives - convert to SQL OR pattern
+                    alternatives = normalized.split('|')
+                    like_clauses = [f"LOWER(s.storey) LIKE LOWER('%{alt}%')" for alt in alternatives]
+                    # Replace the simple LIKE with OR pattern
+                    sql = sql.replace(
+                        f"LOWER(s.storey) LIKE LOWER('%{{{key}}}%')",
+                        f"({' OR '.join(like_clauses)})"
+                    )
+                    continue  # Skip the normal replacement
+
             sql = sql.replace(f'{{{key}}}', safe_value)
 
         # Clean up whitespace
@@ -129,6 +148,43 @@ class NLPQueryParser:
         safe_value = re.sub(r'[^\w\s\-\.]', '', value)
 
         return safe_value.strip()
+
+    def _singularize(self, word: str) -> str:
+        """
+        Convert plural words to singular for IFC class matching.
+
+        Args:
+            word: The word to singularize
+
+        Returns:
+            Singular form of the word
+        """
+        word_lower = word.lower()
+
+        # Common IFC element plurals
+        plural_to_singular = {
+            'beams': 'beam',
+            'columns': 'column',
+            'doors': 'door',
+            'windows': 'window',
+            'walls': 'wall',
+            'slabs': 'slab',
+            'plates': 'plate',
+            'ducts': 'duct',
+            'pipes': 'pipe',
+            'valves': 'valve',
+            'lights': 'light',
+            'fixtures': 'fixture',
+        }
+
+        if word_lower in plural_to_singular:
+            return plural_to_singular[word_lower]
+
+        # Generic rule: remove trailing 's' if word ends in 's'
+        if word_lower.endswith('s') and len(word_lower) > 3:
+            return word_lower[:-1]
+
+        return word_lower
 
     def get_history(self, limit: int = 10) -> List[Dict]:
         """
