@@ -366,8 +366,68 @@ def get_resolution_options(context):
     """Get available resolution options for the EnumProperty dropdown"""
     items = [("NONE", "Select Option...", "No option selected")]
 
-    # TODO: Query database for actual resolution options
-    # For now, return placeholder
+    try:
+        import sqlite3
+        from pathlib import Path
+
+        # Get federation database path
+        props = context.scene.BIMFederationProperties
+        if not props.index_loaded or not hasattr(props, 'database_file'):
+            return items
+
+        db_path = props.database_file
+        if not db_path or not Path(db_path).exists():
+            return items
+
+        # Query resolution options with group info
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        query = """
+            SELECT
+                ro.option_id,
+                ro.description,
+                ro.total_design_hours,
+                ro.total_design_cost,
+                ro.clashes_resolved,
+                ro.recommendation_rank,
+                cg.cascade_element_guid,
+                cg.total_clashes,
+                cg.severity
+            FROM resolution_options ro
+            LEFT JOIN clash_groups cg ON ro.group_id = cg.group_id
+            ORDER BY ro.recommendation_rank ASC, ro.total_design_hours ASC
+        """
+
+        cursor.execute(query)
+        results = cursor.fetchall()
+        conn.close()
+
+        if not results:
+            items.append(("NO_OPTIONS", "No resolution options found", "Run 'Analyze Clash Groups' first"))
+            return items
+
+        # Build dropdown items
+        for row in results:
+            option_id, desc, hours, cost, resolved, rank, guid, total, severity = row
+
+            # Format display text
+            short_desc = desc[:50] + "..." if len(desc) > 50 else desc
+            hours_str = f"{hours:.1f}h" if hours else "N/A"
+            cost_str = f"${cost:,.0f}" if cost else "N/A"
+            resolved_str = f"{resolved} clashes" if resolved else "N/A"
+
+            label = f"[{severity or 'N/A'}] {short_desc}"
+            tooltip = f"{desc}\nDesign: {hours_str} ({cost_str})\nResolves: {resolved_str}"
+
+            items.append((option_id, label, tooltip))
+
+    except Exception as e:
+        print(f"⚠️  Error loading resolution options: {e}")
+        import traceback
+        traceback.print_exc()
+        items.append(("ERROR", f"Error: {str(e)[:30]}", str(e)))
+
     return items
 
 
