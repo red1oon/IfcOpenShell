@@ -8,9 +8,9 @@ import sqlite3
 import sys
 from datetime import datetime
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side, GradientFill
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-from openpyxl.chart import PieChart, BarChart, Reference, DoughnutChart
+from openpyxl.chart import PieChart, BarChart, Reference
 from openpyxl.formatting.rule import ColorScaleRule, DataBarRule, CellIsRule
 from openpyxl.worksheet.datavalidation import DataValidation
 
@@ -224,25 +224,15 @@ class ComprehensiveBOQExporter:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.output_path = output_path or f"BOQ_Comprehensive_{timestamp}.xlsx"
 
-        # Enhanced professional color scheme
         self.colors = {
-            'primary': '2C3E50',      # Dark blue-gray (professional)
-            'accent': '3498DB',        # Bright blue
-            'success': '27AE60',       # Green
-            'warning': 'F39C12',       # Orange
-            'danger': 'E74C3C',        # Red
-            'material': '16A085',      # Teal green
-            'labor': 'E67E22',         # Dark orange
-            'equipment': '2980B9',     # Deep blue
-            'total': 'C0392B',         # Dark red
-            'header': '34495E',        # Dark gray-blue
-            'light': 'ECF0F1',         # Light gray
-            'highlight': 'F1C40F',     # Yellow
-            'kpi_good': 'D5F4E6',      # Light green
-            'kpi_warn': 'FCF3CF',      # Light yellow
-            'kpi_bad': 'FADBD8',       # Light red
-            # Legacy compatibility
-            'title': '2C3E50',
+            'title': '1F4E78',
+            'material': '70AD47',  # Green
+            'labor': 'FFC000',     # Orange
+            'equipment': '5B9BD5',  # Blue
+            'total': 'C00000',      # Red
+            'header': '4472C4',
+            'light': 'ECF0F1',     # Light gray for zebra striping
+            'accent': '3498DB',    # Bright blue for work packages
         }
 
         self.sheet_refs = {}
@@ -262,18 +252,6 @@ class ComprehensiveBOQExporter:
             top=Side(style='medium', color='34495E'),
             bottom=Side(style='medium', color='34495E')
         )
-
-    def apply_zebra_striping(self, ws, start_row, end_row, start_col=1, end_col=9):
-        """Apply alternating row colors for readability"""
-        for row in range(start_row, end_row + 1):
-            if row % 2 == 0:
-                fill = PatternFill(start_color=self.colors['light'],
-                                 end_color=self.colors['light'], fill_type='solid')
-                for col in range(start_col, end_col + 1):
-                    cell = ws.cell(row, col)
-                    # Don't override yellow editable cells or existing colored fills
-                    if cell.fill.start_color.rgb in [None, '00000000', 'FFFFFFFF']:
-                        cell.fill = fill
 
     def calculate_labor_cost(self, ifc_class: str, quantity: float):
         """Calculate labor cost and crew-days"""
@@ -317,126 +295,110 @@ class ComprehensiveBOQExporter:
 
         return equipment_cost, equipment_data['description']
 
+    def apply_zebra_striping(self, ws, start_row, end_row, start_col=1, end_col=9):
+        """Apply alternating row colors for better readability"""
+        for row in range(start_row, end_row + 1):
+            if row % 2 == 0:
+                fill = PatternFill(start_color=self.colors['light'],
+                                 end_color=self.colors['light'], fill_type='solid')
+                for col in range(start_col, end_col + 1):
+                    cell = ws.cell(row, col)
+                    # Don't override yellow editable cells or existing fills
+                    if cell.fill.start_color.rgb not in ['FFFFCC', 'FFFF00']:
+                        cell.fill = fill
+
     def create_cover_sheet(self, project_name: str):
-        """Professional cover sheet with branding area"""
-        ws = self.wb.create_sheet("📄 Cover Sheet", 0)
+        """Enhanced cover sheet"""
+        ws = self.wb.create_sheet("Cover Sheet", 0)
 
-        # Logo/Company area (placeholder)
-        ws.merge_cells('A1:B4')
-        logo_cell = ws['A1']
-        logo_cell.value = "🏗️\nCOMPANY\nLOGO"
-        logo_cell.font = Font(name='Calibri Light', size=16, bold=True, color='7F8C8D')
-        logo_cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-        logo_cell.fill = PatternFill(start_color=self.colors['light'],
-                                     end_color=self.colors['light'], fill_type='solid')
-        logo_cell.border = self.thin_border
-
-        # Title section with professional typography
-        ws.merge_cells('C1:H1')
-        title = ws['C1']
+        ws.merge_cells('A1:F1')
+        title = ws['A1']
         title.value = "COMPREHENSIVE BILL OF QUANTITIES"
-        title.font = Font(name='Calibri Light', size=28, bold=True, color='FFFFFF')
-        title.fill = PatternFill(start_color=self.colors['primary'],
-                                end_color=self.colors['primary'], fill_type='solid')
+        title.font = Font(size=22, bold=True, color='FFFFFF')
+        title.fill = PatternFill(start_color=self.colors['title'], end_color=self.colors['title'], fill_type='solid')
         title.alignment = Alignment(horizontal='center', vertical='center')
-        ws.row_dimensions[1].height = 45
+        ws.row_dimensions[1].height = 35
 
-        ws.merge_cells('C2:H2')
-        ws['C2'] = f"Project: {project_name}"
-        ws['C2'].font = Font(name='Calibri', size=18, bold=True, color=self.colors['primary'])
-        ws['C2'].alignment = Alignment(horizontal='center', vertical='center')
-        ws.row_dimensions[2].height = 28
+        ws.merge_cells('A2:F2')
+        ws['A2'] = f"Project: {project_name}"
+        ws['A2'].font = Font(size=14, bold=True)
+        ws['A2'].alignment = Alignment(horizontal='center')
 
-        ws.merge_cells('C3:H3')
-        ws['C3'] = f"Report Date: {datetime.now().strftime('%d %B %Y')}"
-        ws['C3'].font = Font(name='Calibri', size=11, italic=True, color='7F8C8D')
-        ws['C3'].alignment = Alignment(horizontal='center', vertical='center')
-        ws.row_dimensions[3].height = 20
-
-        ws.merge_cells('C4:H4')
-        ws['C4'] = "Status: DRAFT FOR REVIEW"
-        ws['C4'].font = Font(name='Calibri', size=12, bold=True, color=self.colors['warning'])
-        ws['C4'].alignment = Alignment(horizontal='center', vertical='center')
-        ws['C4'].fill = PatternFill(start_color=self.colors['kpi_warn'],
-                                   end_color=self.colors['kpi_warn'], fill_type='solid')
-        ws.row_dimensions[4].height = 22
-
-        # Content with better formatting
-        row = 6
-        sections = [
-            {"type": "header", "label": "📊 COST BREAKDOWN METHODOLOGY", "color": self.colors['accent'], "size": 14},
-            {"type": "blank"},
-            {"type": "subheader", "label": "💰 1. MATERIAL COSTS", "color": self.colors['material'], "size": 12},
-            {"type": "data", "label": "Source:", "value": "CIDB National Construction Cost Centre (N3C) 2024"},
-            {"type": "data", "label": "Reference:", "value": "BCISM Cost Book 2022-2024 (inflated +3%)"},
-            {"type": "data", "label": "Includes:", "value": "Delivery, wastage allowance, site handling"},
-            {"type": "blank"},
-            {"type": "subheader", "label": "👷 2. LABOR COSTS", "color": self.colors['labor'], "size": 12},
-            {"type": "data", "label": "Source:", "value": "MBAM-CIDB Labour Wage Survey 2024"},
-            {"type": "data", "label": "Basis:", "value": "Basic wage + 30% (EPF 13%, SOCSO 2%, benefits 15%)"},
-            {"type": "data", "label": "Productivity:", "value": "CIDB productivity standards by trade"},
-            {"type": "data", "label": "Crew:", "value": "Skilled workers + helpers per trade standards"},
-            {"type": "blank"},
-            {"type": "subheader", "label": "🚜 3. EQUIPMENT/PLANT HIRE", "color": self.colors['equipment'], "size": 12},
-            {"type": "data", "label": "Source:", "value": "CIDB N3C Machinery Hire Rates 2024"},
-            {"type": "data", "label": "Allocation:", "value": "Based on work type and duration"},
-            {"type": "data", "label": "Rates:", "value": "Per day (8 hours), operator included where stated"},
-            {"type": "blank"},
-            {"type": "header", "label": "📑 REPORT STRUCTURE", "color": self.colors['accent'], "size": 14},
-            {"type": "blank"},
-            {"type": "data", "label": "Sheet:", "value": "Description"},
-            {"type": "data", "label": "📄 Cover Sheet", "value": "This page - Methodology & standards"},
-            {"type": "data", "label": "📈 Executive Dashboard", "value": "KPI cards, charts, high-level summary"},
-            {"type": "data", "label": "💼 Work Packages", "value": "Grouped by construction phase"},
-            {"type": "data", "label": "💰 Material Summary", "value": "Detailed material breakdown"},
-            {"type": "data", "label": "👷 Labor Summary", "value": "Crew allocation & man-days"},
-            {"type": "data", "label": "🚜 Equipment Summary", "value": "Plant hire requirements"},
-            {"type": "data", "label": "📋 BOQ - [Discipline]", "value": "Line-by-line BOQ per discipline"},
-            {"type": "blank"},
-            {"type": "header", "label": "⚠️ IMPORTANT NOTES", "color": self.colors['warning'], "size": 14},
-            {"type": "blank"},
-            {"type": "data", "label": "Exclusions:", "value": "GST/SST, Preliminaries (8-12%), Profit (10-15%)"},
-            {"type": "data", "label": "Validity:", "value": "60 days from date of issue"},
-            {"type": "data", "label": "Standards:", "value": "PWD Form 203A, SMM2 measurement"},
-            {"type": "data", "label": "Editable Cells:", "value": "Yellow highlighted = User can adjust rates"},
-            {"type": "data", "label": "Pricing Date:", "value": "Q4 2024, Malaysian Ringgit (RM)"},
+        row = 4
+        content = [
+            ("", "", ""),
+            ("COST BREAKDOWN METHODOLOGY", "", ""),
+            ("", "", ""),
+            ("1. MATERIAL COSTS", "", ""),
+            ("Source:", "CIDB National Construction Cost Centre (N3C) 2024", ""),
+            ("Reference:", "BCISM Cost Book 2022-2024 (inflated +3%)", ""),
+            ("Includes:", "Delivery, wastage allowance (5-10% by material type)", ""),
+            ("", "", ""),
+            ("2. LABOR COSTS", "", ""),
+            ("Source:", "MBAM-CIDB Labour Wage Survey 2024", ""),
+            ("Basis:", "Basic wage + 30% (EPF 13%, SOCSO 2%, benefits 15%)", ""),
+            ("Productivity:", "CIDB productivity standards by trade", ""),
+            ("Crew Composition:", "Skilled workers + helpers as per trade standards", ""),
+            ("", "", ""),
+            ("3. EQUIPMENT/PLANT HIRE", "", ""),
+            ("Source:", "CIDB N3C Machinery Hire Rates 2024", ""),
+            ("Allocation:", "Based on work type and duration requirements", ""),
+            ("Rates:", "Per day (8 hours), operator cost included where stated", ""),
+            ("", "", ""),
+            ("COST SUMMARY STRUCTURE", "", ""),
+            ("Sheet 1:", "Cover Sheet (this page)", ""),
+            ("Sheet 2:", "Executive Summary - Total costs with charts", ""),
+            ("Sheet 3:", "Materials Cost Summary", "Detailed material breakdown"),
+            ("Sheet 4:", "Labor Cost Summary", "Crew allocation & man-days"),
+            ("Sheet 5:", "Equipment Cost Summary", "Plant hire requirements"),
+            ("Sheet 6+:", "Detailed BOQ by Discipline", "Line-by-line analysis"),
+            ("", "", ""),
+            ("PRICING STANDARDS & REFERENCES", "", ""),
+            ("BOQ Format:", "PWD Form 203A Malaysia", ""),
+            ("Measurement:", "SMM2 (Standard Method of Measurement)", ""),
+            ("Pricing Date:", "Q4 2024", ""),
+            ("Currency:", "Malaysian Ringgit (RM)", ""),
+            ("Validity:", "60 days from date of issue", ""),
+            ("", "", ""),
+            ("EXCLUSIONS", "", ""),
+            ("• GST/SST (apply as per prevailing tax law)", "", ""),
+            ("• Preliminary & General items (add 8-12%)", "", ""),
+            ("• Profit & attendance (add 10-15%)", "", ""),
+            ("• Escalation beyond 60 days", "", ""),
+            ("• Site-specific conditions not shown in drawings", "", ""),
         ]
 
-        for item in sections:
-            item_type = item.get("type")
-
-            if item_type == "blank":
+        for label, value, note in content:
+            if not label:
                 row += 1
                 continue
-            elif item_type == "header":
-                ws.merge_cells(f'A{row}:H{row}')
-                ws[f'A{row}'] = item["label"]
-                ws[f'A{row}'].font = Font(size=item["size"], bold=True, color='FFFFFF')
-                ws[f'A{row}'].fill = PatternFill(start_color=item["color"],
-                                                 end_color=item["color"], fill_type='solid')
-                ws[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
-                ws.row_dimensions[row].height = 25
-            elif item_type == "subheader":
-                ws.merge_cells(f'A{row}:H{row}')
-                ws[f'A{row}'] = item["label"]
-                ws[f'A{row}'].font = Font(size=item["size"], bold=True, color='FFFFFF')
-                ws[f'A{row}'].fill = PatternFill(start_color=item["color"],
-                                                 end_color=item["color"], fill_type='solid')
-                ws[f'A{row}'].alignment = Alignment(horizontal='left', vertical='center')
+
+            if "METHODOLOGY" in label or "SUMMARY" in label or "STANDARDS" in label or "EXCLUSIONS" in label:
+                ws.merge_cells(f'A{row}:F{row}')
+                ws[f'A{row}'] = label
+                ws[f'A{row}'].font = Font(size=13, bold=True, color='FFFFFF')
+                ws[f'A{row}'].fill = PatternFill(start_color=self.colors['header'], end_color=self.colors['header'], fill_type='solid')
                 ws.row_dimensions[row].height = 22
-            elif item_type == "data":
-                ws[f'A{row}'] = item["label"]
-                ws[f'B{row}'] = item["value"]
-                ws[f'A{row}'].font = Font(size=10, bold=True)
-                ws[f'B{row}'].font = Font(size=10)
-                ws.merge_cells(f'B{row}:H{row}')
+            elif "." in label and label[0].isdigit():  # Section numbers
+                ws.merge_cells(f'A{row}:F{row}')
+                ws[f'A{row}'] = label
+                ws[f'A{row}'].font = Font(size=12, bold=True, color='FFFFFF')
+                ws[f'A{row}'].fill = PatternFill(start_color=self.colors['material'], end_color=self.colors['material'], fill_type='solid')
+            elif label.startswith('•'):
+                ws[f'A{row}'] = label
+                ws[f'A{row}'].font = Font(size=10)
+            else:
+                ws[f'A{row}'] = label
+                ws[f'B{row}'] = value
+                ws[f'C{row}'] = note
+                ws[f'A{row}'].font = Font(bold=True if label in ['Source:', 'Reference:', 'Basis:'] else False, size=10)
+                ws[f'C{row}'].font = Font(size=9, italic=True)
 
             row += 1
 
-        # Set column widths
-        ws.column_dimensions['A'].width = 20
-        for col in ['B', 'C', 'D', 'E', 'F', 'G', 'H']:
-            ws.column_dimensions[col].width = 15
+        ws.column_dimensions['A'].width = 22
+        ws.column_dimensions['B'].width = 50
+        ws.column_dimensions['C'].width = 35
 
         return ws
 
@@ -475,10 +437,13 @@ class ComprehensiveBOQExporter:
         ws.row_dimensions[row].height = 30
         row += 1
 
-        # Query data
+        # Query data - Updated for simple_qto table schema
         conn = sqlite3.connect(db_path)
         cursor = conn.execute("""
-            SELECT ifc_class, total_quantity, uom
+            SELECT
+                ifc_class,
+                total_quantity,
+                uom
             FROM simple_qto
             WHERE discipline = ?
             ORDER BY total_quantity DESC
@@ -529,6 +494,24 @@ class ComprehensiveBOQExporter:
 
         data_end = row - 1
 
+        # Apply zebra striping to data rows
+        self.apply_zebra_striping(ws, data_start, data_end, 1, 9)
+
+        # Add data validation to material rate column
+        dv = DataValidation(type="decimal", operator="greaterThan", formula1=0)
+        dv.error = "Material rate must be greater than 0"
+        dv.errorTitle = "Invalid Rate"
+        ws.add_data_validation(dv)
+        dv.add(f'E{data_start}:E{data_end}')
+
+        # Conditional formatting - Highlight high-value items (>RM 50,000)
+        high_value_rule = CellIsRule(
+            operator='greaterThan', formula=['50000'],
+            fill=PatternFill(start_color='FCF3CF', end_color='FCF3CF', fill_type='solid'),
+            font=Font(bold=True)
+        )
+        ws.conditional_formatting.add(f'I{data_start}:I{data_end}', high_value_rule)
+
         # TOTALS
         row += 1
         ws.merge_cells(f'A{row}:E{row}')
@@ -552,6 +535,20 @@ class ComprehensiveBOQExporter:
             ws.column_dimensions[get_column_letter(col)].width = width
 
         ws.freeze_panes = 'A4'
+
+        # Configure print settings
+        ws.print_options.horizontalCentered = True
+        ws.print_options.gridLines = False
+        ws.page_setup.orientation = 'landscape'
+        ws.page_setup.paperSize = 9  # A4
+        ws.page_setup.fitToPage = True
+        ws.page_setup.fitToWidth = 1
+
+        # Header/Footer
+        ws.oddHeader.center.text = f"BOQ - {discipline}"
+        ws.oddFooter.left.text = "Terminal 1 Expansion Project"
+        ws.oddFooter.center.text = "Page &P of &N"
+        ws.oddFooter.right.text = f"Generated: {datetime.now().strftime('%d/%m/%Y')}"
 
         return ws, row
 
@@ -629,6 +626,14 @@ class ComprehensiveBOQExporter:
 
         ws.row_dimensions[row].height = 25
 
+        # Add conditional formatting - Data bars for total cost visualization
+        data_bar_rule = DataBarRule(
+            start_type='min', start_value=0,
+            end_type='max', end_value=100,
+            color='4472C4'
+        )
+        ws.conditional_formatting.add(f'E{summary_start}:E{summary_end}', data_bar_rule)
+
         # Column widths
         for col, width in enumerate([18, 18, 18, 18, 20], start=1):
             ws.column_dimensions[get_column_letter(col)].width = width
@@ -667,9 +672,191 @@ class ComprehensiveBOQExporter:
 
         return ws
 
+    def create_material_summary(self, db_path: str, disciplines: list):
+        """Material cost summary"""
+        ws = self.wb.create_sheet("Material Summary")
+
+        ws.merge_cells('A1:F1')
+        ws['A1'] = "MATERIAL COST SUMMARY"
+        ws['A1'].font = Font(size=16, bold=True, color='FFFFFF')
+        ws['A1'].fill = PatternFill(start_color=self.colors['material'], end_color=self.colors['material'], fill_type='solid')
+        ws['A1'].alignment = Alignment(horizontal='center')
+        ws.row_dimensions[1].height = 25
+
+        row = 3
+        headers = ['Discipline', 'IFC Class', 'Quantity', 'UOM', 'Unit Rate (RM)', 'Total Material (RM)']
+        for col, header in enumerate(headers, start=1):
+            cell = ws.cell(row, col, header)
+            cell.font = Font(bold=True, color='FFFFFF')
+            cell.fill = PatternFill(start_color=self.colors['header'], end_color=self.colors['header'], fill_type='solid')
+            cell.alignment = Alignment(horizontal='center')
+        row += 1
+
+        # Query all material data - Updated for enhanced database schema
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("""
+            SELECT
+                discipline,
+                ifc_class,
+                total_quantity,
+                uom
+            FROM simple_qto
+            ORDER BY discipline, total_quantity DESC
+        """)
+
+        for disc, ifc_class, qty, uom in cursor.fetchall():
+            mat = MATERIAL_COSTS.get(ifc_class, {'rate': 0})
+            mat_rate = mat['rate']
+            mat_cost = qty * mat_rate
+
+            ws.cell(row, 1, disc)
+            ws.cell(row, 2, ifc_class)
+            ws.cell(row, 3, qty).number_format = '#,##0.00'
+            ws.cell(row, 4, uom)
+            ws.cell(row, 5, mat_rate).number_format = '#,##0.00'
+            ws.cell(row, 6, mat_cost).number_format = '#,##0.00'
+
+            row += 1
+
+        conn.close()
+
+        # Column widths
+        for col, width in enumerate([15, 28, 12, 8, 16, 20], start=1):
+            ws.column_dimensions[get_column_letter(col)].width = width
+
+        ws.freeze_panes = 'A4'
+        return ws
+
+    def create_labor_summary(self, db_path: str, disciplines: list):
+        """Labor cost and crew allocation summary"""
+        ws = self.wb.create_sheet("Labor Summary")
+
+        ws.merge_cells('A1:H1')
+        ws['A1'] = "LABOR COST & CREW ALLOCATION SUMMARY"
+        ws['A1'].font = Font(size=16, bold=True, color='FFFFFF')
+        ws['A1'].fill = PatternFill(start_color=self.colors['labor'], end_color=self.colors['labor'], fill_type='solid')
+        ws['A1'].alignment = Alignment(horizontal='center')
+        ws.row_dimensions[1].height = 25
+
+        row = 3
+        headers = ['Discipline', 'IFC Class', 'Quantity', 'UOM', 'Trade', 'Crew Size', 'Man-Days', 'Labor Cost (RM)']
+        for col, header in enumerate(headers, start=1):
+            cell = ws.cell(row, col, header)
+            cell.font = Font(bold=True, color='FFFFFF')
+            cell.fill = PatternFill(start_color=self.colors['header'], end_color=self.colors['header'], fill_type='solid')
+            cell.alignment = Alignment(horizontal='center')
+        row += 1
+
+        # Query all data - Updated for enhanced database schema
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("""
+            SELECT
+                discipline,
+                ifc_class,
+                total_quantity,
+                uom
+            FROM simple_qto
+            ORDER BY discipline, total_quantity DESC
+        """)
+
+        for disc, ifc_class, qty, uom in cursor.fetchall():
+            labor_cost, labor_days, crew_size, trade = self.calculate_labor_cost(ifc_class, qty)
+
+            if labor_cost == 0:
+                continue
+
+            man_days = labor_days * crew_size
+
+            ws.cell(row, 1, disc)
+            ws.cell(row, 2, ifc_class)
+            ws.cell(row, 3, qty).number_format = '#,##0.00'
+            ws.cell(row, 4, uom)
+            ws.cell(row, 5, trade)
+            ws.cell(row, 6, crew_size)
+            ws.cell(row, 7, man_days).number_format = '#,##0.0'
+            ws.cell(row, 8, labor_cost).number_format = '#,##0.00'
+
+            row += 1
+
+        conn.close()
+
+        # Column widths
+        for col, width in enumerate([15, 28, 12, 8, 30, 10, 12, 18], start=1):
+            ws.column_dimensions[get_column_letter(col)].width = width
+
+        ws.freeze_panes = 'A4'
+        return ws
+
+    def create_equipment_summary(self, db_path: str, disciplines: list):
+        """Equipment/plant hire summary"""
+        ws = self.wb.create_sheet("Equipment Summary")
+
+        ws.merge_cells('A1:G1')
+        ws['A1'] = "EQUIPMENT / PLANT HIRE SUMMARY"
+        ws['A1'].font = Font(size=16, bold=True, color='FFFFFF')
+        ws['A1'].fill = PatternFill(start_color=self.colors['equipment'], end_color=self.colors['equipment'], fill_type='solid')
+        ws['A1'].alignment = Alignment(horizontal='center')
+        ws.row_dimensions[1].height = 25
+
+        row = 3
+        headers = ['Discipline', 'IFC Class', 'Equipment', 'Duration (days)', 'Rate/Day (RM)', 'Total (RM)']
+        for col, header in enumerate(headers, start=1):
+            cell = ws.cell(row, col, header)
+            cell.font = Font(bold=True, color='FFFFFF')
+            cell.fill = PatternFill(start_color=self.colors['header'], end_color=self.colors['header'], fill_type='solid')
+            cell.alignment = Alignment(horizontal='center')
+        row += 1
+
+        # Query all data - Updated for enhanced database schema
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("""
+            SELECT
+                discipline,
+                ifc_class,
+                total_quantity
+            FROM simple_qto
+            ORDER BY discipline, total_quantity DESC
+        """)
+
+        for disc, ifc_class, qty in cursor.fetchall():
+            # Calculate labor days first
+            labor_cost, labor_days, crew_size, trade = self.calculate_labor_cost(ifc_class, qty)
+
+            # Calculate equipment
+            equip_cost, equip_desc = self.calculate_equipment_cost(ifc_class, labor_days)
+
+            if equip_cost == 0:
+                continue
+
+            # Get allocation details
+            alloc = EQUIPMENT_ALLOCATION.get(ifc_class, {})
+            equip_key = alloc.get('equipment', '')
+            duration_factor = alloc.get('duration_factor', 0)
+            equip_days = labor_days * duration_factor
+
+            rate_per_day = EQUIPMENT_RATES.get(equip_key, {}).get('rate_per_day', 0)
+
+            ws.cell(row, 1, disc)
+            ws.cell(row, 2, ifc_class)
+            ws.cell(row, 3, equip_desc)
+            ws.cell(row, 4, equip_days).number_format = '#,##0.0'
+            ws.cell(row, 5, rate_per_day).number_format = '#,##0.00'
+            ws.cell(row, 6, equip_cost).number_format = '#,##0.00'
+
+            row += 1
+
+        conn.close()
+
+        # Column widths
+        for col, width in enumerate([15, 28, 35, 15, 16, 18], start=1):
+            ws.column_dimensions[get_column_letter(col)].width = width
+
+        ws.freeze_panes = 'A4'
+        return ws
+
     def create_work_packages_sheet(self, db_path: str):
-        """Work packages grouped by construction phase - for scheduling & milestone payments"""
-        ws = self.wb.create_sheet("💼 Work Packages")
+        """Work packages grouped by construction phase"""
+        ws = self.wb.create_sheet("Work Packages")
 
         # Title
         ws.merge_cells('A1:H1')
@@ -690,37 +877,32 @@ class ComprehensiveBOQExporter:
             {
                 'name': 'PACKAGE 1: SUBSTRUCTURE',
                 'disciplines': ['STR'],
-                'elements': ['IfcColumn', 'IfcBeam'],  # Lower level structure
+                'elements': ['IfcColumn', 'IfcBeam'],
                 'color': '8E44AD',
-                'icon': '🏗️'
             },
             {
                 'name': 'PACKAGE 2: SUPERSTRUCTURE',
                 'disciplines': ['STR', 'ARC'],
                 'elements': ['IfcSlab', 'IfcWall', 'IfcWallStandardCase', 'IfcCurtainWall', 'IfcRoof'],
                 'color': '2980B9',
-                'icon': '🏢'
             },
             {
                 'name': 'PACKAGE 3: MEP ROUGH-IN',
                 'disciplines': ['ACMV', 'SP', 'ELEC', 'FP', 'LPG'],
                 'elements': ['IfcDuct', 'IfcDuctSegment', 'IfcPipe', 'IfcPipeSegment', 'IfcCableCarrier'],
                 'color': 'D35400',
-                'icon': '⚙️'
             },
             {
                 'name': 'PACKAGE 4: FINISHES',
                 'disciplines': ['ARC', 'CW'],
                 'elements': ['IfcCovering', 'IfcDoor', 'IfcWindow'],
                 'color': '27AE60',
-                'icon': '🎨'
             },
             {
                 'name': 'PACKAGE 5: MEP FINAL FIX',
                 'disciplines': ['ACMV', 'ELEC'],
                 'elements': ['IfcFlowTerminal', 'IfcLightFixture', 'IfcOutlet'],
                 'color': 'C0392B',
-                'icon': '💡'
             },
         ]
 
@@ -729,7 +911,7 @@ class ComprehensiveBOQExporter:
         for pkg in packages:
             # Package header
             ws.merge_cells(f'A{row}:H{row}')
-            ws[f'A{row}'] = f"{pkg['icon']} {pkg['name']}"
+            ws[f'A{row}'] = pkg['name']
             ws[f'A{row}'].font = Font(size=13, bold=True, color='FFFFFF')
             ws[f'A{row}'].fill = PatternFill(start_color=pkg['color'],
                                             end_color=pkg['color'], fill_type='solid')
@@ -748,10 +930,14 @@ class ComprehensiveBOQExporter:
                 cell.border = self.thin_border
             row += 1
 
-            # Query data for this package
+            # Query data for this package - Updated for enhanced database schema
             conn = sqlite3.connect(db_path)
             cursor = conn.execute(f"""
-                SELECT discipline, ifc_class, total_quantity, uom
+                SELECT
+                    discipline,
+                    ifc_class,
+                    total_quantity,
+                    uom
                 FROM simple_qto
                 WHERE discipline IN ({','.join('?' * len(pkg['disciplines']))})
                 AND ifc_class IN ({','.join('?' * len(pkg['elements']))})
@@ -807,179 +993,8 @@ class ComprehensiveBOQExporter:
         for col, width in enumerate(widths, start=1):
             ws.column_dimensions[get_column_letter(col)].width = width
 
-        ws.freeze_panes = 'A5'
-
-        return ws
-
-    def create_material_summary(self, db_path: str, disciplines: list):
-        """Material cost summary"""
-        ws = self.wb.create_sheet("Material Summary")
-
-        ws.merge_cells('A1:F1')
-        ws['A1'] = "MATERIAL COST SUMMARY"
-        ws['A1'].font = Font(size=16, bold=True, color='FFFFFF')
-        ws['A1'].fill = PatternFill(start_color=self.colors['material'], end_color=self.colors['material'], fill_type='solid')
-        ws['A1'].alignment = Alignment(horizontal='center')
-        ws.row_dimensions[1].height = 25
-
-        row = 3
-        headers = ['Discipline', 'IFC Class', 'Quantity', 'UOM', 'Unit Rate (RM)', 'Total Material (RM)']
-        for col, header in enumerate(headers, start=1):
-            cell = ws.cell(row, col, header)
-            cell.font = Font(bold=True, color='FFFFFF')
-            cell.fill = PatternFill(start_color=self.colors['header'], end_color=self.colors['header'], fill_type='solid')
-            cell.alignment = Alignment(horizontal='center')
-        row += 1
-
-        # Query all material data
-        conn = sqlite3.connect(db_path)
-        cursor = conn.execute("""
-            SELECT discipline, ifc_class, total_quantity, uom
-            FROM simple_qto
-            ORDER BY discipline, total_quantity DESC
-        """)
-
-        for disc, ifc_class, qty, uom in cursor.fetchall():
-            mat = MATERIAL_COSTS.get(ifc_class, {'rate': 0})
-            mat_rate = mat['rate']
-            mat_cost = qty * mat_rate
-
-            ws.cell(row, 1, disc)
-            ws.cell(row, 2, ifc_class)
-            ws.cell(row, 3, qty).number_format = '#,##0.00'
-            ws.cell(row, 4, uom)
-            ws.cell(row, 5, mat_rate).number_format = '#,##0.00'
-            ws.cell(row, 6, mat_cost).number_format = '#,##0.00'
-
-            row += 1
-
-        conn.close()
-
-        # Column widths
-        for col, width in enumerate([15, 28, 12, 8, 16, 20], start=1):
-            ws.column_dimensions[get_column_letter(col)].width = width
-
         ws.freeze_panes = 'A4'
-        return ws
 
-    def create_labor_summary(self, db_path: str, disciplines: list):
-        """Labor cost and crew allocation summary"""
-        ws = self.wb.create_sheet("Labor Summary")
-
-        ws.merge_cells('A1:H1')
-        ws['A1'] = "LABOR COST & CREW ALLOCATION SUMMARY"
-        ws['A1'].font = Font(size=16, bold=True, color='FFFFFF')
-        ws['A1'].fill = PatternFill(start_color=self.colors['labor'], end_color=self.colors['labor'], fill_type='solid')
-        ws['A1'].alignment = Alignment(horizontal='center')
-        ws.row_dimensions[1].height = 25
-
-        row = 3
-        headers = ['Discipline', 'IFC Class', 'Quantity', 'UOM', 'Trade', 'Crew Size', 'Man-Days', 'Labor Cost (RM)']
-        for col, header in enumerate(headers, start=1):
-            cell = ws.cell(row, col, header)
-            cell.font = Font(bold=True, color='FFFFFF')
-            cell.fill = PatternFill(start_color=self.colors['header'], end_color=self.colors['header'], fill_type='solid')
-            cell.alignment = Alignment(horizontal='center')
-        row += 1
-
-        # Query all data
-        conn = sqlite3.connect(db_path)
-        cursor = conn.execute("""
-            SELECT discipline, ifc_class, total_quantity, uom
-            FROM simple_qto
-            ORDER BY discipline, total_quantity DESC
-        """)
-
-        for disc, ifc_class, qty, uom in cursor.fetchall():
-            labor_cost, labor_days, crew_size, trade = self.calculate_labor_cost(ifc_class, qty)
-
-            if labor_cost == 0:
-                continue
-
-            man_days = labor_days * crew_size
-
-            ws.cell(row, 1, disc)
-            ws.cell(row, 2, ifc_class)
-            ws.cell(row, 3, qty).number_format = '#,##0.00'
-            ws.cell(row, 4, uom)
-            ws.cell(row, 5, trade)
-            ws.cell(row, 6, crew_size)
-            ws.cell(row, 7, man_days).number_format = '#,##0.0'
-            ws.cell(row, 8, labor_cost).number_format = '#,##0.00'
-
-            row += 1
-
-        conn.close()
-
-        # Column widths
-        for col, width in enumerate([15, 28, 12, 8, 30, 10, 12, 18], start=1):
-            ws.column_dimensions[get_column_letter(col)].width = width
-
-        ws.freeze_panes = 'A4'
-        return ws
-
-    def create_equipment_summary(self, db_path: str, disciplines: list):
-        """Equipment/plant hire summary"""
-        ws = self.wb.create_sheet("Equipment Summary")
-
-        ws.merge_cells('A1:G1')
-        ws['A1'] = "EQUIPMENT / PLANT HIRE SUMMARY"
-        ws['A1'].font = Font(size=16, bold=True, color='FFFFFF')
-        ws['A1'].fill = PatternFill(start_color=self.colors['equipment'], end_color=self.colors['equipment'], fill_type='solid')
-        ws['A1'].alignment = Alignment(horizontal='center')
-        ws.row_dimensions[1].height = 25
-
-        row = 3
-        headers = ['Discipline', 'IFC Class', 'Equipment', 'Duration (days)', 'Rate/Day (RM)', 'Total (RM)']
-        for col, header in enumerate(headers, start=1):
-            cell = ws.cell(row, col, header)
-            cell.font = Font(bold=True, color='FFFFFF')
-            cell.fill = PatternFill(start_color=self.colors['header'], end_color=self.colors['header'], fill_type='solid')
-            cell.alignment = Alignment(horizontal='center')
-        row += 1
-
-        # Query all data
-        conn = sqlite3.connect(db_path)
-        cursor = conn.execute("""
-            SELECT discipline, ifc_class, total_quantity
-            FROM simple_qto
-            ORDER BY discipline, total_quantity DESC
-        """)
-
-        for disc, ifc_class, qty in cursor.fetchall():
-            # Calculate labor days first
-            labor_cost, labor_days, crew_size, trade = self.calculate_labor_cost(ifc_class, qty)
-
-            # Calculate equipment
-            equip_cost, equip_desc = self.calculate_equipment_cost(ifc_class, labor_days)
-
-            if equip_cost == 0:
-                continue
-
-            # Get allocation details
-            alloc = EQUIPMENT_ALLOCATION.get(ifc_class, {})
-            equip_key = alloc.get('equipment', '')
-            duration_factor = alloc.get('duration_factor', 0)
-            equip_days = labor_days * duration_factor
-
-            rate_per_day = EQUIPMENT_RATES.get(equip_key, {}).get('rate_per_day', 0)
-
-            ws.cell(row, 1, disc)
-            ws.cell(row, 2, ifc_class)
-            ws.cell(row, 3, equip_desc)
-            ws.cell(row, 4, equip_days).number_format = '#,##0.0'
-            ws.cell(row, 5, rate_per_day).number_format = '#,##0.00'
-            ws.cell(row, 6, equip_cost).number_format = '#,##0.00'
-
-            row += 1
-
-        conn.close()
-
-        # Column widths
-        for col, width in enumerate([15, 28, 35, 15, 16, 18], start=1):
-            ws.column_dimensions[get_column_letter(col)].width = width
-
-        ws.freeze_panes = 'A4'
         return ws
 
     def create_provisional_sums(self, db_path: str):
@@ -997,17 +1012,19 @@ class ComprehensiveBOQExporter:
         ws['A2'].font = Font(size=9, italic=True)
         ws.merge_cells('A2:F2')
 
-        # Get total wall and floor areas
+        # Get total wall and floor areas - Updated for enhanced database schema
         conn = sqlite3.connect(db_path)
 
         cursor = conn.execute("""
-            SELECT SUM(total_quantity) FROM simple_qto
+            SELECT SUM(total_quantity)
+            FROM simple_qto
             WHERE ifc_class IN ('IfcWall', 'IfcWallStandardCase')
         """)
         wall_area = cursor.fetchone()[0] or 0
 
         cursor = conn.execute("""
-            SELECT SUM(total_quantity) FROM simple_qto
+            SELECT SUM(total_quantity)
+            FROM simple_qto
             WHERE ifc_class = 'IfcSlab'
         """)
         floor_area = cursor.fetchone()[0] or 0
@@ -1170,15 +1187,45 @@ class ComprehensiveBOQExporter:
         ws.freeze_panes = 'A5'
         return ws
 
+    def _has_simple_qto_table(self, db_path: str) -> bool:
+        """Check if database has simple_qto table (new enhanced databases)"""
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("""
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND name='simple_qto'
+        """)
+        result = cursor.fetchone()
+        conn.close()
+        return result is not None
+
     def generate_comprehensive_boq(self, db_path: str, project_name: str):
         """Generate full BOQ"""
         print(f"\n{'='*80}")
         print("GENERATING COMPREHENSIVE BOQ")
         print(f"{'='*80}\n")
 
+        # Check if database has pre-calculated QTO
+        has_qto = self._has_simple_qto_table(db_path)
+        if not has_qto:
+            print("⚠ Database missing simple_qto table - generating it now...")
+            # Import and run QTO extraction
+            from .simple_qto_extract import extract_simple_qto
+            try:
+                extract_simple_qto(db_path)
+                print("✓ QTO table created successfully")
+            except Exception as e:
+                print(f"✗ Failed to create QTO table: {e}")
+                raise
+        else:
+            print("✓ Using pre-calculated QTO from simple_qto table (fast mode)")
+
         # Get disciplines
         conn = sqlite3.connect(db_path)
-        cursor = conn.execute("SELECT DISTINCT discipline FROM simple_qto ORDER BY discipline")
+        cursor = conn.execute("""
+            SELECT DISTINCT discipline
+            FROM simple_qto
+            ORDER BY discipline
+        """)
         disciplines = [r[0] for r in cursor.fetchall()]
         conn.close()
 
@@ -1192,6 +1239,10 @@ class ComprehensiveBOQExporter:
             if total_row:
                 self.sheet_refs[disc] = total_row
 
+        # Add work packages sheet
+        print(f"\nCreating work packages by construction phase...")
+        self.create_work_packages_sheet(db_path)
+
         # Add provisional sums sheet for additional works
         print(f"\nCreating provisional sums for finishes...")
         self.create_provisional_sums(db_path)
@@ -1199,7 +1250,6 @@ class ComprehensiveBOQExporter:
         # Summary sheets
         print(f"\nCreating summary sheets...")
         self.create_executive_summary(db_path, disciplines)
-        self.create_work_packages_sheet(db_path)  # NEW: Construction phasing
         self.create_material_summary(db_path, disciplines)
         self.create_labor_summary(db_path, disciplines)
         self.create_equipment_summary(db_path, disciplines)
