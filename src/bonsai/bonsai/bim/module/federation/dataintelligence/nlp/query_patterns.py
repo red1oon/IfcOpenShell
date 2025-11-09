@@ -31,35 +31,55 @@ class QueryPattern:
 
 # Element Count Patterns
 ELEMENT_COUNT_PATTERNS = [
+    # Storey-specific patterns must come FIRST to match before generic patterns
     QueryPattern(
-        pattern=r"how many (?P<element_type>\w+)",
+        pattern=r"(?:how many|count|total|number of) (?P<element_type>\w+) on (?P<storey_num>\d+(?:st|nd|rd|th)?|first|second|third|\w+) (?:level|storey|floor)",
+        sql_template="""
+            SELECT 'STOREY_NOT_AVAILABLE' as result_type
+        """,
+        description="Storey information not available in database"
+    ),
+    QueryPattern(
+        pattern=r"count (?P<element_type>\w+) (?:in|on|at) (?:level|storey|floor) (?P<storey_num>\d+|[\w\s]+)",
+        sql_template="""
+            SELECT 'STOREY_NOT_AVAILABLE' as result_type
+        """,
+        description="Storey information not available in database"
+    ),
+    QueryPattern(
+        pattern=r"(?P<element_type>\w+) on (?:level|storey|floor) (?P<storey_num>\d+|\w+)",
+        sql_template="""
+            SELECT 'STOREY_NOT_AVAILABLE' as result_type
+        """,
+        description="Storey information not available in database"
+    ),
+    QueryPattern(
+        pattern=r"(?:area|rooms?|spaces?) on (?:level|storey|floor) (?P<storey_num>\d+|first|second|third|1st|2nd|3rd|\w+)",
+        sql_template="""
+            SELECT 'STOREY_NOT_AVAILABLE' as result_type
+        """,
+        description="Storey information not available in database"
+    ),
+    # Generic element count patterns come AFTER storey patterns
+    QueryPattern(
+        pattern=r"(?:how many|count|total|number of) (?P<element_type>\w+)",
         sql_template="""
             SELECT ifc_class, COUNT(*) as count
             FROM elements_meta
-            WHERE ifc_class LIKE '%{element_type}%'
+            WHERE LOWER(ifc_class) LIKE LOWER('%{element_type}%')
             GROUP BY ifc_class
         """,
         description="Count elements by type"
     ),
     QueryPattern(
-        pattern=r"count (?P<element_type>\w+) (?:in|on) (?P<location>level|storey|floor) (?P<storey_num>\d+|[\w\s]+)",
+        pattern=r"(?P<element_type>\w+) (?:count|total|number)",
         sql_template="""
-            SELECT COUNT(*) as count
+            SELECT ifc_class, COUNT(*) as count
             FROM elements_meta
-            WHERE ifc_class LIKE '%{element_type}%'
-            AND storey LIKE '%{storey_num}%'
+            WHERE LOWER(ifc_class) LIKE LOWER('%{element_type}%')
+            GROUP BY ifc_class
         """,
-        description="Count elements on specific storey"
-    ),
-    QueryPattern(
-        pattern=r"(?P<element_type>\w+) on (?:level|storey|floor) (?P<storey_num>\d+)",
-        sql_template="""
-            SELECT guid, ifc_class, storey, name
-            FROM elements_meta
-            WHERE ifc_class LIKE '%{element_type}%'
-            AND storey LIKE '%{storey_num}%'
-        """,
-        description="List elements on specific storey"
+        description="Count elements by type"
     ),
 ]
 
@@ -68,24 +88,24 @@ MANUFACTURER_PATTERNS = [
     QueryPattern(
         pattern=r"(?:find|show|list) (?P<element_type>\w+) (?:from|by|made by) (?P<manufacturer>[\w\s]+)",
         sql_template="""
-            SELECT DISTINCT e.guid, e.ifc_class, e.name, p.property_value as manufacturer
+            SELECT DISTINCT e.guid, e.ifc_class, e.element_name, p.property_value as manufacturer
             FROM elements_meta e
             JOIN element_properties p ON e.guid = p.guid
-            WHERE e.ifc_class LIKE '%{element_type}%'
+            WHERE LOWER(e.ifc_class) LIKE LOWER('%{element_type}%')
             AND p.property_name = 'Manufacturer'
-            AND p.property_value MATCH '{manufacturer}*'
+            AND p.property_value LIKE '%{manufacturer}%'
         """,
         description="Find elements by manufacturer"
     ),
     QueryPattern(
         pattern=r"(?:what|which) (?P<element_type>\w+) (?:are|is) (?P<manufacturer>[\w\s]+)",
         sql_template="""
-            SELECT e.guid, e.ifc_class, e.name, p.property_value as manufacturer
+            SELECT e.guid, e.ifc_class, e.element_name, p.property_value as manufacturer
             FROM elements_meta e
             JOIN element_properties p ON e.guid = p.guid
-            WHERE e.ifc_class LIKE '%{element_type}%'
+            WHERE LOWER(e.ifc_class) LIKE LOWER('%{element_type}%')
             AND p.property_name = 'Manufacturer'
-            AND p.property_value MATCH '{manufacturer}*'
+            AND p.property_value LIKE '%{manufacturer}%'
         """,
         description="Search elements by manufacturer"
     ),
@@ -96,10 +116,10 @@ PROPERTY_PATTERNS = [
     QueryPattern(
         pattern=r"(?:find|show) (?P<element_type>\w+) with (?P<property_name>\w+) (?:=|equal to|of) (?P<property_value>[\w\s\.]+)",
         sql_template="""
-            SELECT e.guid, e.ifc_class, e.name, p.property_name, p.property_value
+            SELECT e.guid, e.ifc_class, e.element_name, p.property_name, p.property_value
             FROM elements_meta e
             JOIN element_properties p ON e.guid = p.guid
-            WHERE e.ifc_class LIKE '%{element_type}%'
+            WHERE LOWER(e.ifc_class) LIKE LOWER('%{element_type}%')
             AND p.property_name LIKE '%{property_name}%'
             AND p.property_value LIKE '%{property_value}%'
         """,
@@ -108,10 +128,10 @@ PROPERTY_PATTERNS = [
     QueryPattern(
         pattern=r"(?:what|which) (?P<element_type>\w+) have (?P<property_name>[\w\s]+)",
         sql_template="""
-            SELECT DISTINCT e.guid, e.ifc_class, e.name, p.property_value
+            SELECT DISTINCT e.guid, e.ifc_class, e.element_name, p.property_value
             FROM elements_meta e
             JOIN element_properties p ON e.guid = p.guid
-            WHERE e.ifc_class LIKE '%{element_type}%'
+            WHERE LOWER(e.ifc_class) LIKE LOWER('%{element_type}%')
             AND p.property_name LIKE '%{property_name}%'
         """,
         description="List elements with specific property"
@@ -126,10 +146,10 @@ QUANTITY_PATTERNS = [
             SELECT ifc_class,
                    SUM(total_quantity) as total,
                    uom,
-                   element_count
+                   SUM(element_count) as element_count
             FROM simple_qto
-            WHERE ifc_class LIKE '%{element_type}%'
-            AND quantity_name LIKE '%{quantity_type}%'
+            WHERE LOWER(ifc_class) LIKE LOWER('%{element_type}%')
+            AND measurement_type LIKE '%{quantity_type}%'
             GROUP BY ifc_class, uom
         """,
         description="Sum quantity for element type"
@@ -141,11 +161,81 @@ QUANTITY_PATTERNS = [
                    SUM(total_quantity) as total,
                    uom
             FROM simple_qto
-            WHERE ifc_class LIKE '%{element_type}%'
+            WHERE LOWER(ifc_class) LIKE LOWER('%{element_type}%')
             AND discipline LIKE '%{discipline}%'
             GROUP BY discipline, ifc_class, uom
         """,
         description="Sum quantities by discipline"
+    ),
+]
+
+# Cost Estimation Patterns
+COST_PATTERNS = [
+    QueryPattern(
+        pattern=r"(?:total|what is|what's|whats).{0,30}(?:material|labour|labor|equipment).{0,20}(?:cost|price)",
+        sql_template="""
+            SELECT 'BREAKDOWN_NOT_AVAILABLE' as result_type
+        """,
+        description="Cost breakdown not available - Generate BOQ first"
+    ),
+    QueryPattern(
+        pattern=r"(?:how much does|what is|total|what's|whats).{0,20}(?:cost|price|budget)",
+        sql_template="""
+            SELECT SUM(total_cost_rm) as total_cost_rm
+            FROM simple_qto
+        """,
+        description="Calculate total building cost"
+    ),
+    QueryPattern(
+        pattern=r"(?:cost|price) (?:of |for )?(?P<discipline>[\w\s]+) (?:discipline|system|work)",
+        sql_template="""
+            SELECT discipline, SUM(total_cost_rm) as total_cost_rm, SUM(element_count) as element_count
+            FROM simple_qto
+            WHERE LOWER(discipline) LIKE LOWER('%{discipline}%')
+            GROUP BY discipline
+        """,
+        description="Calculate cost by discipline"
+    ),
+    QueryPattern(
+        pattern=r"(?:cost|price) (?:of |for )?(?P<element_type>\w+)",
+        sql_template="""
+            SELECT ifc_class, SUM(total_cost_rm) as total_cost_rm, SUM(element_count) as element_count
+            FROM simple_qto
+            WHERE LOWER(ifc_class) LIKE LOWER('%{element_type}%')
+            GROUP BY ifc_class
+        """,
+        description="Calculate cost for specific element type"
+    ),
+]
+
+# Material Quantity Patterns
+MATERIAL_PATTERNS = [
+    # Storey-specific area queries come FIRST
+    QueryPattern(
+        pattern=r"area on (?P<storey_num>first|second|third|1st|2nd|3rd|\d+(?:st|nd|rd|th)?) (?:level|storey|floor)",
+        sql_template="""
+            SELECT 'STOREY_NOT_AVAILABLE' as result_type
+        """,
+        description="Storey information not available in database"
+    ),
+    QueryPattern(
+        pattern=r"(?:how much|how many|total|quantity of) (?P<material>concrete|steel|glass|aluminum)",
+        sql_template="""
+            SELECT ifc_class, measurement_type, SUM(total_quantity) as total, uom
+            FROM simple_qto
+            WHERE LOWER(ifc_class) IN ('ifcslab', 'ifccolumn', 'ifcbeam', 'ifcwall', 'ifcfootingbeam')
+            GROUP BY ifc_class, measurement_type, uom
+        """,
+        description="Estimate structural material quantities"
+    ),
+    QueryPattern(
+        pattern=r"(?:floor|slab) (?:area|size)",
+        sql_template="""
+            SELECT SUM(total_quantity) as total_area, uom
+            FROM simple_qto
+            WHERE LOWER(ifc_class) = 'ifcslab' AND measurement_type = 'AREA'
+        """,
+        description="Calculate total floor area"
     ),
 ]
 
@@ -154,7 +244,7 @@ FREETEXT_PATTERNS = [
     QueryPattern(
         pattern=r"search for (?P<search_term>[\w\s]+)",
         sql_template="""
-            SELECT guid, ifc_class, name, storey
+            SELECT guid, ifc_class, element_name, storey
             FROM elements_fts
             WHERE elements_fts MATCH '{search_term}'
             LIMIT 100
@@ -164,9 +254,9 @@ FREETEXT_PATTERNS = [
     QueryPattern(
         pattern=r"find (?P<search_term>[\w\s]+)",
         sql_template="""
-            SELECT DISTINCT e.guid, e.ifc_class, e.name, e.storey
-            FROM elements_fts e
-            WHERE e.elements_fts MATCH '{search_term}'
+            SELECT DISTINCT guid, ifc_class, element_name, storey
+            FROM elements_fts
+            WHERE elements_fts MATCH '{search_term}'
             LIMIT 100
         """,
         description="Full-text search"
@@ -188,7 +278,7 @@ DISCIPLINE_PATTERNS = [
     QueryPattern(
         pattern=r"(?:what|which) disciplines (?:are|exist)",
         sql_template="""
-            SELECT DISTINCT discipline, COUNT(*) as element_types
+            SELECT discipline, SUM(element_count) as element_count
             FROM simple_qto
             GROUP BY discipline
             ORDER BY discipline
@@ -200,6 +290,8 @@ DISCIPLINE_PATTERNS = [
 
 # All pattern categories
 ALL_PATTERNS = {
+    'cost': COST_PATTERNS,
+    'material': MATERIAL_PATTERNS,
     'element_count': ELEMENT_COUNT_PATTERNS,
     'manufacturer': MANUFACTURER_PATTERNS,
     'property': PROPERTY_PATTERNS,

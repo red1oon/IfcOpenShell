@@ -4444,7 +4444,48 @@ class BIM_OT_execute_nlp_query(bpy.types.Operator):
 
     def _format_results(self, result, parse_result):
         """Format query results for display"""
+        from .ifc_label_mapper import get_friendly_label
+
         lines = []
+
+        # Check for special result types
+        if result['row_count'] > 0 and 'result_type' in result['rows'][0]:
+            result_type = result['rows'][0]['result_type']
+
+            # Cost breakdown not available
+            if result_type == 'BREAKDOWN_NOT_AVAILABLE':
+                lines.append("💡 Cost Breakdown Information")
+                lines.append("")
+                lines.append("Cost breakdowns by material/labour/equipment are not stored in the database.")
+                lines.append("")
+                lines.append("📋 To get detailed cost breakdowns:")
+                lines.append("  1. Navigate to Federation → BOQ Export")
+                lines.append("  2. Generate a Bill of Quantities (BOQ)")
+                lines.append("  3. The Excel export will include:")
+                lines.append("     • Material costs")
+                lines.append("     • Labour costs")
+                lines.append("     • Equipment costs")
+                lines.append("     • Complete cost breakdowns by element type")
+                lines.append("")
+                lines.append("💰 For total building cost, try: 'Total building cost'")
+                return "\n".join(lines)
+
+            # Storey information not available
+            elif result_type == 'STOREY_NOT_AVAILABLE':
+                lines.append("💡 Storey Information Not Available")
+                lines.append("")
+                lines.append("Storey/floor/level information is not populated in the current database.")
+                lines.append("")
+                lines.append("📋 To enable storey-based queries:")
+                lines.append("  1. Ensure your IFC model has storey containment relationships")
+                lines.append("  2. Re-extract the IFC files using Federation → Extract IFCs")
+                lines.append("  3. The extraction process will populate storey information")
+                lines.append("")
+                lines.append("💡 Current working queries:")
+                lines.append("  • 'How many doors?' (all doors in project)")
+                lines.append("  • 'Count of beams' (all beams in project)")
+                lines.append("  • 'Show ACMV elements' (by discipline)")
+                return "\n".join(lines)
 
         # Header
         lines.append(f"📊 {parse_result['description']}")
@@ -4460,18 +4501,29 @@ class BIM_OT_execute_nlp_query(bpy.types.Operator):
         rows = result['rows']
 
         if category == 'element_count':
-            # Simple count result
+            # Element count with friendly labels
             for row in rows[:15]:
+                ifc_class = row.get('ifc_class', row.get('IFC_Class', ''))
                 count = row.get('count', row.get('total', 0))
-                lines.append(f"  Count: {count}")
+
+                if ifc_class:
+                    friendly_name = get_friendly_label(ifc_class)
+                    lines.append(f"  {friendly_name}: {count:,}")
+                else:
+                    lines.append(f"  Count: {count:,}")
 
         elif category == 'manufacturer':
-            # Manufacturer search results
+            # Manufacturer search results with friendly labels
             for row in rows[:15]:
-                name = row.get('Name', row.get('name', 'Unknown'))
+                element_name = row.get('element_name', row.get('Name', row.get('name', 'Unknown')))
                 ifc_class = row.get('IFC_Class', row.get('ifc_class', ''))
                 manufacturer = row.get('manufacturer', row.get('Manufacturer', ''))
-                lines.append(f"  • {name} ({ifc_class}) - {manufacturer}")
+
+                if ifc_class:
+                    friendly_name = get_friendly_label(ifc_class, element_name)
+                    lines.append(f"  • {friendly_name} - {manufacturer}")
+                else:
+                    lines.append(f"  • {element_name} - {manufacturer}")
 
         elif category == 'property_search':
             # Property search results
@@ -4481,26 +4533,88 @@ class BIM_OT_execute_nlp_query(bpy.types.Operator):
                 prop_value = row.get('PropertyValue', row.get('property_value', ''))
                 lines.append(f"  • {name}: {prop_name} = {prop_value}")
 
-        elif category == 'quantity':
-            # Quantity aggregation results
+        elif category in ['quantity', 'cost', 'material']:
+            # Quantity, cost, and material aggregation results with friendly labels
             for row in rows[:15]:
-                qty_type = row.get('QuantityType', row.get('quantity_type', ''))
-                total = row.get('total', row.get('Total', 0))
-                unit = row.get('unit', row.get('Unit', ''))
-                lines.append(f"  {qty_type}: {total:.2f} {unit}")
+                ifc_class = row.get('ifc_class', row.get('IFC_Class', ''))
+                measurement_type = row.get('measurement_type', row.get('QuantityType', row.get('quantity_type', '')))
+                total = row.get('total', row.get('Total', row.get('total_cost_rm', row.get('total_area', 0))))
+                unit = row.get('uom', row.get('unit', row.get('Unit', '')))
+                count = row.get('element_count', row.get('count', ''))
+
+                if ifc_class:
+                    friendly_name = get_friendly_label(ifc_class)
+
+                    # Format based on what data we have
+                    if category == 'cost' and 'total_cost_rm' in row:
+                        cost_formatted = f"RM {total:,.2f}"
+                        if count:
+                            lines.append(f"  {friendly_name}: {cost_formatted} ({count:,} elements)")
+                        else:
+                            lines.append(f"  {friendly_name}: {cost_formatted}")
+                    elif measurement_type:
+                        lines.append(f"  {friendly_name} ({measurement_type}): {total:,.2f} {unit}")
+                    else:
+                        lines.append(f"  {friendly_name}: {total:,.2f} {unit}")
+                else:
+                    # No IFC class, format generically
+                    if 'total_cost_rm' in row:
+                        lines.append(f"  Total Cost: RM {total:,.2f}")
+                    elif measurement_type:
+                        lines.append(f"  {measurement_type}: {total:.2f} {unit}")
+                    else:
+                        lines.append(f"  Total: {total:.2f} {unit}")
 
         elif category == 'discipline':
-            # Discipline breakdown
+            # Discipline breakdown - can show disciplines OR elements within a discipline
             for row in rows[:15]:
                 discipline = row.get('Discipline', row.get('discipline', ''))
-                count = row.get('count', row.get('Count', 0))
-                lines.append(f"  {discipline}: {count} elements")
+                ifc_class = row.get('ifc_class', row.get('IFC_Class', ''))
+                count = row.get('element_count', row.get('count', row.get('Count', 0)))
+                total_qty = row.get('total_quantity', '')
+                uom = row.get('uom', '')
+
+                if ifc_class:
+                    # Showing elements within a discipline
+                    friendly_name = get_friendly_label(ifc_class)
+                    if total_qty:
+                        lines.append(f"  {friendly_name}: {count:,} elements ({total_qty:.2f} {uom})")
+                    else:
+                        lines.append(f"  {friendly_name}: {count:,} elements")
+                elif discipline:
+                    # Showing discipline list
+                    lines.append(f"  {discipline}: {count:,} elements")
+                else:
+                    lines.append(f"  {count:,} elements")
+
+        elif category == 'freetext':
+            # Free-text search results with friendly labels
+            for row in rows[:15]:
+                ifc_class = row.get('ifc_class', row.get('IFC_Class', ''))
+                element_name = row.get('element_name', row.get('Name', row.get('name', '')))
+                storey = row.get('storey', row.get('Storey', ''))
+
+                if ifc_class:
+                    friendly_name = get_friendly_label(ifc_class, element_name)
+                    if storey:
+                        lines.append(f"  • {friendly_name} (Level: {storey})")
+                    else:
+                        lines.append(f"  • {friendly_name}")
+                else:
+                    lines.append(f"  • {element_name}")
 
         else:
-            # Generic table format
+            # Generic table format with friendly labels where possible
             columns = result['columns']
             for row in rows[:15]:
-                row_str = " | ".join(f"{k}: {v}" for k, v in row.items())
+                ifc_class = row.get('ifc_class', row.get('IFC_Class', ''))
+                if ifc_class:
+                    friendly_name = get_friendly_label(ifc_class)
+                    # Replace ifc_class with friendly name in output
+                    formatted_row = {k: (friendly_name if k in ['ifc_class', 'IFC_Class'] else v) for k, v in row.items()}
+                    row_str = " | ".join(f"{k}: {v}" for k, v in formatted_row.items())
+                else:
+                    row_str = " | ".join(f"{k}: {v}" for k, v in row.items())
                 lines.append(f"  {row_str}")
 
         if result['row_count'] > 15:
