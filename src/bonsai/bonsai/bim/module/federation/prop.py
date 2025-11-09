@@ -243,6 +243,26 @@ class BIMFederationProperties(PropertyGroup):
         default=False
     )
 
+    # Natural Language Query (NLP) properties
+    nlp_query_text: StringProperty(
+        name="NLP Query",
+        description="Natural language query text (e.g., 'How many beams?')",
+        default=""
+    )
+
+    nlp_results_text: StringProperty(
+        name="NLP Results",
+        description="Formatted query results for display",
+        default=""
+    )
+
+    nlp_results_count: IntProperty(
+        name="NLP Results Count",
+        description="Number of result rows from last query",
+        default=0,
+        min=0
+    )
+
     if TYPE_CHECKING:
         federated_files: bpy.types.bpy_prop_collection_idprop[FederatedFile]
         active_federated_file_index: int
@@ -257,7 +277,13 @@ class BIMFederationProperties(PropertyGroup):
         filter_by_discipline: bool
         active_disciplines: str
         show_statistics: bool
-        show_advanced_settings: bool# Bonsai - OpenBIM Blender Add-on
+        show_advanced_settings: bool
+        nlp_query_text: str
+        nlp_results_text: str
+        nlp_results_count: int
+
+
+# Bonsai - OpenBIM Blender Add-on
 # Copyright (C) 2020, 2021 Dion Moult <dion@thinkmoult.com>
 #
 # This file is part of Bonsai.

@@ -4362,3 +4362,250 @@ class BIM_OT_regenerate_boq_report(bpy.types.Operator):
         # Simply call the export operator (which generates a new timestamped file)
         return bpy.ops.bim.export_comprehensive_boq()
 
+
+# ============================================================================
+# Natural Language Query (NLP) Operators
+# ============================================================================
+
+
+class BIM_OT_execute_nlp_query(bpy.types.Operator):
+    """Execute natural language query against database"""
+    bl_idname = "bim.execute_nlp_query"
+    bl_label = "Execute NLP Query"
+    bl_description = "Parse and execute natural language query using FTS5 search"
+
+    def execute(self, context):
+        props = context.scene.BIMFederationProperties
+        query_text = props.nlp_query_text.strip()
+
+        if not query_text:
+            self.report({'WARNING'}, "Please enter a query")
+            return {'CANCELLED'}
+
+        # Get database path
+        db_path = bpy.path.abspath(props.federation_database_path) if props.federation_database_path else None
+        if not db_path or not os.path.exists(db_path):
+            self.report({'ERROR'}, "Database not found. Please set database path first.")
+            return {'CANCELLED'}
+
+        try:
+            # Import NLP modules
+            from .dataintelligence.nlp.query_parser import NLPQueryParser
+            from .dataintelligence.nlp.query_executor import QueryExecutor
+
+            # Parse natural language query
+            parser = NLPQueryParser()
+            parse_result = parser.parse(query_text)
+
+            if not parse_result['success']:
+                error_msg = parse_result.get('error', 'Unknown parsing error')
+                self.report({'ERROR'}, f"Query parsing failed: {error_msg}")
+                props.nlp_results_text = f"❌ Error: {error_msg}"
+                props.nlp_results_count = 0
+                return {'CANCELLED'}
+
+            # Execute SQL query
+            executor = QueryExecutor(db_path)
+            result = executor.execute_with_limit(parse_result['sql'], limit=100)
+
+            if not result['success']:
+                error_msg = result.get('error', 'Unknown execution error')
+                self.report({'ERROR'}, f"Query execution failed: {error_msg}")
+                props.nlp_results_text = f"❌ SQL Error: {error_msg}"
+                props.nlp_results_count = 0
+                return {'CANCELLED'}
+
+            # Format results for display
+            formatted_results = self._format_results(result, parse_result)
+            props.nlp_results_text = formatted_results
+            props.nlp_results_count = result['row_count']
+
+            # Print full results to console
+            print("\n" + "=" * 80)
+            print(f"NLP Query: {query_text}")
+            print(f"Category: {parse_result['category']}")
+            print(f"Description: {parse_result['description']}")
+            print(f"SQL: {parse_result['sql']}")
+            print(f"Results: {result['row_count']} rows ({result['elapsed_ms']:.2f}ms)")
+            print("=" * 80)
+            print(formatted_results)
+            print("=" * 80 + "\n")
+
+            self.report({'INFO'}, f"Query executed: {result['row_count']} results in {result['elapsed_ms']:.2f}ms")
+            return {'FINISHED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Query failed: {str(e)}")
+            props.nlp_results_text = f"❌ Error: {str(e)}"
+            props.nlp_results_count = 0
+            import traceback
+            traceback.print_exc()
+            return {'CANCELLED'}
+
+    def _format_results(self, result, parse_result):
+        """Format query results for display"""
+        lines = []
+
+        # Header
+        lines.append(f"📊 {parse_result['description']}")
+        lines.append(f"⏱️ {result['elapsed_ms']:.2f}ms | {result['row_count']} rows")
+        lines.append("")
+
+        if result['row_count'] == 0:
+            lines.append("No results found.")
+            return "\n".join(lines)
+
+        # Format based on category
+        category = parse_result['category']
+        rows = result['rows']
+
+        if category == 'element_count':
+            # Simple count result
+            for row in rows[:15]:
+                count = row.get('count', row.get('total', 0))
+                lines.append(f"  Count: {count}")
+
+        elif category == 'manufacturer':
+            # Manufacturer search results
+            for row in rows[:15]:
+                name = row.get('Name', row.get('name', 'Unknown'))
+                ifc_class = row.get('IFC_Class', row.get('ifc_class', ''))
+                manufacturer = row.get('manufacturer', row.get('Manufacturer', ''))
+                lines.append(f"  • {name} ({ifc_class}) - {manufacturer}")
+
+        elif category == 'property_search':
+            # Property search results
+            for row in rows[:15]:
+                name = row.get('Name', row.get('name', 'Unknown'))
+                prop_name = row.get('PropertyName', row.get('property_name', ''))
+                prop_value = row.get('PropertyValue', row.get('property_value', ''))
+                lines.append(f"  • {name}: {prop_name} = {prop_value}")
+
+        elif category == 'quantity':
+            # Quantity aggregation results
+            for row in rows[:15]:
+                qty_type = row.get('QuantityType', row.get('quantity_type', ''))
+                total = row.get('total', row.get('Total', 0))
+                unit = row.get('unit', row.get('Unit', ''))
+                lines.append(f"  {qty_type}: {total:.2f} {unit}")
+
+        elif category == 'discipline':
+            # Discipline breakdown
+            for row in rows[:15]:
+                discipline = row.get('Discipline', row.get('discipline', ''))
+                count = row.get('count', row.get('Count', 0))
+                lines.append(f"  {discipline}: {count} elements")
+
+        else:
+            # Generic table format
+            columns = result['columns']
+            for row in rows[:15]:
+                row_str = " | ".join(f"{k}: {v}" for k, v in row.items())
+                lines.append(f"  {row_str}")
+
+        if result['row_count'] > 15:
+            lines.append(f"\n... and {result['row_count'] - 15} more rows (see console)")
+
+        return "\n".join(lines)
+
+
+class BIM_OT_set_nlp_query(bpy.types.Operator):
+    """Set natural language query from suggested query button"""
+    bl_idname = "bim.set_nlp_query"
+    bl_label = "Set NLP Query"
+    bl_description = "Set query text from suggested query"
+
+    query_text: bpy.props.StringProperty(name="Query Text")
+
+    def execute(self, context):
+        props = context.scene.BIMFederationProperties
+        props.nlp_query_text = self.query_text
+        return {'FINISHED'}
+
+
+class BIM_OT_clear_nlp_results(bpy.types.Operator):
+    """Clear natural language query results"""
+    bl_idname = "bim.clear_nlp_results"
+    bl_label = "Clear NLP Results"
+    bl_description = "Clear query results and reset query text"
+
+    def execute(self, context):
+        props = context.scene.BIMFederationProperties
+        props.nlp_query_text = ""
+        props.nlp_results_text = ""
+        props.nlp_results_count = 0
+        return {'FINISHED'}
+
+
+class BIM_OT_export_nlp_results(bpy.types.Operator):
+    """Export natural language query results to CSV"""
+    bl_idname = "bim.export_nlp_results"
+    bl_label = "Export NLP Results"
+    bl_description = "Export query results to CSV file"
+
+    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+
+    def invoke(self, context):
+        props = context.scene.BIMFederationProperties
+
+        if props.nlp_results_count == 0:
+            self.report({'WARNING'}, "No results to export")
+            return {'CANCELLED'}
+
+        # Set default filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.filepath = f"nlp_results_{timestamp}.csv"
+
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+    def execute(self, context):
+        props = context.scene.BIMFederationProperties
+        query_text = props.nlp_query_text.strip()
+
+        if not query_text or props.nlp_results_count == 0:
+            self.report({'WARNING'}, "No results to export")
+            return {'CANCELLED'}
+
+        # Get database path
+        db_path = bpy.path.abspath(props.federation_database_path) if props.federation_database_path else None
+        if not db_path or not os.path.exists(db_path):
+            self.report({'ERROR'}, "Database not found")
+            return {'CANCELLED'}
+
+        try:
+            import csv
+            from .dataintelligence.nlp.query_parser import NLPQueryParser
+            from .dataintelligence.nlp.query_executor import QueryExecutor
+
+            # Re-execute query to get full results (not just display preview)
+            parser = NLPQueryParser()
+            parse_result = parser.parse(query_text)
+
+            if not parse_result['success']:
+                self.report({'ERROR'}, f"Query parsing failed: {parse_result.get('error', 'Unknown error')}")
+                return {'CANCELLED'}
+
+            executor = QueryExecutor(db_path)
+            result = executor.execute(parse_result['sql'])  # No limit for export
+
+            if not result['success']:
+                self.report({'ERROR'}, f"Query execution failed: {result.get('error', 'Unknown error')}")
+                return {'CANCELLED'}
+
+            # Export to CSV
+            with open(self.filepath, 'w', newline='', encoding='utf-8') as csvfile:
+                if result['row_count'] > 0:
+                    writer = csv.DictWriter(csvfile, fieldnames=result['columns'])
+                    writer.writeheader()
+                    writer.writerows(result['rows'])
+
+            self.report({'INFO'}, f"Exported {result['row_count']} rows to {self.filepath}")
+            return {'FINISHED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Export failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {'CANCELLED'}
+

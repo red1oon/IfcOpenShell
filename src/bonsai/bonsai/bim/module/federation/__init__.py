@@ -122,6 +122,12 @@ classes = (
     operator.BIM_OT_open_boq_report,
     operator.BIM_OT_regenerate_boq_report,
 
+    # Natural Language Query (NLP)
+    operator.BIM_OT_execute_nlp_query,
+    operator.BIM_OT_set_nlp_query,
+    operator.BIM_OT_clear_nlp_results,
+    operator.BIM_OT_export_nlp_results,
+
     # UI Panels and Lists
     ui.BIM_PT_federation,
     ui.BIM_UL_federated_files,
@@ -130,6 +136,7 @@ classes = (
     ui.BIM_PT_federation_lod_visualization,
     ui.BIM_PT_clash_adjustment,
     ui.BIM_PT_boq_export,
+    ui.BIM_PT_nlp_query,
 )
 
 @persistent
