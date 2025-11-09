@@ -717,6 +717,207 @@ SEMANTIC_MATERIAL_RULES = {
         'display_name': 'Air Terminal (Diffuser/Grille)',
         'assembly_details': {'material': 'anodized_aluminum', 'type': 'swirl_diffuser'}
     },
+
+    # ====================================================================
+    # ARCHITECTURE - Walls, Doors, Windows, Furniture, Roofs
+    # ====================================================================
+
+    # Walls
+    ('IfcWall', 'ARC'): {
+        'material': 'concrete',
+        'base_color': (0.85, 0.85, 0.82, 1.0),
+        'display_color': '#D9D9D1',
+        'finish': 'painted_plaster',
+        'roughness': 0.7,
+        'metallic': 0.0,
+        'display_name': 'Concrete Wall (Plastered)',
+    },
+    ('IfcWallStandardCase', 'ARC'): {
+        'material': 'concrete',
+        'base_color': (0.85, 0.85, 0.82, 1.0),
+        'display_color': '#D9D9D1',
+        'finish': 'painted_plaster',
+        'roughness': 0.7,
+        'metallic': 0.0,
+        'display_name': 'Standard Wall (Plastered)',
+    },
+    ('IfcCurtainWall', 'ARC'): {
+        'material': 'glass',
+        'base_color': (0.7, 0.8, 0.9, 0.3),
+        'display_color': '#B3CCE6',
+        'finish': 'glass',
+        'roughness': 0.1,
+        'metallic': 0.0,
+        'display_name': 'Curtain Wall (Glass)',
+    },
+
+    # Doors
+    ('IfcDoor', 'ARC'): {
+        'material': 'wood',
+        'base_color': (0.6, 0.4, 0.2, 1.0),
+        'display_color': '#996633',
+        'finish': 'varnished_wood',
+        'roughness': 0.5,
+        'metallic': 0.0,
+        'display_name': 'Timber Door',
+    },
+    ('IfcDoorStandardCase', 'ARC'): {
+        'material': 'wood',
+        'base_color': (0.6, 0.4, 0.2, 1.0),
+        'display_color': '#996633',
+        'finish': 'varnished_wood',
+        'roughness': 0.5,
+        'metallic': 0.0,
+        'display_name': 'Standard Timber Door',
+    },
+
+    # Windows
+    ('IfcWindow', 'ARC'): {
+        'material': 'glass_aluminum',
+        'base_color': (0.7, 0.8, 0.9, 0.3),
+        'display_color': '#B3CCE6',
+        'finish': 'glass',
+        'roughness': 0.1,
+        'metallic': 0.1,
+        'display_name': 'Aluminum Window (Glass)',
+    },
+    ('IfcWindowStandardCase', 'ARC'): {
+        'material': 'glass_aluminum',
+        'base_color': (0.7, 0.8, 0.9, 0.3),
+        'display_color': '#B3CCE6',
+        'finish': 'glass',
+        'roughness': 0.1,
+        'metallic': 0.1,
+        'display_name': 'Standard Aluminum Window',
+    },
+
+    # Slabs & Roofs
+    ('IfcSlab', 'ARC'): {
+        'material': 'concrete',
+        'base_color': (0.75, 0.75, 0.72, 1.0),
+        'display_color': '#C0C0B8',
+        'finish': 'smooth_concrete',
+        'roughness': 0.6,
+        'metallic': 0.0,
+        'display_name': 'Concrete Slab',
+    },
+    ('IfcRoof', 'ARC'): {
+        'material': 'concrete',
+        'base_color': (0.65, 0.65, 0.62, 1.0),
+        'display_color': '#A6A69E',
+        'finish': 'weatherproof_membrane',
+        'roughness': 0.7,
+        'metallic': 0.0,
+        'display_name': 'Concrete Roof',
+    },
+
+    # Coverings & Furniture
+    ('IfcCovering', 'ARC'): {
+        'material': 'ceramic_tile',
+        'base_color': (0.9, 0.9, 0.85, 1.0),
+        'display_color': '#E6E6D9',
+        'finish': 'glazed_ceramic',
+        'roughness': 0.2,
+        'metallic': 0.0,
+        'display_name': 'Floor/Wall Covering (Tile)',
+    },
+    ('IfcFurnishingElement', 'ARC'): {
+        'material': 'wood',
+        'base_color': (0.5, 0.3, 0.15, 1.0),
+        'display_color': '#804D26',
+        'finish': 'varnished_wood',
+        'roughness': 0.5,
+        'metallic': 0.0,
+        'display_name': 'Furniture (Timber)',
+    },
+
+    # Stairs & Railings
+    ('IfcStairFlight', 'ARC'): {
+        'material': 'concrete',
+        'base_color': (0.7, 0.7, 0.67, 1.0),
+        'display_color': '#B3B3AB',
+        'finish': 'smooth_concrete',
+        'roughness': 0.6,
+        'metallic': 0.0,
+        'display_name': 'Concrete Stairs',
+    },
+    ('IfcRampFlight', 'ARC'): {
+        'material': 'concrete',
+        'base_color': (0.7, 0.7, 0.67, 1.0),
+        'display_color': '#B3B3AB',
+        'finish': 'smooth_concrete',
+        'roughness': 0.6,
+        'metallic': 0.0,
+        'display_name': 'Concrete Ramp',
+    },
+    ('IfcRailing', 'ARC'): {
+        'material': 'stainless_steel',
+        'base_color': (0.8, 0.8, 0.82, 1.0),
+        'display_color': '#CCCCCE',
+        'finish': 'brushed_metal',
+        'roughness': 0.3,
+        'metallic': 0.9,
+        'display_name': 'Stainless Steel Railing',
+    },
+
+    # ====================================================================
+    # STRUCTURE - Beams, Columns, Plates
+    # ====================================================================
+
+    ('IfcBeam', 'STR'): {
+        'material': 'structural_steel',
+        'base_color': (0.5, 0.5, 0.52, 1.0),
+        'display_color': '#808084',
+        'finish': 'painted_steel',
+        'roughness': 0.4,
+        'metallic': 0.9,
+        'display_name': 'Structural Steel Beam',
+    },
+    ('IfcBeamStandardCase', 'STR'): {
+        'material': 'structural_steel',
+        'base_color': (0.5, 0.5, 0.52, 1.0),
+        'display_color': '#808084',
+        'finish': 'painted_steel',
+        'roughness': 0.4,
+        'metallic': 0.9,
+        'display_name': 'Standard Steel Beam',
+    },
+    ('IfcColumn', 'STR'): {
+        'material': 'structural_steel',
+        'base_color': (0.5, 0.5, 0.52, 1.0),
+        'display_color': '#808084',
+        'finish': 'painted_steel',
+        'roughness': 0.4,
+        'metallic': 0.9,
+        'display_name': 'Structural Steel Column',
+    },
+    ('IfcColumnStandardCase', 'STR'): {
+        'material': 'structural_steel',
+        'base_color': (0.5, 0.5, 0.52, 1.0),
+        'display_color': '#808084',
+        'finish': 'painted_steel',
+        'roughness': 0.4,
+        'metallic': 0.9,
+        'display_name': 'Standard Steel Column',
+    },
+    ('IfcMember', 'STR'): {
+        'material': 'structural_steel',
+        'base_color': (0.5, 0.5, 0.52, 1.0),
+        'display_color': '#808084',
+        'finish': 'painted_steel',
+        'roughness': 0.4,
+        'metallic': 0.9,
+        'display_name': 'Structural Member (Steel)',
+    },
+    ('IfcPlate', 'STR'): {
+        'material': 'structural_steel',
+        'base_color': (0.5, 0.5, 0.52, 1.0),
+        'display_color': '#808084',
+        'finish': 'painted_steel',
+        'roughness': 0.4,
+        'metallic': 0.9,
+        'display_name': 'Steel Plate',
+    },
 }
 
 # Discipline fallback defaults (when specific IFC class not in rules)
