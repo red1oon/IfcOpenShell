@@ -136,17 +136,10 @@ def find_or_create_element_from_database(
                 obj = bpy.data.objects.new(guid, mesh)
 
                 # Position object: bbox_center - offset
-                # Get global offset (single-row table, no id column)
-                cursor.execute("SELECT offset_x, offset_y, offset_z FROM global_offset LIMIT 1")
-                offset_row = cursor.fetchone()
-
-                if offset_row:
-                    offset_x, offset_y, offset_z = offset_row
-                    offset = Vector((offset_x, offset_y, offset_z))
-                    obj.location = bbox_center_gps - offset
-                else:
-                    # No offset available - use bbox center as-is
-                    obj.location = bbox_center_gps
+                # CRITICAL: Use get_model_offset() to match gizmo coordinate conversion
+                # This ensures clash objects appear at same location as gizmo markers
+                offset = get_model_offset()
+                obj.location = bbox_center_gps - offset
 
                 # Store metadata
                 obj["federation_guid"] = guid
