@@ -4553,6 +4553,7 @@ class BIM_OT_export_nlp_results(bpy.types.Operator):
             return {'CANCELLED'}
 
         # Set default filename
+        from datetime import datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.filepath = f"nlp_results_{timestamp}.csv"
 
