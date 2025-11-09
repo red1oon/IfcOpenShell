@@ -1033,3 +1033,127 @@ class BIM_PT_boq_export(Panel):
                 hint.label(text="(Database analysis will run automatically)")
             else:
                 hint.label(text="(Click to generate Excel report)")
+
+
+class BIM_PT_nlp_query(Panel):
+    """Natural Language Query Panel"""
+
+    bl_label = "Natural Language Query (NLP)"
+    bl_idname = "BIM_PT_nlp_query"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "scene"
+    bl_parent_id = "BIM_PT_tab_federation"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context):
+        layout = self.layout
+        props = context.scene.BIMFederationProperties
+
+        # Get database path
+        db_path = bpy.path.abspath(props.federation_database_path) if props.federation_database_path else None
+
+        # Header with info
+        box = layout.box()
+        row = box.row()
+        row.label(text="Natural Language Query (NLP)", icon="VIEWZOOM")
+
+        # Status indicator
+        status_row = row.row()
+        status_row.alignment = "RIGHT"
+        if db_path and os.path.exists(db_path):
+            status_row.label(text="Ready", icon="CHECKMARK")
+        else:
+            status_row.label(text="No Database", icon="ERROR")
+
+        # Info text
+        info_col = box.column(align=True)
+        info_col.scale_y = 0.7
+        info_col.label(text="💡 Ask questions in plain English", icon="INFO")
+        info_col.label(text="   Powered by FTS5 full-text search")
+
+        box.separator()
+
+        # Check database
+        import os
+        if not db_path or not os.path.exists(db_path):
+            warn_row = box.row()
+            warn_row.alert = True
+            warn_row.label(text="⚠ Set database path first", icon="ERROR")
+            return
+
+        # Query input
+        query_box = layout.box()
+        query_box.label(text="Enter Query:", icon="EXPERIMENTAL")
+
+        # Text input for query
+        row = query_box.row()
+        row.prop(props, "nlp_query_text", text="", icon="VIEWZOOM")
+
+        # Execute button
+        row = query_box.row(align=True)
+        row.scale_y = 1.3
+        execute_op = row.operator("bim.execute_nlp_query", text="Search", icon="PLAY")
+        row.operator("bim.clear_nlp_results", text="Clear", icon="X")
+
+        # Suggested queries section
+        suggest_box = layout.box()
+        suggest_box.label(text="Suggested Queries:", icon="LIGHT")
+
+        # Create two columns for suggested queries
+        col_split = suggest_box.column_split(factor=0.5)
+
+        # Column 1
+        col1 = col_split.column()
+        col1.scale_y = 0.9
+
+        queries_col1 = [
+            "How many beams?",
+            "Count doors on level 1",
+            "Find ducts from Carrier",
+            "Show ACMV elements",
+            "Total length of pipes",
+        ]
+
+        for query in queries_col1:
+            op = col1.operator("bim.set_nlp_query", text=query, icon="RIGHTARROW_THIN")
+            op.query_text = query
+
+        # Column 2
+        col2 = col_split.column()
+        col2.scale_y = 0.9
+
+        queries_col2 = [
+            "Beams on floor 2",
+            "Search for fire doors",
+            "Which disciplines exist?",
+            "Total area of walls",
+            "List structural items",
+        ]
+
+        for query in queries_col2:
+            op = col2.operator("bim.set_nlp_query", text=query, icon="RIGHTARROW_THIN")
+            op.query_text = query
+
+        # Results section (if results exist)
+        if hasattr(props, "nlp_results_count") and props.nlp_results_count > 0:
+            results_box = layout.box()
+            results_box.label(text=f"Results ({props.nlp_results_count} rows):", icon="DOCUMENTS")
+
+            # Display results summary
+            if hasattr(props, "nlp_results_text"):
+                results_col = results_box.column(align=True)
+                results_col.scale_y = 0.7
+
+                # Split results text into lines and display (max 15 lines)
+                lines = props.nlp_results_text.split("\n")[:15]
+                for line in lines:
+                    if line.strip():
+                        results_col.label(text=line)
+
+                if len(props.nlp_results_text.split("\n")) > 15:
+                    results_col.label(text="... (see console for full results)")
+
+            # Export button
+            row = results_box.row()
+            row.operator("bim.export_nlp_results", text="Export to CSV", icon="EXPORT")
