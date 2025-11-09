@@ -4545,7 +4545,7 @@ class BIM_OT_export_nlp_results(bpy.types.Operator):
 
     filepath: bpy.props.StringProperty(subtype="FILE_PATH")
 
-    def invoke(self, context):
+    def invoke(self, context, event):
         props = context.scene.BIMFederationProperties
 
         if props.nlp_results_count == 0:
