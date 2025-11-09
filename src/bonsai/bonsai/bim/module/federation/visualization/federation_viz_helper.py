@@ -14,39 +14,8 @@ from typing import Optional, Tuple
 import sqlite3
 import math
 
-
-def get_model_offset() -> Vector:
-    """
-    Get model offset to convert IFC coords to Blender coords.
-
-    Uses cached offset from MEP routing if available, otherwise falls back
-    to Bonsai georeference properties.
-
-    Returns:
-        Vector with (x, y, z) offset in meters
-    """
-    # Try MEP cached offset first (most reliable)
-    cached = bpy.context.scene.get("MEP_cached_offset")
-    if cached:
-        return Vector(cached)
-
-    # Fallback to georeference properties
-    try:
-        props = bpy.context.scene.BIMGeoreferenceProperties
-        offset = Vector((
-            props.model_offset_x or 0.0,
-            props.model_offset_y or 0.0,
-            props.model_offset_z or 0.0
-        ))
-        # Check if offset is actually set (not all zeros)
-        if offset.length > 0.01:
-            return offset
-    except Exception:
-        pass
-
-    # No offset available - assume zero (objects at IFC world coords)
-    print("⚠️  Warning: No coordinate offset available - using IFC world coordinates")
-    return Vector((0, 0, 0))
+# Import centralized offset function
+from bonsai.bim.module.federation.core.coordinate_utils import get_model_offset
 
 
 def find_or_create_element_from_database(

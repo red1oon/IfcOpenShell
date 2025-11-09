@@ -352,6 +352,66 @@ def mm_to_meters_vec(xyz: Tuple[float, float, float]) -> Tuple[float, float, flo
 
 
 # =============================================================================
+# Blender Scene Coordinate Offset (Centralized)
+# =============================================================================
+
+def get_model_offset():
+    """
+    Get model offset to convert IFC coords to Blender viewport coords.
+
+    CENTRALIZED FUNCTION - replaces duplicated implementations in:
+    - federation/visualization/federation_viz_helper.py
+    - federation/clash/gizmo.py
+    - federation/clash/visualization.py
+
+    Priority order:
+    1. Scene cache (MEP_cached_offset) - set by MEP routing operator
+    2. Georeference properties - Bonsai's georeference system
+    3. Zero fallback - assume IFC world coords = viewport coords
+
+    Returns:
+        Vector with (x, y, z) offset in meters, or tuple if bpy not available
+
+    Usage:
+        from bonsai.bim.module.federation.core.coordinate_utils import get_model_offset
+
+        offset = get_model_offset()
+        viewport_coords = (ifc_x - offset.x, ifc_y - offset.y, ifc_z - offset.z)
+    """
+    try:
+        import bpy
+        from mathutils import Vector
+
+        # Try MEP cached offset first (most reliable)
+        cached = bpy.context.scene.get("MEP_cached_offset")
+        if cached:
+            return Vector(cached)
+
+        # Fallback to georeference properties
+        try:
+            props = bpy.context.scene.BIMGeoreferenceProperties
+            offset = Vector((
+                props.model_offset_x or 0.0,
+                props.model_offset_y or 0.0,
+                props.model_offset_z or 0.0
+            ))
+            # Check if offset is actually set (not all zeros)
+            if offset.length > 0.01:
+                return offset
+        except Exception:
+            pass
+
+        # No offset available - assume zero (objects at IFC world coords)
+        print("⚠️  Warning: No coordinate offset available - using IFC world coordinates")
+        return Vector((0, 0, 0))
+
+    except ImportError:
+        # Not running in Blender - return tuple instead of Vector
+        print("⚠️  Warning: Running outside Blender context - returning (0,0,0)")
+        return (0.0, 0.0, 0.0)
+
+
+# =============================================================================
 # Testing / Example Usage
 # =============================================================================
 

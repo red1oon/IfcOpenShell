@@ -15,6 +15,9 @@ from pathlib import Path
 import logging
 from datetime import datetime
 
+# Import centralized offset function
+from bonsai.bim.module.federation.core.coordinate_utils import get_model_offset as get_model_offset_centralized
+
 # ============================================================================
 # LOGGING SETUP
 # ============================================================================
@@ -131,45 +134,9 @@ def get_clash_bbox_centers(guid_a: str, guid_b: str, db_path: str) -> Tuple[Opti
 # COORDINATE CONVERSION (reused from visualization.py)
 # ============================================================================
 
-# Global flag to prevent spam warnings about missing offset
-_offset_warning_shown = False
-
-def get_model_offset() -> Vector:
-    """Get model offset to convert IFC coords to Blender coords
-
-    Uses cached offset from MEP routing if available, otherwise falls back
-    to Bonsai georeference properties.
-    """
-    global _offset_warning_shown
-
-    # Try MEP cached offset first (most reliable)
-    cached = bpy.context.scene.get("MEP_cached_offset")
-    if cached:
-        logger.debug(f"Using cached MEP offset: {cached}")
-        return Vector(cached)
-
-    # Fallback to georeference properties
-    try:
-        props = bpy.context.scene.BIMGeoreferenceProperties
-        offset = Vector((
-            props.model_offset_x or 0.0,
-            props.model_offset_y or 0.0,
-            props.model_offset_z or 0.0
-        ))
-        # Check if offset is actually set (not all zeros)
-        if offset.length > 0.01:
-            logger.info(f"Using georeference offset: {offset}")
-            return offset
-    except Exception as e:
-        logger.debug(f"BIMGeoreferenceProperties not available: {e}")
-
-    # No offset available - warn once and assume zero
-    if not _offset_warning_shown:
-        logger.warning("No offset available - using IFC world coordinates (gizmos may be positioned incorrectly)")
-        print(f"  ⚠️  Gizmo: No offset available, using IFC world coordinates")
-        _offset_warning_shown = True
-
-    return Vector((0, 0, 0))
+# Use centralized offset function (imported from coordinate_utils)
+# Old local implementation removed - now using get_model_offset_centralized
+get_model_offset = get_model_offset_centralized
 
 
 def ifc_to_blender_coords(ifc_coords: tuple) -> Vector:

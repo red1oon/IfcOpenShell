@@ -17,38 +17,13 @@ from gpu_extras.batch import batch_for_shader
 from mathutils import Vector, Matrix
 from typing import List, Tuple, Optional
 
+# Import centralized offset function
+from bonsai.bim.module.federation.core.coordinate_utils import get_model_offset
+
 # Global state
 _clash_markers = []  # Cached marker positions
 _draw_handler = None
 _zoom_level = 'OVERVIEW'
-
-
-def get_model_offset():
-    """Get model offset to convert IFC coords to Blender coords
-
-    Uses cached offset from MEP routing if available, otherwise falls back
-    to Bonsai georeference properties.
-    """
-    # Try MEP cached offset first (most reliable)
-    cached = bpy.context.scene.get("MEP_cached_offset")
-    if cached:
-        print(f"  📍 Clash viz using MEP cached offset: {cached}")
-        return Vector(cached)
-
-    # Fallback to georeference properties
-    try:
-        props = bpy.context.scene.BIMGeoreferenceProperties
-        offset = Vector((
-            props.model_offset_x or 0.0,
-            props.model_offset_y or 0.0,
-            props.model_offset_z or 0.0
-        ))
-        print(f"  📍 Clash viz using georeference offset: {offset}")
-        return offset
-    except:
-        # No offset available - assume zero
-        print(f"  ⚠️  Clash viz: No offset available, using zero")
-        return Vector((0, 0, 0))
 
 
 def ifc_to_blender_coords(ifc_coords: Tuple[float, float, float]) -> Vector:
