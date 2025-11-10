@@ -362,9 +362,9 @@ class DisciplineClashCandidate(PropertyGroup):
 # These properties are registered into BIMClashProperties in the clash module
 # via the register_federation_properties() function called from federation/__init__.py
 
-def get_resolution_options(context):
-    """Get available resolution options for the EnumProperty dropdown"""
-    items = [("NONE", "Select Option...", "No option selected")]
+def get_clash_groups(context):
+    """Get available clash groups for selection dropdown"""
+    items = [("NONE", "Select Clash Group...", "No group selected")]
 
     try:
         import sqlite3
@@ -379,24 +379,20 @@ def get_resolution_options(context):
         if not db_path or not Path(db_path).exists():
             return items
 
-        # Query resolution options with group info
+        # Query clash groups
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
 
         query = """
             SELECT
-                ro.option_id,
-                ro.description,
-                ro.total_design_hours,
-                ro.total_design_cost,
-                ro.clashes_resolved,
-                ro.recommendation_rank,
-                cg.cascade_element_guid,
-                cg.total_clashes,
-                cg.severity
-            FROM resolution_options ro
-            LEFT JOIN clash_groups cg ON ro.group_id = cg.group_id
-            ORDER BY ro.recommendation_rank ASC, ro.total_design_hours ASC
+                group_id,
+                cascade_element_class,
+                cascade_element_discipline,
+                total_clashes,
+                severity,
+                cascade_element_guid
+            FROM clash_groups
+            ORDER BY total_clashes DESC, severity DESC
         """
 
         cursor.execute(query)
@@ -404,29 +400,101 @@ def get_resolution_options(context):
         conn.close()
 
         if not results:
-            items.append(("NO_OPTIONS", "No resolution options found", "Run 'Analyze Clash Groups' first"))
+            items.append(("NO_GROUPS", "No clash groups found", "Run 'Analyze Clash Groups' first"))
             return items
 
         # Build dropdown items
         for row in results:
-            option_id, desc, hours, cost, resolved, rank, guid, total, severity = row
+            group_id, elem_class, discipline, total, severity, guid = row
 
             # Format display text
-            short_desc = desc[:50] + "..." if len(desc) > 50 else desc
-            hours_str = f"{hours:.1f}h" if hours else "N/A"
-            cost_str = f"${cost:,.0f}" if cost else "N/A"
-            resolved_str = f"{resolved} clashes" if resolved else "N/A"
+            elem_name = elem_class.replace('Ifc', '') if elem_class else 'Unknown'
+            disc_name = discipline if discipline else 'Unknown'
+            guid_short = guid[:8] if guid else 'Unknown'  # First 8 chars of GUID for uniqueness
 
-            label = f"[{severity or 'N/A'}] {short_desc}"
-            tooltip = f"{desc}\nDesign: {hours_str} ({cost_str})\nResolves: {resolved_str}"
+            # Include GUID prefix for uniqueness when multiple groups have same element type
+            label = f"{elem_name} ({disc_name}) [{guid_short}]: {total} clashes [{severity}]"
+            tooltip = f"Group: {group_id}\nElement: {elem_name} (GUID: {guid})\nDiscipline: {disc_name}\nClashes: {total}\nSeverity: {severity}"
 
-            items.append((option_id, label, tooltip))
+            items.append((group_id, label, tooltip))
+
+    except Exception as e:
+        print(f"⚠️  Error loading clash groups: {e}")
+        import traceback
+        traceback.print_exc()
+        items.append(("ERROR", f"Error: {str(e)[:30]}", str(e)))
+
+    return items
+
+
+def get_resolution_options_for_group(context):
+    """Get resolution options for the selected clash group"""
+    items = []
+
+    try:
+        import sqlite3
+        from pathlib import Path
+
+        # Get federation database path and selected group
+        props = context.scene.BIMFederationProperties
+        clash_props = context.scene.BIMClashProperties
+
+        if not props.index_loaded or not clash_props.selected_clash_group:
+            return items
+
+        db_path = props.federation_database_path
+        if not db_path or not Path(db_path).exists():
+            return items
+
+        selected_group = clash_props.selected_clash_group
+        if selected_group == "NONE":
+            return items
+
+        # Query resolution options for selected group
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        query = """
+            SELECT
+                ro.option_id,
+                ro.option_type,
+                ro.description,
+                ro.total_design_hours,
+                ro.total_design_cost,
+                ro.calendar_days_required,
+                ro.risk_category,
+                ro.recommendation_rank
+            FROM resolution_options ro
+            WHERE ro.group_id = ?
+            ORDER BY ro.recommendation_rank ASC
+        """
+
+        cursor.execute(query, (selected_group,))
+        results = cursor.fetchall()
+        conn.close()
+
+        if not results:
+            return items
+
+        # Build option info (not for dropdown, just for display)
+        for row in results:
+            option_id, opt_type, desc, hours, cost, days, risk, rank = row
+            items.append({
+                'option_id': option_id,
+                'type': opt_type,
+                'description': desc,
+                'hours': hours,
+                'cost': cost,
+                'days': days,
+                'risk': risk,
+                'rank': rank,
+                'is_recommended': (rank == 1)
+            })
 
     except Exception as e:
         print(f"⚠️  Error loading resolution options: {e}")
         import traceback
         traceback.print_exc()
-        items.append(("ERROR", f"Error: {str(e)[:30]}", str(e)))
 
     return items
 
@@ -589,18 +657,12 @@ def register_federation_properties():
         default=False
     )
 
-    # Resolution option selection
-    BIMClashProperties.selected_resolution_option_id = StringProperty(
-        name="Selected Resolution Option ID",
-        description="ID of the selected resolution option from the database",
-        default=""
-    )
-
-    BIMClashProperties.selected_resolution_dropdown = EnumProperty(
-        name="Resolution Options",
-        description="Available resolution options for the selected clash group",
-        items=lambda self, context: get_resolution_options(context),
-        update=lambda self, context: update_selected_resolution(self, context)
+    # Clash group selection (replaces overwhelming resolution options dropdown)
+    BIMClashProperties.selected_clash_group = EnumProperty(
+        name="Clash Group",
+        description="Select a clash group to preview and analyze resolution options",
+        items=lambda self, context: get_clash_groups(context),
+        default=0
     )
 
     # Feedback panel
@@ -658,8 +720,7 @@ def unregister_federation_properties():
         'active_preset_name',
         'show_learned_estimates',
         'clash_groups_analyzed',
-        'selected_resolution_option_id',
-        'selected_resolution_dropdown',
+        'selected_clash_group',
         'show_feedback_panel',
         'resolution_rating',
         'actual_hours',

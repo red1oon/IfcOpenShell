@@ -92,7 +92,8 @@ class SnapshotRenderer:
         viewpoint_data: Dict,
         width: int = 800,
         height: int = 600,
-        target_size_kb: int = 200
+        target_size_kb: int = 200,
+        group_id: str = None
     ) -> Optional[bytes]:
         """
         Render snapshot for a cascade group with multiple elements.
@@ -149,8 +150,14 @@ class SnapshotRenderer:
             # Process pending updates
             bpy.context.view_layer.update()
 
-            # Create temp file for screenshot
-            temp_path = Path(tempfile.gettempdir()) / f"cascade_group_viewport.png"
+            # Create temp file for screenshot with unique name per group
+            # Use group_id if provided, otherwise use timestamp to ensure uniqueness
+            import time
+            if group_id:
+                temp_filename = f"cascade_group_{group_id}_viewport.png"
+            else:
+                temp_filename = f"cascade_group_{int(time.time()*1000)}_viewport.png"
+            temp_path = Path(tempfile.gettempdir()) / temp_filename
 
             # Take viewport screenshot using render (more reliable than screen.screenshot)
             try:

@@ -110,6 +110,7 @@ classes = (
     operator.BIM_OT_submit_resolution_feedback,
     operator.BIM_OT_change_preset,
     operator.BIM_OT_clear_preview,
+    operator.BIM_OT_preview_clash_group,
 
     # BCF Export
     operator.BIM_OT_export_bcf,

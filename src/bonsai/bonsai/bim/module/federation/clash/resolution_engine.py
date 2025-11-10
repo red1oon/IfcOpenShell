@@ -109,8 +109,11 @@ class ResolutionAnalysisEngine:
         """
         Generate resolution options for a clash group.
 
-        POC: Only generates MEP duct reroute option.
-        Full system would generate 3-5 options per group.
+        Now generates 2-4 options per group:
+        - Option 1: Modify cascade element (always)
+        - Option 2: Modify clashing elements (if viable)
+        - Option 3: Coordination solution - penetrations/clearances (if viable)
+        - Option 4: Accept clash with justification (if minimal severity)
 
         Args:
             group_id: Clash group ID
@@ -126,6 +129,7 @@ class ResolutionAnalysisEngine:
                 cascade_element_discipline,
                 total_clashes,
                 affected_classes,
+                affected_disciplines,
                 severity
             FROM clash_groups
             WHERE group_id = ?
@@ -135,33 +139,65 @@ class ResolutionAnalysisEngine:
         if not group_data:
             return []
 
-        cascade_guid, cascade_class, cascade_disc, total_clashes, affected_classes_json, severity = group_data
+        cascade_guid, cascade_class, cascade_disc, total_clashes, affected_classes_json, affected_disciplines_json, severity = group_data
         affected_classes = json.loads(affected_classes_json)
+        affected_disciplines = json.loads(affected_disciplines_json)
 
         options = []
 
-        # For POC: Generate generic resolution option for any clash group
-        # Real system would classify by element type and generate specific options
+        # Option 1: Always try to modify cascade element (primary strategy)
+        option1 = self._generate_modify_cascade_option(
+            group_id, cascade_class, cascade_disc, total_clashes, affected_classes, affected_disciplines, severity
+        )
+        if option1:
+            options.append(option1)
 
-        # Determine if this looks like a MEP/movable element scenario
-        is_mep_scenario = (
-            cascade_disc in ['MEP', 'ACMV', 'ELECTRICAL', 'FP', 'SP', 'ARC'] or
-            any(keyword in cascade_class for keyword in ['Duct', 'Pipe', 'Cable', 'Conduit', 'Proxy'])
+        # Option 2: Modify clashing elements instead (alternative strategy)
+        # Viable when: cascade element is structural/architectural (harder to move)
+        is_cascade_hard_to_move = (
+            cascade_disc in ['STR', 'ARC'] and
+            any(keyword in cascade_class for keyword in ['Slab', 'Beam', 'Column', 'Wall'])
+        )
+        has_movable_clashing_elements = any(
+            cls for cls in affected_classes
+            if any(keyword in cls for keyword in ['Duct', 'Pipe', 'Cable', 'Conduit'])
         )
 
-        # Generate generic option for demonstration
-        if is_mep_scenario or True:  # For POC, always generate option
-            option = self._generate_generic_resolution_option(
-                group_id, cascade_class, cascade_disc, total_clashes, affected_classes
+        if is_cascade_hard_to_move and has_movable_clashing_elements:
+            option2 = self._generate_modify_clashing_option(
+                group_id, cascade_class, cascade_disc, total_clashes, affected_classes, affected_disciplines, severity
             )
-            if option:
-                options.append(option)
+            if option2:
+                options.append(option2)
 
-        # POC: Single option only
-        # Full system would add:
-        # - Option 2: Adjust structural elements
-        # - Option 3: Multi-discipline coordination
-        # - Option 4: Create penetrations
+        # Option 3: Coordination solution (penetrations, clearances)
+        # Viable when: Small clash count, architectural openings, or minor clearance issues
+        is_coordination_viable = (
+            'Opening' in cascade_class or
+            (total_clashes <= 5 and severity in ['LOW', 'MEDIUM'])
+        )
+
+        if is_coordination_viable:
+            option3 = self._generate_coordination_option(
+                group_id, cascade_class, cascade_disc, total_clashes, affected_classes, affected_disciplines, severity
+            )
+            if option3:
+                options.append(option3)
+
+        # Option 4: Accept clash (document as acceptable)
+        # Viable when: Very small clearance issue, modeling tolerance, or minor severity
+        is_acceptable_scenario = (
+            total_clashes <= 4 and
+            severity in ['LOW', 'MEDIUM'] and
+            'Opening' not in cascade_class  # Don't accept opening clashes
+        )
+
+        if is_acceptable_scenario:
+            option4 = self._generate_accept_option(
+                group_id, cascade_class, cascade_disc, total_clashes, affected_classes, affected_disciplines, severity
+            )
+            if option4:
+                options.append(option4)
 
         # Rank options by design cost (lower = better)
         for i, opt in enumerate(sorted(options, key=lambda o: o.total_design_cost), 1):
@@ -169,11 +205,13 @@ class ResolutionAnalysisEngine:
 
         return options
 
-    def _generate_generic_resolution_option(self, group_id: str, element_class: str,
-                                            discipline: str, total_clashes: int,
-                                            affected_classes: List[str]) -> Optional[ResolutionOption]:
+    def _generate_modify_cascade_option(self, group_id: str, element_class: str,
+                                        discipline: str, total_clashes: int,
+                                        affected_classes: List[str],
+                                        affected_disciplines: List[str],
+                                        severity: str) -> Optional[ResolutionOption]:
         """
-        Generate generic resolution option (POC implementation).
+        Generate Option 1: Modify the cascade element to resolve clashes.
 
         Design Effort Activities:
         1. Modeling: Adjust element in BIM
@@ -181,15 +219,14 @@ class ResolutionAnalysisEngine:
         3. Documentation: Update coordination drawings
         4. Coordination: Present change in coordination meeting
 
-        POC Note: This is a simplified estimator. Full system would classify
-        element type and generate type-specific options (duct reroute vs beam adjust, etc).
-
         Args:
             group_id: Clash group ID
             element_class: IFC class of cascade element
             discipline: Discipline of cascade element
             total_clashes: Number of clashes in group
             affected_classes: Classes of affected elements
+            affected_disciplines: Disciplines affected
+            severity: Group severity level
 
         Returns:
             ResolutionOption or None if not applicable
@@ -340,6 +377,310 @@ class ResolutionAnalysisEngine:
             risk_category=risk_category,
             risk_factors=risk_factors,
             affected_disciplines=[discipline_for_rate],
+            clashes_resolved=total_clashes,
+            effort_estimates=effort_estimates
+        )
+
+    def _generate_modify_clashing_option(self, group_id: str, element_class: str,
+                                         discipline: str, total_clashes: int,
+                                         affected_classes: List[str],
+                                         affected_disciplines: List[str],
+                                         severity: str) -> Optional[ResolutionOption]:
+        """
+        Generate Option 2: Modify the clashing elements instead of cascade element.
+
+        Viable when cascade element is hard to move (structural/architectural)
+        but clashing elements are movable (MEP).
+
+        Args: Same as _generate_modify_cascade_option
+        Returns: ResolutionOption for modifying clashing elements
+        """
+        # Determine primary clashing element type
+        mep_classes = [cls for cls in affected_classes if any(k in cls for k in ['Duct', 'Pipe', 'Cable', 'Conduit'])]
+        if not mep_classes:
+            return None
+
+        primary_class = mep_classes[0]
+
+        # Get discipline rate for affected MEP discipline
+        mep_discipline = affected_disciplines[0] if affected_disciplines else 'MEP'
+
+        self.cursor.execute("""
+            SELECT hourly_rate FROM discipline_rates
+            WHERE discipline = ? AND skill_level = 'intermediate'
+            ORDER BY effective_date DESC LIMIT 1
+        """, (mep_discipline,))
+
+        rate_result = self.cursor.fetchone()
+        base_rate = rate_result[0] if rate_result else 140.0  # MEP typically higher rate
+
+        # Design effort - rerouting multiple clashing elements is harder
+        effort_estimates = []
+
+        # Modeling: Reroute each clashing element
+        modeling_hours = 5.0 * min(total_clashes, 3)  # Cap scaling at 3 elements
+        effort_estimates.append(DesignEffortEstimate(
+            discipline=mep_discipline,
+            activity_type='modeling',
+            estimated_hours=modeling_hours,
+            skill_level='intermediate',
+            hourly_rate=base_rate,
+            calendar_days=2.0,  # More complex
+            confidence='medium'
+        ))
+
+        # Verification
+        verification_hours = 1.5
+        effort_estimates.append(DesignEffortEstimate(
+            discipline=mep_discipline,
+            activity_type='verification',
+            estimated_hours=verification_hours,
+            skill_level='intermediate',
+            hourly_rate=base_rate,
+            calendar_days=0.5,
+            confidence='high'
+        ))
+
+        # Documentation
+        doc_hours = 3.0
+        effort_estimates.append(DesignEffortEstimate(
+            discipline=mep_discipline,
+            activity_type='documentation',
+            estimated_hours=doc_hours,
+            skill_level='junior',
+            hourly_rate=base_rate * 0.75,
+            calendar_days=1.0,
+            confidence='medium'
+        ))
+
+        # Coordination
+        coord_hours = 1.0  # More coordination needed
+        effort_estimates.append(DesignEffortEstimate(
+            discipline=mep_discipline,
+            activity_type='coordination',
+            estimated_hours=coord_hours,
+            skill_level='senior',
+            hourly_rate=base_rate * 1.2,
+            calendar_days=2.0,
+            confidence='high'
+        ))
+
+        total_hours = sum(e.estimated_hours for e in effort_estimates)
+        total_cost = sum(e.estimated_hours * e.hourly_rate for e in effort_estimates)
+        calendar_days = max(e.calendar_days for e in effort_estimates)
+        schedule_cost = calendar_days * self.PROJECT_DAILY_BURN_RATE
+
+        construction_cost = 800.0 * min(total_clashes, 3)  # Multiple reroutes
+        exceeds_budget = construction_cost > (self.COORDINATION_BUDGET_ALLOWANCE * 0.15)
+
+        # Risk
+        risk_factors = ['multiple_elements', 'mep_coordination']
+        risk_score = 30 + (total_clashes * 5)
+        risk_category = self._categorize_risk(risk_score)
+
+        option_id = str(uuid.uuid4())
+        description = (
+            f"Reroute {total_clashes} conflicting {primary_class.replace('Ifc', '')} elements "
+            f"around existing {element_class.replace('Ifc', '')}. "
+            f"Preserves {discipline} design intent."
+        )
+
+        return ResolutionOption(
+            option_id=option_id,
+            option_type='reroute_clashing_elements',
+            description=description,
+            rank=1,
+            total_design_hours=total_hours,
+            total_design_cost=total_cost,
+            calendar_days=calendar_days,
+            schedule_delay_cost=schedule_cost,
+            construction_cost=construction_cost,
+            exceeds_budget=exceeds_budget,
+            technically_feasible=True,
+            feasibility_notes=f'Alternative approach - modify {mep_discipline} instead of {discipline}',
+            risk_score=risk_score,
+            risk_category=risk_category,
+            risk_factors=risk_factors,
+            affected_disciplines=affected_disciplines,
+            clashes_resolved=total_clashes,
+            effort_estimates=effort_estimates
+        )
+
+    def _generate_coordination_option(self, group_id: str, element_class: str,
+                                       discipline: str, total_clashes: int,
+                                       affected_classes: List[str],
+                                       affected_disciplines: List[str],
+                                       severity: str) -> Optional[ResolutionOption]:
+        """
+        Generate Option 3: Coordination solution (penetrations, clearances).
+
+        Viable for openings, small clash counts, or clearance verification.
+
+        Args: Same as _generate_modify_cascade_option
+        Returns: ResolutionOption for coordination approach
+        """
+        # Determine coordination strategy
+        if 'Opening' in element_class:
+            strategy = 'Verify penetration coordination'
+            activity_desc = 'penetration_coordination'
+        else:
+            strategy = 'Document acceptable clearances'
+            activity_desc = 'clearance_verification'
+
+        # Lower effort than rerouting
+        coordination_rate = 125.0
+
+        effort_estimates = []
+
+        # Review and verification (primary activity)
+        review_hours = 2.0 + (total_clashes * 0.3)
+        effort_estimates.append(DesignEffortEstimate(
+            discipline='COORDINATION',
+            activity_type=activity_desc,
+            estimated_hours=review_hours,
+            skill_level='intermediate',
+            hourly_rate=coordination_rate,
+            calendar_days=1.0,
+            confidence='high'
+        ))
+
+        # Documentation
+        doc_hours = 1.5
+        effort_estimates.append(DesignEffortEstimate(
+            discipline='COORDINATION',
+            activity_type='documentation',
+            estimated_hours=doc_hours,
+            skill_level='intermediate',
+            hourly_rate=coordination_rate,
+            calendar_days=0.5,
+            confidence='high'
+        ))
+
+        total_hours = sum(e.estimated_hours for e in effort_estimates)
+        total_cost = sum(e.estimated_hours * e.hourly_rate for e in effort_estimates)
+        calendar_days = max(e.calendar_days for e in effort_estimates)
+        schedule_cost = calendar_days * self.PROJECT_DAILY_BURN_RATE
+
+        # Minimal construction cost (coordination only)
+        construction_cost = 100.0 * total_clashes  # Administrative/coordination cost
+        exceeds_budget = False
+
+        # Low risk
+        risk_factors = ['coordination_dependency']
+        risk_score = 10 + (total_clashes * 2)
+        risk_category = self._categorize_risk(risk_score)
+
+        option_id = str(uuid.uuid4())
+        affected_summary = ', '.join(affected_classes[:2]) if affected_classes else 'other elements'
+
+        description = (
+            f"{strategy} for {element_class.replace('Ifc', '')} with {total_clashes} clashes. "
+            f"Verify code compliance and document coordination with {affected_summary}."
+        )
+
+        return ResolutionOption(
+            option_id=option_id,
+            option_type='coordination_solution',
+            description=description,
+            rank=1,
+            total_design_hours=total_hours,
+            total_design_cost=total_cost,
+            calendar_days=calendar_days,
+            schedule_delay_cost=schedule_cost,
+            construction_cost=construction_cost,
+            exceeds_budget=exceeds_budget,
+            technically_feasible=True,
+            feasibility_notes='Lowest cost option - verify coordination is acceptable',
+            risk_score=risk_score,
+            risk_category=risk_category,
+            risk_factors=risk_factors,
+            affected_disciplines=affected_disciplines,
+            clashes_resolved=total_clashes,
+            effort_estimates=effort_estimates
+        )
+
+    def _generate_accept_option(self, group_id: str, element_class: str,
+                                 discipline: str, total_clashes: int,
+                                 affected_classes: List[str],
+                                 affected_disciplines: List[str],
+                                 severity: str) -> Optional[ResolutionOption]:
+        """
+        Generate Option 4: Accept clash with documented justification.
+
+        Viable for minimal severity, modeling tolerance, or verified clearances.
+
+        Args: Same as _generate_modify_cascade_option
+        Returns: ResolutionOption for accepting clash
+        """
+        # Minimal effort - just documentation
+        coordination_rate = 125.0
+
+        effort_estimates = []
+
+        # Review to justify acceptance
+        review_hours = 0.5 + (total_clashes * 0.2)
+        effort_estimates.append(DesignEffortEstimate(
+            discipline='COORDINATION',
+            activity_type='clash_review',
+            estimated_hours=review_hours,
+            skill_level='intermediate',
+            hourly_rate=coordination_rate,
+            calendar_days=0.5,
+            confidence='high'
+        ))
+
+        # Document justification
+        doc_hours = 1.0
+        effort_estimates.append(DesignEffortEstimate(
+            discipline='COORDINATION',
+            activity_type='documentation',
+            estimated_hours=doc_hours,
+            skill_level='intermediate',
+            hourly_rate=coordination_rate,
+            calendar_days=0.5,
+            confidence='high'
+        ))
+
+        total_hours = sum(e.estimated_hours for e in effort_estimates)
+        total_cost = sum(e.estimated_hours * e.hourly_rate for e in effort_estimates)
+        calendar_days = max(e.calendar_days for e in effort_estimates)
+        schedule_cost = calendar_days * self.PROJECT_DAILY_BURN_RATE
+
+        # Zero construction cost
+        construction_cost = 0.0
+        exceeds_budget = False
+
+        # Very low risk (if justified properly)
+        risk_factors = ['requires_justification', 'potential_field_issue']
+        risk_score = 15 if severity == 'LOW' else 25
+        risk_category = self._categorize_risk(risk_score)
+
+        option_id = str(uuid.uuid4())
+        affected_summary = ', '.join(affected_classes[:2]) if affected_classes else 'other elements'
+
+        description = (
+            f"Accept {total_clashes} clashes as within tolerance/clearance. "
+            f"Document justification for {element_class.replace('Ifc', '')} conflicts with {affected_summary}. "
+            f"Lowest cost option."
+        )
+
+        return ResolutionOption(
+            option_id=option_id,
+            option_type='accept_clash',
+            description=description,
+            rank=1,
+            total_design_hours=total_hours,
+            total_design_cost=total_cost,
+            calendar_days=calendar_days,
+            schedule_delay_cost=schedule_cost,
+            construction_cost=construction_cost,
+            exceeds_budget=exceeds_budget,
+            technically_feasible=True,
+            feasibility_notes='Minimal cost - requires justification and stakeholder approval',
+            risk_score=risk_score,
+            risk_category=risk_category,
+            risk_factors=risk_factors,
+            affected_disciplines=affected_disciplines,
             clashes_resolved=total_clashes,
             effort_estimates=effort_estimates
         )

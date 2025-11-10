@@ -714,36 +714,71 @@ class BIM_PT_clash_adjustment(Panel):
             layout.separator()
 
             # ================================================================
-            # STEP 2: PREVIEW & APPLY RESOLUTION
+            # STEP 2: SELECT GROUP & PREVIEW
             # ================================================================
             action_box = layout.box()
-            action_box.label(text="Step 2: Preview & Apply Resolution", icon="PLAY")
+            action_box.label(text="Step 2: Select Group & Preview", icon="PLAY")
 
-            # Dropdown selector for resolution options
+            # Group selector dropdown (replaces overwhelming options dropdown)
             row = action_box.row()
-            row.prop(props, "selected_resolution_dropdown", text="Select Option")
+            row.prop(props, "selected_clash_group", text="Clash Group")
 
-            # Show details if selected
-            if props.selected_resolution_option_id and props.selected_resolution_option_id != "NONE":
-                detail_col = action_box.column(align=True)
-                detail_col.scale_y = 0.7
-                detail_col.label(text=f"✓ Selected: {props.selected_resolution_option_id[:8]}...", icon="CHECKMARK")
-
-            # Action buttons
-            row = action_box.row(align=True)
+            # Preview button (now previews the entire group)
+            row = action_box.row()
             row.scale_y = 1.3
-            row.enabled = bool(props.selected_resolution_option_id)
-
-            # Preview button
-            row.operator("bim.preview_resolution", text="Preview 3D", icon="HIDE_OFF")
-
-            # Apply button
-            row.operator("bim.apply_resolution", text="Apply", icon="CHECKMARK")
+            row.enabled = bool(props.selected_clash_group and props.selected_clash_group != "NONE")
+            row.operator("bim.preview_clash_group", text="Preview Group in 3D", icon="HIDE_OFF")
 
             # Clear preview button
             row = action_box.row()
             row.scale_y = 1.0
             row.operator("bim.clear_preview", text="Clear Preview", icon="X")
+
+            # ================================================================
+            # RESOLUTION OPTIONS INFO PANEL (Read-Only)
+            # ================================================================
+            if props.selected_clash_group and props.selected_clash_group != "NONE":
+                layout.separator()
+
+                options_box = layout.box()
+                options_box.label(text="Resolution Options (Study Only)", icon="INFO")
+
+                # Get resolution options for selected group
+                from bonsai.bim.module.federation.prop import get_resolution_options_for_group
+                options = get_resolution_options_for_group(context)
+
+                if options:
+                    for opt in options:
+                        opt_col = options_box.column(align=True)
+                        opt_col.scale_y = 0.8
+
+                        # Option header
+                        header_row = opt_col.row()
+                        if opt['is_recommended']:
+                            header_row.label(text=f"✓ Option {opt['rank']} (Recommended):", icon="CHECKMARK")
+                        else:
+                            header_row.label(text=f"○ Option {opt['rank']}:", icon="DOT")
+
+                        # Description
+                        desc_text = opt['description'][:80] + "..." if len(opt['description']) > 80 else opt['description']
+                        opt_col.label(text=f"  {desc_text}")
+
+                        # Cost/effort details
+                        details_row = opt_col.row()
+                        details_row.label(text=f"  Design: {opt['hours']:.1f} hrs (${opt['cost']:,.0f})")
+                        details_row.label(text=f"Schedule: {opt['days']:.0f} days")
+                        details_row.label(text=f"Risk: {opt['risk']}")
+
+                        opt_col.separator()
+
+                    # Info note
+                    note_col = options_box.column(align=True)
+                    note_col.scale_y = 0.7
+                    note_col.label(text="💡 Options are for study/reports only", icon="INFO")
+                    note_col.label(text="   See generated report for full analysis")
+                else:
+                    options_box.label(text="No resolution options generated yet")
+                    options_box.label(text="Run 'Generate Resolution Options' first")
 
             # ================================================================
             # PHASE 2: FEEDBACK PANEL

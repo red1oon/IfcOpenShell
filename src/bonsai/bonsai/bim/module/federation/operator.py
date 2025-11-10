@@ -3249,7 +3249,7 @@ class BIM_OT_analyze_clash_groups(bpy.types.Operator):
             print(f"CLASH GROUPING ANALYSIS COMPLETE")
             print(f"{'='*60}")
             print(f"Total Groups Found: {summary['total_groups']}")
-            print(f"Clashes Grouped: {summary['total_grouped_clashes']}/{len(props.discipline_clash_candidates)} ({summary['grouping_efficiency']:.1f}%)")
+            print(f"Clashes Grouped: {summary['total_grouped_clashes']}/{summary['total_clashes']} ({summary['grouping_efficiency']:.1f}%)")
             print(f"\nGroup Details:")
             for i, group in enumerate(groups, 1):
                 print(f"  Group {i}: {group.cascade_element_guid} ({group.cascade_element_class})")
@@ -3803,6 +3803,155 @@ class BIM_OT_clear_preview(bpy.types.Operator):
         except Exception as e:
             logger.exception("Failed to clear preview")
             self.report({'ERROR'}, f"Clear preview failed: {str(e)}")
+            return {'CANCELLED'}
+
+
+class BIM_OT_preview_clash_group(bpy.types.Operator):
+    """Preview entire clash group in 3D viewport"""
+    bl_idname = "bim.preview_clash_group"
+    bl_label = "Preview Clash Group"
+    bl_description = "Load and visualize cascade element and all clashing elements in the selected group"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        import logging
+        from pathlib import Path
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            # Get properties
+            props = tool.Clash.get_clash_props()
+            fed_props = context.scene.BIMFederationProperties
+
+            # Get selected group
+            selected_group = props.selected_clash_group
+            if not selected_group or selected_group == "NONE":
+                self.report({'WARNING'}, "Please select a clash group first")
+                return {'CANCELLED'}
+
+            # Get database path
+            db_path = fed_props.federation_database_path
+            if not db_path:
+                self.report({'ERROR'}, "Federation database not loaded")
+                return {'CANCELLED'}
+
+            db_path = Path(bpy.path.abspath(db_path))
+            if not db_path.exists():
+                self.report({'ERROR'}, f"Database not found: {db_path}")
+                return {'CANCELLED'}
+
+            # Query clash group data
+            import sqlite3
+            conn = sqlite3.connect(str(db_path))
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            # Get group info
+            cursor.execute("""
+                SELECT cascade_element_guid, cascade_element_class,
+                       cascade_element_discipline, total_clashes
+                FROM clash_groups
+                WHERE group_id = ?
+            """, (selected_group,))
+
+            group = cursor.fetchone()
+            if not group:
+                conn.close()
+                self.report({'ERROR'}, f"Group {selected_group} not found")
+                return {'CANCELLED'}
+
+            # Get all clashes in group
+            cursor.execute("""
+                SELECT cs.guid_a, cs.guid_b
+                FROM clash_group_members cgm
+                JOIN clash_status cs ON cgm.clash_id = cs.clash_id
+                WHERE cgm.group_id = ?
+            """, (selected_group,))
+
+            clash_rows = cursor.fetchall()
+            conn.close()
+
+            if not clash_rows:
+                self.report({'WARNING'}, f"No clashes found in group")
+                return {'CANCELLED'}
+
+            # Collect all unique GUIDs
+            all_guids = set()
+            all_guids.add(group['cascade_element_guid'])
+            for row in clash_rows:
+                all_guids.add(row['guid_a'])
+                all_guids.add(row['guid_b'])
+
+            logger.info(f"Loading group {selected_group}: {len(all_guids)} unique elements")
+
+            # Create or get collection
+            collection_name = f"Clash_Group_{selected_group}"
+            if collection_name in bpy.data.collections:
+                collection = bpy.data.collections[collection_name]
+                # Clear existing objects
+                for obj in collection.objects:
+                    bpy.data.objects.remove(obj, do_unlink=True)
+            else:
+                collection = bpy.data.collections.new(collection_name)
+                context.scene.collection.children.link(collection)
+
+            # Load elements using visualization helper
+            from .visualization.federation_viz_helper import find_or_create_element_from_database
+
+            loaded_count = 0
+            for guid in all_guids:
+                obj = find_or_create_element_from_database(
+                    guid=guid,
+                    db_path=str(db_path),
+                    collection=collection
+                )
+
+                if obj:
+                    # Apply red material to all elements
+                    if not obj.data.materials:
+                        mat = bpy.data.materials.new(name="Clash_Red")
+                        mat.diffuse_color = (1.0, 0.0, 0.0, 1.0)  # Red
+                        mat.use_nodes = False
+                        obj.data.materials.append(mat)
+                    else:
+                        # Modify existing material to red
+                        obj.data.materials[0].diffuse_color = (1.0, 0.0, 0.0, 1.0)
+
+                    loaded_count += 1
+
+            if loaded_count == 0:
+                self.report({'WARNING'}, "No elements could be loaded")
+                return {'CANCELLED'}
+
+            # Focus camera on group
+            # Select all objects in collection
+            bpy.ops.object.select_all(action='DESELECT')
+            for obj in collection.objects:
+                obj.select_set(True)
+
+            # Frame selected objects in viewport (if in 3D view)
+            if collection.objects:
+                context.view_layer.objects.active = collection.objects[0]
+
+                # Try to frame view if in 3D viewport
+                for area in context.screen.areas:
+                    if area.type == 'VIEW_3D':
+                        for region in area.regions:
+                            if region.type == 'WINDOW':
+                                with context.temp_override(area=area, region=region):
+                                    bpy.ops.view3d.view_selected()
+                                break
+                        break
+
+            self.report({'INFO'}, f"Loaded {loaded_count} elements from group {selected_group}")
+            return {'FINISHED'}
+
+        except Exception as e:
+            logger.exception("Failed to preview clash group")
+            self.report({'ERROR'}, f"Preview failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return {'CANCELLED'}
 
 

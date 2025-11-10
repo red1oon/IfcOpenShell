@@ -159,7 +159,8 @@ class SnapshotManager:
                 viewpoint_data=viewpoint_data,
                 width=width,
                 height=height,
-                target_size_kb=300
+                target_size_kb=300,
+                group_id=group_id  # Pass group_id for unique temp filenames
             )
 
             if snapshot_bytes:

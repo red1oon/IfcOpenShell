@@ -19,6 +19,8 @@ from collections import defaultdict
 def detect_clashes_from_database(db_path: str,
                                   tolerance_mm: float = 10.0,
                                   disciplines: Optional[List[str]] = None,
+                                  discipline_a: Optional[str] = None,
+                                  discipline_b: Optional[str] = None,
                                   progress_callback: Optional[callable] = None) -> List[Dict]:
     """
     Detect clashes using pure bbox collision (NO IFC required).
@@ -26,7 +28,9 @@ def detect_clashes_from_database(db_path: str,
     Args:
         db_path: Path to federation database
         tolerance_mm: Clash tolerance in millimeters (default 10mm)
-        disciplines: Disciplines to check (None = all)
+        disciplines: Disciplines to check (None = all) - used for backward compatibility
+        discipline_a: Primary discipline (optimized mode for cross-discipline detection)
+        discipline_b: Secondary discipline (optimized mode for cross-discipline detection)
         progress_callback: Optional callback(current, total, message)
 
     Returns:
@@ -54,34 +58,82 @@ def detect_clashes_from_database(db_path: str,
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # Build discipline filter
-    if disciplines:
+    # OPTIMIZED MODE: If discipline_a and discipline_b are specified separately
+    # This is the fast path for cross-discipline detection (e.g., ELEC vs ARC)
+    if discipline_a and discipline_b:
+        # Load only elements from discipline_a (the smaller set to iterate)
+        cursor.execute("""
+            SELECT
+                m.id,
+                m.guid,
+                m.discipline,
+                m.ifc_class,
+                r.minX, r.maxX,
+                r.minY, r.maxY,
+                r.minZ, r.maxZ
+            FROM elements_meta m
+            JOIN elements_rtree r ON m.id = r.id
+            WHERE m.discipline = ?
+        """, (discipline_a,))
+
+        elements = cursor.fetchall()
+
+        # Create set of discipline_b element IDs for fast filtering
+        cursor.execute("SELECT id FROM elements_meta WHERE discipline = ?", (discipline_b,))
+        valid_ids = {row[0] for row in cursor.fetchall()}
+
+        print(f"Clash detection: {discipline_a} vs {discipline_b}")
+        print(f"  - {discipline_a} elements: {len(elements):,}")
+        print(f"  - {discipline_b} elements: {len(valid_ids):,}")
+        print(f"  - Tolerance: {tolerance_mm}mm")
+
+    # LEGACY MODE: Use disciplines list (backward compatibility)
+    elif disciplines:
         discipline_filter = f"WHERE m.discipline IN ({','.join('?' * len(disciplines))})"
         params = disciplines
+
+        cursor.execute(f"""
+            SELECT
+                m.id,
+                m.guid,
+                m.discipline,
+                m.ifc_class,
+                r.minX, r.maxX,
+                r.minY, r.maxY,
+                r.minZ, r.maxZ
+            FROM elements_meta m
+            JOIN elements_rtree r ON m.id = r.id
+            {discipline_filter}
+        """, params)
+
+        elements = cursor.fetchall()
+        valid_ids = {elem[0] for elem in elements}  # Set of IDs for O(1) lookup
+
+        print(f"Clash detection: Checking {len(elements):,} elements...")
+        print(f"  Tolerance: {tolerance_mm}mm")
+
+    # ALL DISCIPLINES MODE
     else:
-        discipline_filter = ""
-        params = []
+        cursor.execute("""
+            SELECT
+                m.id,
+                m.guid,
+                m.discipline,
+                m.ifc_class,
+                r.minX, r.maxX,
+                r.minY, r.maxY,
+                r.minZ, r.maxZ
+            FROM elements_meta m
+            JOIN elements_rtree r ON m.id = r.id
+        """)
 
-    # Query all elements with bbox data
-    cursor.execute(f"""
-        SELECT
-            m.id,
-            m.guid,
-            m.discipline,
-            m.ifc_class,
-            r.minX, r.maxX,
-            r.minY, r.maxY,
-            r.minZ, r.maxZ
-        FROM elements_meta m
-        JOIN elements_rtree r ON m.id = r.id
-        {discipline_filter}
-    """, params)
+        elements = cursor.fetchall()
+        valid_ids = None
 
-    elements = cursor.fetchall()
+        print(f"Clash detection: Checking {len(elements):,} elements (all disciplines)...")
+        print(f"  Tolerance: {tolerance_mm}mm")
+
     total = len(elements)
-
-    print(f"Clash detection: Checking {total:,} elements...")
-    print(f"  Tolerance: {tolerance_mm * 1000:.1f}mm")
 
     clashes = []
     checks_performed = 0
@@ -102,7 +154,8 @@ def detect_clashes_from_database(db_path: str,
             elem_a_bbox[5] + tol_m,  # max_z
         )
 
-        # Query R-tree for candidates
+        # Query R-tree for candidates (spatial filtering only, no discipline filter here)
+        # Discipline filtering done via fast in-memory set lookup instead
         cursor.execute("""
             SELECT
                 m.id,
@@ -120,7 +173,13 @@ def detect_clashes_from_database(db_path: str,
               AND m.id > ?
         """, (*query_bbox, elem_a_id))
 
-        candidates = cursor.fetchall()
+        # Filter candidates by discipline using fast in-memory set lookup
+        all_candidates = cursor.fetchall()
+        if valid_ids is not None:
+            # Only keep candidates that are in our filtered discipline set
+            candidates = [c for c in all_candidates if c[0] in valid_ids]
+        else:
+            candidates = all_candidates
         checks_performed += len(candidates)
 
         # Check bbox collision with tolerance
