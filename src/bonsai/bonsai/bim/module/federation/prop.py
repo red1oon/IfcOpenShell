@@ -497,10 +497,10 @@ def register_federation_properties():
 
     BIMClashProperties.discipline_tolerance = FloatProperty(
         name="Tolerance",
-        description="Clash tolerance in model units",
+        description="Clash tolerance in meters (0.01m = 10mm)",
         default=0.01,
-        min=0.0,
-        soft_max=1.0,
+        min=0.001,
+        max=1.0,
         precision=3,
         subtype='DISTANCE'
     )

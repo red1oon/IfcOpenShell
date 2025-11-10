@@ -2160,68 +2160,162 @@ class BIM_OT_clash_by_discipline(bpy.types.Operator):
 
         logger.info(f"Using federation database: {db_path}")
 
-        # Handle multi-discipline expansion for ALL_MEP preset
-        disciplines_a = [props.discipline_a]
-        disciplines_b = [props.discipline_b]
+        # LOG: Show raw property values for debugging (use print to ensure it shows in console)
+        print(f"\n{'='*70}")
+        print(f"[CLASH DETECTION] Raw UI Property Values:")
+        print(f"  discipline_a = '{props.discipline_a}'")
+        print(f"  discipline_b = '{props.discipline_b}'")
+        print(f"  tolerance = {props.discipline_tolerance}")
+        print(f"  preset = '{props.clash_preset}'")
+        print(f"{'='*70}\n")
+        logger.info(f"[DEBUG] Raw UI values: discipline_a={props.discipline_a}, discipline_b={props.discipline_b}, tolerance={props.discipline_tolerance}")
 
-        if props.clash_preset == 'ALL_MEP':
+        # Handle presets - convert preset to discipline pairs
+        preset = props.clash_preset
+
+        # Preset mapping
+        preset_map = {
+            'ARC_STR': ('ARC', 'STR'),
+            'ELEC_ARC': ('ELEC', 'ARC'),
+            'ACMV_ARC': ('ACMV', 'ARC'),
+            'FP_ARC': ('FP', 'ARC'),
+            'SP_ARC': ('SP', 'ARC'),
+        }
+
+        if preset in preset_map:
+            # Apply preset discipline mapping
+            disc_a, disc_b = preset_map[preset]
+            disciplines_a = [disc_a]
+            disciplines_b = [disc_b]
+            print(f"[PRESET] Applied '{preset}' → {disc_a} vs {disc_b}")
+        elif preset == 'ALL_MEP':
             # Expand ALL_MEP to all MEP disciplines
             disciplines_a = ['ACMV', 'ELEC', 'FP']
             disciplines_b = ['ACMV', 'ELEC', 'FP']
-            logger.info(f"Applied preset: ALL_MEP - Expanding to all combinations")
-            logger.info(f"  MEP disciplines: {', '.join(disciplines_a)}")
+            print(f"[PRESET] Applied 'ALL_MEP' → All MEP combinations")
+        else:
+            # CUSTOM: Use manual discipline selection
+            disciplines_a = [props.discipline_a]
+            disciplines_b = [props.discipline_b]
+            print(f"[CUSTOM] Using manual selection → {props.discipline_a} vs {props.discipline_b}")
 
         tolerance = props.discipline_tolerance
+
+        # Convert tolerance from meters to millimeters for detector
+        tolerance_mm = tolerance * 1000.0
+        print(f"[TOLERANCE] {tolerance}m = {tolerance_mm}mm")
 
         logger.info("\n" + "="*70)
         logger.info("DISCIPLINE CLASH DETECTION - OPTIMIZED FEDERATION DATABASE")
         logger.info("="*70)
         logger.info(f"Discipline A: {', '.join(disciplines_a)}")
         logger.info(f"Discipline B: {', '.join(disciplines_b)}")
-        logger.info(f"Tolerance: {tolerance}m")
+        logger.info(f"Tolerance: {tolerance}m ({tolerance_mm}mm)")
         logger.info(f"Database: {db_path}")
         logger.info("-"*70)
 
         candidates = []
 
         try:
-            # Import clash detector
-            from .clash.detector import detect_clashes_from_database
+            # Check if clash cache exists in clash_status table
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
 
-            logger.info("Starting database clash detection...")
-            logger.info(f"  Database: {db_path}")
-            logger.info(f"  Tolerance: {tolerance}mm")
-            logger.info(f"  Disciplines A: {disciplines_a}")
-            logger.info(f"  Disciplines B: {disciplines_b}")
+            # Check if there's a specific discipline pair in cache first
+            # This allows partial cache usage
+            cursor.execute("SELECT COUNT(*) FROM clash_status")
+            cached_clash_count = cursor.fetchone()[0]
+
+            logger.info("=" * 70)
+            if cached_clash_count > 0:
+                logger.info(f"CLASH CACHE: {cached_clash_count} clashes found")
+                logger.info("Will use cache if discipline pair exists, otherwise run detection")
+            else:
+                logger.info("NO CACHE FOUND - Will run full clash detection")
+            logger.info("=" * 70)
 
             # Run clash detection for all discipline combinations
             for disc_a in disciplines_a:
                 for disc_b in disciplines_b:
                     # Skip self-clashes (same discipline vs itself)
                     if disc_a == disc_b:
+                        logger.info(f"[SKIP] {disc_a} vs {disc_b} - Same discipline, skipping self-clash")
                         continue
 
-                    logger.info(f"\nDetecting clashes: {disc_a} vs {disc_b}...")
+                    logger.info(f"\n{'='*60}")
+                    logger.info(f"[PROCESSING] Discipline Pair: {disc_a} vs {disc_b}")
+                    logger.info(f"{'='*60}")
                     start_time = __import__('time').time()
 
-                    # Query database for clash candidates using detector
-                    # Filter to only these two disciplines
-                    disc_filter = [disc_a, disc_b]
-                    all_clashes = detect_clashes_from_database(
-                        db_path,
-                        tolerance_mm=tolerance,
-                        disciplines=disc_filter
-                    )
+                    # Check if this specific discipline pair exists in cache
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM clash_status
+                        WHERE (discipline_a = ? AND discipline_b = ?)
+                           OR (discipline_a = ? AND discipline_b = ?)
+                    """, (disc_a, disc_b, disc_b, disc_a))
 
-                    # Filter to only clashes between disc_a and disc_b
-                    clashes = [
-                        c for c in all_clashes
-                        if (c['elem_a_discipline'] == disc_a and c['elem_b_discipline'] == disc_b) or
-                           (c['elem_a_discipline'] == disc_b and c['elem_b_discipline'] == disc_a)
-                    ]
+                    pair_cache_count = cursor.fetchone()[0]
+                    pair_in_cache = pair_cache_count > 0
+
+                    if pair_in_cache:
+                        # FAST PATH: This pair is in cache
+                        logger.info(f"[CACHE HIT] Found {pair_cache_count} clashes for {disc_a}-{disc_b} in cache")
+                        cursor.execute("""
+                            SELECT
+                                guid_a, guid_b, name_a, name_b,
+                                ifc_class_a, ifc_class_b,
+                                discipline_a, discipline_b, distance
+                            FROM clash_status
+                            WHERE (discipline_a = ? AND discipline_b = ?)
+                               OR (discipline_a = ? AND discipline_b = ?)
+                        """, (disc_a, disc_b, disc_b, disc_a))
+
+                        clashes = []
+                        for row in cursor.fetchall():
+                            clashes.append({
+                                'elem_a_guid': row[0],
+                                'elem_b_guid': row[1],
+                                'elem_a_ifc_class': row[4],
+                                'elem_b_ifc_class': row[5],
+                                'elem_a_discipline': row[6],
+                                'elem_b_discipline': row[7],
+                                'clearance': row[8] or 0
+                            })
+                        logger.info(f"[CACHE] Loaded {len(clashes)} clashes from cache")
+                    else:
+                        # SLOW PATH: Not in cache, run detection
+                        logger.info(f"[CACHE MISS] {disc_a}-{disc_b} not in cache, will run detection")
+                        logger.info(f"[DETECTION] Running bbox clash detection for {disc_a} vs {disc_b}...")
+                        from .clash.detector import detect_clashes_from_database
+
+                        all_clashes = detect_clashes_from_database(
+                            db_path,
+                            tolerance_mm=tolerance_mm,
+                            discipline_a=disc_a,
+                            discipline_b=disc_b
+                        )
+                        clashes = all_clashes
+
+                        # Store in cache for future use
+                        logger.info(f"[CACHING] Storing {len(clashes)} clashes in cache for {disc_a}-{disc_b}")
+                        for clash in clashes:
+                            cursor.execute("""
+                                INSERT OR IGNORE INTO clash_status
+                                (guid_a, guid_b, name_a, name_b, ifc_class_a, ifc_class_b,
+                                 discipline_a, discipline_b, distance)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                clash['elem_a_guid'], clash['elem_b_guid'],
+                                clash['elem_a_guid'][:8], clash['elem_b_guid'][:8],
+                                clash['elem_a_ifc_class'], clash['elem_b_ifc_class'],
+                                clash['elem_a_discipline'], clash['elem_b_discipline'],
+                                abs(clash.get('clearance', 0))
+                            ))
+                        conn.commit()
 
                     query_time = __import__('time').time() - start_time
-                    logger.info(f"  Found {len(clashes)} clashes in {query_time:.2f}s")
+                    logger.info(f"[RESULT] {disc_a} vs {disc_b}: {len(clashes)} clashes found in {query_time:.2f}s")
+                    logger.info(f"{'='*60}\n")
 
                     # Format candidates for UI
                     for clash in clashes:
@@ -2242,6 +2336,9 @@ class BIM_OT_clash_by_discipline(bpy.types.Operator):
             logger.info("\n" + "="*70)
             logger.info(f"TOTAL CLASH CANDIDATES: {len(candidates)}")
             logger.info("="*70 + "\n")
+
+            # Close database connection
+            conn.close()
 
         except Exception as e:
             error_msg = f"Clash detection failed: {str(e)}"
@@ -2266,6 +2363,82 @@ class BIM_OT_clash_by_discipline(bpy.types.Operator):
 
         self.report({'INFO'}, f"Found {len(candidates)} clash candidates")
         return {'FINISHED'}
+
+
+class BIM_OT_rebuild_clash_cache(bpy.types.Operator):
+    """Rebuild clash cache by detecting all clashes across all disciplines"""
+    bl_idname = "bim.rebuild_clash_cache"
+    bl_label = "Rebuild Clash Cache"
+    bl_description = "Run full clash detection and rebuild cache (clears existing cache)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        import sqlite3
+        import logging
+
+        logger = logging.getLogger(__name__)
+        fed_props = context.scene.BIMFederationProperties
+
+        # Get database path
+        db_path = fed_props.federation_database_path
+        if not db_path:
+            self.report({'ERROR'}, "Please load Federation Database first")
+            return {'CANCELLED'}
+
+        db_path = Path(bpy.path.abspath(db_path))
+        if not db_path.exists():
+            self.report({'ERROR'}, f"Database not found: {db_path}")
+            return {'CANCELLED'}
+
+        try:
+            # Clear existing cache
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM clash_status")
+            conn.commit()
+
+            logger.info("=" * 70)
+            logger.info("REBUILDING CLASH CACHE - FULL DETECTION")
+            logger.info("=" * 70)
+
+            # Run full clash detection (all disciplines)
+            from .clash.detector import detect_clashes_from_database
+
+            start_time = __import__('time').time()
+            all_clashes = detect_clashes_from_database(
+                db_path,
+                tolerance_mm=10.0,  # Default tolerance
+                disciplines=None  # All disciplines
+            )
+
+            # Store in cache
+            for clash in all_clashes:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO clash_status
+                    (guid_a, guid_b, name_a, name_b, ifc_class_a, ifc_class_b,
+                     discipline_a, discipline_b, distance)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    clash['elem_a_guid'], clash['elem_b_guid'],
+                    clash['elem_a_guid'][:8], clash['elem_b_guid'][:8],
+                    clash['elem_a_ifc_class'], clash['elem_b_ifc_class'],
+                    clash['elem_a_discipline'], clash['elem_b_discipline'],
+                    abs(clash.get('clearance', 0))
+                ))
+
+            conn.commit()
+            conn.close()
+
+            elapsed = __import__('time').time() - start_time
+
+            logger.info(f"✓ Cache rebuilt: {len(all_clashes)} clashes stored in {elapsed:.2f}s")
+            self.report({'INFO'}, f"Cache rebuilt: {len(all_clashes)} clashes in {elapsed:.2f}s")
+            return {'FINISHED'}
+
+        except Exception as e:
+            logger.exception(f"Cache rebuild failed: {str(e)}")
+            self.report({'ERROR'}, f"Cache rebuild failed: {str(e)}")
+            return {'CANCELLED'}
 
 
 class BIM_OT_select_discipline_clash(bpy.types.Operator):
