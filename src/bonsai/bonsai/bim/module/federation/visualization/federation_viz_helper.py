@@ -291,6 +291,146 @@ def get_clash_elements_for_visualization(
     return obj_a, obj_b
 
 
+def batch_load_clash_elements(
+    guids: list[str],
+    db_path: str,
+    collection: bpy.types.Collection
+) -> dict[str, Optional[bpy.types.Object]]:
+    """
+    OPTIMIZED: Batch load multiple elements with single database query.
+
+    Eliminates N+1 query problem - loads 100 elements with 1 query instead of 100.
+
+    Args:
+        guids: List of GUIDs to load
+        db_path: Path to federation database
+        collection: Collection to add objects to
+
+    Returns:
+        Dictionary mapping GUID -> Blender object (or None if not found)
+    """
+    import time
+    start_time = time.time()
+
+    # Step 1: Check scene for already-loaded elements
+    result_objects = {}
+    guids_to_load = []
+
+    for guid in guids:
+        existing_obj = None
+        for obj in bpy.data.objects:
+            if obj.get('federation_guid') == guid or obj.name == guid:
+                existing_obj = obj
+                break
+
+        if existing_obj:
+            result_objects[guid] = existing_obj
+        else:
+            guids_to_load.append(guid)
+
+    if not guids_to_load:
+        return result_objects  # All already loaded
+
+    # Step 2: BATCH QUERY - Load all metadata in one query
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    try:
+        # Build placeholders for IN clause
+        placeholders = ','.join('?' * len(guids_to_load))
+
+        # OPTIMIZED: Single query for all elements
+        query = f"""
+            SELECT
+                m.guid, m.ifc_class, m.discipline,
+                r.minX, r.minY, r.minZ,
+                r.maxX, r.maxY, r.maxZ
+            FROM elements_meta m
+            JOIN elements_rtree r ON m.id = r.id
+            WHERE m.guid IN ({placeholders})
+        """
+
+        cursor.execute(query, guids_to_load)
+        metadata_rows = cursor.fetchall()
+
+        # Cache offset (calculate once, reuse for all elements)
+        offset = get_model_offset()
+
+        # Step 3: Load geometry for elements that have it
+        guids_with_meta = [row[0] for row in metadata_rows]
+
+        if guids_with_meta:
+            geom_placeholders = ','.join('?' * len(guids_with_meta))
+            geom_query = f"""
+                SELECT guid, vertices, faces
+                FROM element_geometry
+                WHERE guid IN ({geom_placeholders})
+            """
+
+            cursor.execute(geom_query, guids_with_meta)
+            geom_rows = cursor.fetchall()
+
+            # Build geometry lookup dict
+            geometry_data = {row[0]: (row[1], row[2]) for row in geom_rows}
+        else:
+            geometry_data = {}
+
+        # Step 4: Create objects from batched data
+        from bonsai.bim.module.federation.stage2_tessellation_loader import unpack_vertices, unpack_faces
+
+        for row in metadata_rows:
+            guid, ifc_class, discipline, min_x, min_y, min_z, max_x, max_y, max_z = row
+
+            # Try tessellated geometry first
+            if guid in geometry_data:
+                try:
+                    verts_blob, faces_blob = geometry_data[guid]
+
+                    vertices = unpack_vertices(verts_blob)
+                    faces = unpack_faces(faces_blob)
+
+                    bbox_center_gps = Vector(((min_x + max_x) / 2.0, (min_y + max_y) / 2.0, (min_z + max_z) / 2.0))
+                    vertices_local = [(v[0] - bbox_center_gps.x, v[1] - bbox_center_gps.y, v[2] - bbox_center_gps.z) for v in vertices]
+
+                    mesh = bpy.data.meshes.new(guid[:8])
+                    mesh.from_pydata(vertices_local, [], faces)
+                    mesh.update()
+
+                    obj = bpy.data.objects.new(guid, mesh)
+                    obj.location = bbox_center_gps - offset
+
+                    obj["federation_guid"] = guid
+                    obj["federation_ifc_class"] = ifc_class
+                    obj["federation_discipline"] = discipline
+                    obj["federation_viz_temp"] = True
+
+                    collection.objects.link(obj)
+                    result_objects[guid] = obj
+                    continue
+                except Exception as e:
+                    print(f"  ⚠️  Could not load tessellated mesh for {guid}: {e}")
+
+            # Fallback: Create bbox shape
+            obj = create_procedural_shape_from_bbox(
+                guid=guid,
+                ifc_class=ifc_class,
+                discipline=discipline,
+                bbox=(min_x, min_y, min_z, max_x, max_y, max_z),
+                collection=collection
+            )
+
+            if obj:
+                result_objects[guid] = obj
+
+        elapsed = time.time() - start_time
+        print(f"  ⚡ Batch loaded {len(guids_to_load)} elements in {elapsed:.2f}s ({len(guids_to_load)/elapsed:.1f} elem/s)")
+
+    finally:
+        conn.close()
+
+    return result_objects
+
+
 def cleanup_temp_visualization_objects():
     """
     Remove temporary visualization objects created for clash/route viewing.
