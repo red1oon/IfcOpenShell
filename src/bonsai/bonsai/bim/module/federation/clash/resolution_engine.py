@@ -704,6 +704,19 @@ class ResolutionAnalysisEngine:
             group_id: Clash group ID
             options: List of resolution options
         """
+        # Delete existing options for this group to prevent duplicates
+        # This handles re-generation scenarios where options are updated
+        self.cursor.execute("""
+            DELETE FROM design_effort_estimates
+            WHERE option_id IN (
+                SELECT option_id FROM resolution_options WHERE group_id = ?
+            )
+        """, (group_id,))
+
+        self.cursor.execute("""
+            DELETE FROM resolution_options WHERE group_id = ?
+        """, (group_id,))
+
         now = datetime.now().isoformat()
 
         for option in options:
