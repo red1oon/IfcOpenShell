@@ -79,13 +79,13 @@ class RebarGenerator:
     def get_element_dimensions(self, guid: str) -> Optional[BoundingBox]:
         """
         Get element bounding box from database
-        Uses base_geometries table for bbox data
+        Uses elements_rtree for spatial bounding box data
         """
         cursor = self.conn.execute("""
-            SELECT bbox_min_x, bbox_min_y, bbox_min_z,
-                   bbox_max_x, bbox_max_y, bbox_max_z
-            FROM base_geometries
-            WHERE guid = ?
+            SELECT r.minX, r.maxX, r.minY, r.maxY, r.minZ, r.maxZ
+            FROM elements_rtree r
+            JOIN elements_meta e ON r.id = e.id
+            WHERE e.guid = ?
         """, (guid,))
 
         row = cursor.fetchone()
@@ -93,12 +93,12 @@ class RebarGenerator:
             return None
 
         return BoundingBox(
-            min_x=row['bbox_min_x'],
-            min_y=row['bbox_min_y'],
-            min_z=row['bbox_min_z'],
-            max_x=row['bbox_max_x'],
-            max_y=row['bbox_max_y'],
-            max_z=row['bbox_max_z']
+            min_x=row[0],  # minX
+            min_y=row[2],  # minY
+            min_z=row[4],  # minZ
+            max_x=row[1],  # maxX
+            max_y=row[3],  # maxY
+            max_z=row[5]   # maxZ
         )
 
     def get_element_volume(self, guid: str) -> Optional[float]:
