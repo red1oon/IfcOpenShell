@@ -4749,8 +4749,12 @@ class BIM_OT_generate_rebar_structural(bpy.types.Operator):
             # Sum up rebar from all element types
             for element_list in [results['slabs'], results['beams'], results['columns']]:
                 for rebar_data in element_list:
-                    if 'rebar_count' in rebar_data:
-                        total_bars += rebar_data['rebar_count']
+                    # Count bars from all bar groups (main_bars, distribution_bars, etc.)
+                    for key, value in rebar_data.items():
+                        if isinstance(value, dict) and 'count' in value:
+                            total_bars += value['count']
+
+                    # Sum total weight
                     if 'total_weight_kg' in rebar_data:
                         total_weight += rebar_data['total_weight_kg']
 
@@ -4819,24 +4823,12 @@ class BIM_OT_export_structural_boq(bpy.types.Operator):
             os.makedirs(output_dir, exist_ok=True)
             output_path = os.path.join(output_dir, f"BOQ_Structural_{timestamp}.xlsx")
 
-            # Create exporter and generate
+            # Create exporter and generate complete BOQ
             exporter = ConcreteRebarBOQ(db_path, output_path)
             project_name = structural_props.project_name or "Terminal 1 Expansion Project"
 
-            # Generate BOQ
-            exporter.create_cover_sheet(project_name)
-            exporter.create_executive_summary(db_path, project_name)
-            exporter.create_concrete_summary(db_path)
-
-            if has_rebar:
-                exporter.create_rebar_summary(db_path)
-                exporter.create_detailed_schedules(db_path)
-
-            exporter.create_cost_breakdown(db_path)
-            exporter.create_logistics_schedule(db_path)
-
-            # Save workbook
-            exporter.wb.save(output_path)
+            # Generate complete BOQ (orchestrates all sheets)
+            exporter.generate_boq(project_name)
 
             self.report({'INFO'}, f"✅ Structural BOQ generated: {os.path.basename(output_path)}")
 
