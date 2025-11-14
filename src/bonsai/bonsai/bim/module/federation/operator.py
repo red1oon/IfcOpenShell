@@ -4741,12 +4741,24 @@ class BIM_OT_generate_rebar_structural(bpy.types.Operator):
 
             generator.disconnect()
 
-            # Report results
-            total_bars = sum(r['rebar_count'] for r in results.values())
-            total_weight = sum(r['total_weight_kg'] for r in results.values())
+            # Report results - results is {'slabs': [...], 'beams': [...], 'columns': [...], 'errors': [...]}
+            total_elements = len(results['slabs']) + len(results['beams']) + len(results['columns'])
+            total_bars = 0
+            total_weight = 0
+
+            # Sum up rebar from all element types
+            for element_list in [results['slabs'], results['beams'], results['columns']]:
+                for rebar_data in element_list:
+                    if 'rebar_count' in rebar_data:
+                        total_bars += rebar_data['rebar_count']
+                    if 'total_weight_kg' in rebar_data:
+                        total_weight += rebar_data['total_weight_kg']
+
+            # Convert kg to tonnes
+            total_weight_tonnes = total_weight / 1000.0
 
             self.report({'INFO'},
-                f"✅ Rebar generated: {len(results)} elements, {total_bars} bars, {total_weight:.1f} tonnes")
+                f"✅ Rebar generated: {total_elements} elements, {total_bars} bars, {total_weight_tonnes:.1f} tonnes")
 
             # Update UI property to indicate rebar is ready
             structural_props.rebar_generated = True
