@@ -14,8 +14,10 @@ Enables:
 
 import sqlite3
 import logging
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Tuple
 import math
+import hashlib
+import struct
 
 logger = logging.getLogger(__name__)
 
@@ -150,20 +152,33 @@ def _create_mapping_table(conn):
 
 def _clear_existing_reb_elements(conn):
     """Remove existing REB discipline elements to allow regeneration"""
-    # Get IDs of REB elements
-    reb_ids = [row[0] for row in conn.execute(
-        "SELECT id FROM elements_meta WHERE discipline = 'REB'"
+    # Get IDs and GUIDs of REB elements
+    reb_data = [(row[0], row[1]) for row in conn.execute(
+        "SELECT id, guid FROM elements_meta WHERE discipline = 'REB'"
     )]
 
-    if reb_ids:
-        placeholders = ','.join('?' * len(reb_ids))
+    if reb_data:
+        reb_ids = [r[0] for r in reb_data]
+        reb_guids = [r[1] for r in reb_data]
+
         # Delete from rtree
+        placeholders = ','.join('?' * len(reb_ids))
         conn.execute(f"DELETE FROM elements_rtree WHERE id IN ({placeholders})", reb_ids)
+
+        # Delete from element_instances (base table, not the view)
+        guid_placeholders = ','.join('?' * len(reb_guids))
+        conn.execute(f"DELETE FROM element_instances WHERE guid IN ({guid_placeholders})", reb_guids)
+
+        # Note: We don't delete from base_geometries as it's shared (deduplication)
+        # Orphaned geometry hashes will be cleaned up by database maintenance if needed
+
         # Delete from meta
         conn.execute("DELETE FROM elements_meta WHERE discipline = 'REB'")
+
         # Clear mapping
         conn.execute("DELETE FROM rebar_discipline_map")
-        logger.info(f"Cleared {len(reb_ids)} existing REB elements")
+
+        logger.info(f"Cleared {len(reb_ids)} existing REB elements (including geometry)")
 
 
 def _create_reb_element(conn, parent_element: Dict, bar_type: str, bar_spec: Dict) -> bool:
@@ -244,6 +259,25 @@ def _create_reb_element(conn, parent_element: Dict, bar_type: str, bar_spec: Dic
                         id, minX, maxX, minY, maxY, minZ, maxZ
                     ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (reb_id, minX, maxX, minY, maxY, minZ, maxZ))
+
+                # Generate box geometry for Full Load visualization
+                vertices_blob, faces_blob, geometry_hash = _generate_box_geometry(
+                    minX, maxX, minY, maxY, minZ, maxZ
+                )
+
+                # Insert into base_geometries (if not already exists - deduplication)
+                conn.execute("""
+                    INSERT OR IGNORE INTO base_geometries (
+                        geometry_hash, vertices, faces, vertex_count, face_count
+                    ) VALUES (?, ?, ?, ?, ?)
+                """, (geometry_hash, vertices_blob, faces_blob, 8, 36))  # 8 vertices, 36 face indices
+
+                # Link element to geometry
+                conn.execute("""
+                    INSERT INTO element_instances (guid, geometry_hash)
+                    VALUES (?, ?)
+                """, (rebar_guid, geometry_hash))
+
             else:
                 # Use parent bbox as-is if cover inset would collapse it
                 conn.execute("""
@@ -253,6 +287,26 @@ def _create_reb_element(conn, parent_element: Dict, bar_type: str, bar_spec: Dic
                 """, (reb_id, parent_bbox['minX'], parent_bbox['maxX'],
                       parent_bbox['minY'], parent_bbox['maxY'],
                       parent_bbox['minZ'], parent_bbox['maxZ']))
+
+                # Generate box geometry using parent bbox
+                vertices_blob, faces_blob, geometry_hash = _generate_box_geometry(
+                    parent_bbox['minX'], parent_bbox['maxX'],
+                    parent_bbox['minY'], parent_bbox['maxY'],
+                    parent_bbox['minZ'], parent_bbox['maxZ']
+                )
+
+                # Insert into base_geometries (if not already exists - deduplication)
+                conn.execute("""
+                    INSERT OR IGNORE INTO base_geometries (
+                        geometry_hash, vertices, faces, vertex_count, face_count
+                    ) VALUES (?, ?, ?, ?, ?)
+                """, (geometry_hash, vertices_blob, faces_blob, 8, 36))  # 8 vertices, 36 face indices
+
+                # Link element to geometry
+                conn.execute("""
+                    INSERT INTO element_instances (guid, geometry_hash)
+                    VALUES (?, ?)
+                """, (rebar_guid, geometry_hash))
 
         # Calculate weight for this bar group
         # For stirrups/ties, weight might not be in bar_spec directly
@@ -305,6 +359,58 @@ def _get_bar_weight_per_m(diameter_mm: int) -> float:
     area_m2 = math.pi * radius_m * radius_m
     density_steel = 7850  # kg/m³
     return area_m2 * density_steel
+
+
+def _generate_box_geometry(minX: float, maxX: float, minY: float, maxY: float,
+                           minZ: float, maxZ: float) -> Tuple[bytes, bytes, str]:
+    """
+    Generate simple box geometry for rebar visualization
+
+    Creates a box mesh from bounding box coordinates (same as bbox preview but with geometry).
+    This is lightweight and sufficient for Full Load visualization.
+
+    Args:
+        minX, maxX, minY, maxY, minZ, maxZ: Bounding box coordinates in meters
+
+    Returns:
+        Tuple of (vertices_blob, faces_blob, geometry_hash)
+    """
+    # Create 8 vertices for box corners
+    vertices = [
+        minX, minY, minZ,  # 0: bottom-left-front
+        maxX, minY, minZ,  # 1: bottom-right-front
+        maxX, maxY, minZ,  # 2: bottom-right-back
+        minX, maxY, minZ,  # 3: bottom-left-back
+        minX, minY, maxZ,  # 4: top-left-front
+        maxX, minY, maxZ,  # 5: top-right-front
+        maxX, maxY, maxZ,  # 6: top-right-back
+        minX, maxY, maxZ   # 7: top-left-back
+    ]
+
+    # Create 12 triangles (2 per face, 6 faces)
+    faces = [
+        # Bottom face (Z-)
+        0, 1, 2,  0, 2, 3,
+        # Top face (Z+)
+        4, 7, 6,  4, 6, 5,
+        # Front face (Y-)
+        0, 4, 5,  0, 5, 1,
+        # Back face (Y+)
+        2, 6, 7,  2, 7, 3,
+        # Left face (X-)
+        0, 3, 7,  0, 7, 4,
+        # Right face (X+)
+        1, 5, 6,  1, 6, 2
+    ]
+
+    # Pack as binary blobs (same format as element_geometry table)
+    vertices_blob = struct.pack(f'{len(vertices)}f', *vertices)
+    faces_blob = struct.pack(f'{len(faces)}I', *faces)
+
+    # Generate hash for deduplication
+    geometry_hash = hashlib.sha256(vertices_blob + faces_blob).hexdigest()[:16]
+
+    return vertices_blob, faces_blob, geometry_hash
 
 
 def get_reb_statistics(database_path: str) -> Dict[str, Any]:
