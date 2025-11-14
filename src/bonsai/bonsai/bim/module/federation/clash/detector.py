@@ -156,22 +156,46 @@ def detect_clashes_from_database(db_path: str,
 
         # Query R-tree for candidates (spatial filtering only, no discipline filter here)
         # Discipline filtering done via fast in-memory set lookup instead
-        cursor.execute("""
-            SELECT
-                m.id,
-                m.guid,
-                m.discipline,
-                m.ifc_class,
-                r.minX, r.maxX,
-                r.minY, r.maxY,
-                r.minZ, r.maxZ
-            FROM elements_rtree r
-            JOIN elements_meta m ON r.id = m.id
-            WHERE r.minX <= ? AND r.maxX >= ?
-              AND r.minY <= ? AND r.maxY >= ?
-              AND r.minZ <= ? AND r.maxZ >= ?
-              AND m.id > ?
-        """, (*query_bbox, elem_a_id))
+        # Note: For cross-discipline detection, we don't use id > elem_a_id because:
+        # - We're comparing different disciplines (no A-A duplicates)
+        # - Discipline filter already prevents same-element matches
+        # - Using id > would exclude disciplines added later (e.g., REB has highest IDs)
+        if discipline_a and discipline_b and discipline_a != discipline_b:
+            # Cross-discipline: Check all spatial candidates (discipline filter handles duplicates)
+            cursor.execute("""
+                SELECT
+                    m.id,
+                    m.guid,
+                    m.discipline,
+                    m.ifc_class,
+                    r.minX, r.maxX,
+                    r.minY, r.maxY,
+                    r.minZ, r.maxZ
+                FROM elements_rtree r
+                JOIN elements_meta m ON r.id = m.id
+                WHERE r.minX <= ? AND r.maxX >= ?
+                  AND r.minY <= ? AND r.maxY >= ?
+                  AND r.minZ <= ? AND r.maxZ >= ?
+                  AND m.id != ?
+            """, (*query_bbox, elem_a_id))
+        else:
+            # Same discipline or legacy mode: Use id > to avoid duplicate pairs
+            cursor.execute("""
+                SELECT
+                    m.id,
+                    m.guid,
+                    m.discipline,
+                    m.ifc_class,
+                    r.minX, r.maxX,
+                    r.minY, r.maxY,
+                    r.minZ, r.maxZ
+                FROM elements_rtree r
+                JOIN elements_meta m ON r.id = m.id
+                WHERE r.minX <= ? AND r.maxX >= ?
+                  AND r.minY <= ? AND r.maxY >= ?
+                  AND r.minZ <= ? AND r.maxZ >= ?
+                  AND m.id > ?
+            """, (*query_bbox, elem_a_id))
 
         # Filter candidates by discipline using fast in-memory set lookup
         all_candidates = cursor.fetchall()
