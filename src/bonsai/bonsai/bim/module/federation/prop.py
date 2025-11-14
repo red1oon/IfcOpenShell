@@ -730,3 +730,80 @@ def unregister_federation_properties():
     for prop_name in props_to_remove:
         if hasattr(BIMClashProperties, prop_name):
             delattr(BIMClashProperties, prop_name)
+
+
+# ============================================================================
+# Structural Works Properties
+# ============================================================================
+
+
+class BIMStructuralProperties(PropertyGroup):
+    """Properties for structural rebar and concrete module"""
+
+    project_name: StringProperty(
+        name="Project Name",
+        description="Project name for BOQ reports",
+        default="Terminal 1 Expansion Project"
+    )
+
+    is_airport_grade: BoolProperty(
+        name="Airport Grade Standards",
+        description="Use heavier reinforcement for airport infrastructure (Grade 40 concrete)",
+        default=False
+    )
+
+    concrete_grade: EnumProperty(
+        name="Concrete Grade",
+        description="Concrete strength grade",
+        items=[
+            ('GRADE_25', "Grade 25", "25 MPa characteristic strength"),
+            ('GRADE_30', "Grade 30", "30 MPa characteristic strength (standard)"),
+            ('GRADE_35', "Grade 35", "35 MPa characteristic strength"),
+            ('GRADE_40', "Grade 40", "40 MPa characteristic strength (airport grade)"),
+            ('GRADE_45', "Grade 45", "45 MPa characteristic strength"),
+        ],
+        default='GRADE_30'
+    )
+
+    exposure_class: EnumProperty(
+        name="Exposure Class",
+        description="Environmental exposure classification (MS 1347:2020)",
+        items=[
+            ('XC1', "XC1", "Dry or permanently wet (interior)"),
+            ('XC3', "XC3", "Moderate humidity (exterior, standard)"),
+            ('XD1', "XD1", "Moderate chloride exposure (airport grade)"),
+            ('XS1', "XS1", "Marine exposure - airborne salt"),
+        ],
+        default='XC3'
+    )
+
+    rebar_generated: BoolProperty(
+        name="Rebar Generated",
+        description="Indicates if rebar has been generated for structural elements",
+        default=False
+    )
+
+    last_generation_time: StringProperty(
+        name="Last Generation",
+        description="Timestamp of last rebar generation",
+        default=""
+    )
+
+    last_boq_export: StringProperty(
+        name="Last BOQ Export",
+        description="Timestamp of last structural BOQ export",
+        default=""
+    )
+
+    last_boq_file: StringProperty(
+        name="Last BOQ File",
+        description="Path to most recent structural BOQ Excel file",
+        default="",
+        subtype='FILE_PATH'
+    )
+
+    show_structural_settings: BoolProperty(
+        name="Show Settings",
+        description="Show/hide structural settings panel",
+        default=False
+    )

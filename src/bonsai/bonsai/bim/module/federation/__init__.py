@@ -123,6 +123,11 @@ classes = (
     operator.BIM_OT_open_boq_report,
     operator.BIM_OT_regenerate_boq_report,
 
+    # Structural Works - Rebar & Concrete
+    prop.BIMStructuralProperties,
+    operator.BIM_OT_generate_rebar_structural,
+    operator.BIM_OT_export_structural_boq,
+
     # Natural Language Query (NLP)
     operator.BIM_OT_execute_nlp_query,
     operator.BIM_OT_set_nlp_query,
@@ -137,6 +142,7 @@ classes = (
     ui.BIM_PT_federation_lod_visualization,
     ui.BIM_PT_clash_adjustment,
     ui.BIM_PT_boq_export,
+    ui.BIM_PT_structural_works,
     ui.BIM_PT_nlp_query,
 )
 
@@ -192,6 +198,9 @@ def register():
     bpy.types.Scene.BIMFederationProperties = bpy.props.PointerProperty(
         type=prop.BIMFederationProperties
     )
+    bpy.types.Scene.BIMStructuralProperties = bpy.props.PointerProperty(
+        type=prop.BIMStructuralProperties
+    )
 
     # Register federation analysis properties on BIMClashProperties
     prop.register_federation_properties()
@@ -213,3 +222,4 @@ def unregister():
 
     # Remove properties from Scene
     del bpy.types.Scene.BIMFederationProperties
+    del bpy.types.Scene.BIMStructuralProperties

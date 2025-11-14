@@ -1071,6 +1071,137 @@ class BIM_PT_boq_export(Panel):
                 hint.label(text="(Click to generate Excel report)")
 
 
+class BIM_PT_structural_works(Panel):
+    """Structural Works - Rebar & Concrete BOQ"""
+
+    bl_label = "Structural Works"
+    bl_idname = "BIM_PT_structural_works"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "scene"
+    bl_parent_id = "BIM_PT_tab_federation"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context):
+        layout = self.layout
+        fed_props = context.scene.BIMFederationProperties
+        structural_props = context.scene.BIMStructuralProperties
+
+        # Get database path
+        db_path = bpy.path.abspath(fed_props.federation_database_path) if fed_props.federation_database_path else None
+
+        # Header with icon
+        box = layout.box()
+        row = box.row()
+        row.label(text="Rebar & Concrete", icon="FORCE_HARMONIC")
+
+        # Status indicator
+        status_row = row.row()
+        status_row.alignment = "RIGHT"
+        if structural_props.rebar_generated:
+            status_row.label(text="Ready", icon="CHECKMARK")
+        elif db_path and os.path.exists(db_path):
+            status_row.label(text="Not Generated", icon="BLANK1")
+        else:
+            status_row.label(text="No Database", icon="ERROR")
+
+        # Info text
+        info_col = box.column(align=True)
+        info_col.scale_y = 0.6
+        info_col.label(text="Automatic reinforcement design & BOQ export")
+        info_col.label(text="MS 1347:2020 compliant | 97% time savings")
+
+        box.separator()
+
+        # Check database
+        if not db_path or not os.path.exists(db_path):
+            warn_row = box.row()
+            warn_row.alert = True
+            warn_row.label(text="⚠ Set database path first", icon="ERROR")
+            return
+
+        # Settings (collapsible)
+        settings_box = layout.box()
+        settings_row = settings_box.row()
+        settings_row.prop(
+            structural_props,
+            "show_structural_settings",
+            icon="TRIA_DOWN" if structural_props.show_structural_settings else "TRIA_RIGHT",
+            text="Settings",
+            emboss=False
+        )
+
+        if structural_props.show_structural_settings:
+            settings_col = settings_box.column(align=True)
+            settings_col.prop(structural_props, "project_name")
+            settings_col.separator()
+            settings_col.prop(structural_props, "is_airport_grade")
+            settings_col.prop(structural_props, "concrete_grade")
+            settings_col.prop(structural_props, "exposure_class")
+
+        # Step 1: Generate Rebar
+        box = layout.box()
+        row = box.row()
+        row.label(text="Step 1: Generate Rebar Design", icon="MOD_BUILD")
+
+        if structural_props.rebar_generated and structural_props.last_generation_time:
+            # Show status + regenerate button
+            status_col = box.column(align=True)
+            status_col.scale_y = 0.7
+            status_col.label(text=f"✓ Generated: {structural_props.last_generation_time}")
+
+            row = box.row(align=True)
+            row.operator("bim.generate_rebar_structural", text="Regenerate", icon="FILE_REFRESH")
+        else:
+            # Show generate button
+            row = box.row()
+            row.scale_y = 1.5
+            row.operator("bim.generate_rebar_structural", text="Generate Rebar Design", icon="MOD_BUILD")
+
+            hint = box.column(align=True)
+            hint.scale_y = 0.6
+            hint.label(text="(Processes STR discipline: slabs, beams, columns)")
+
+        # Step 2: Export Structural BOQ
+        box = layout.box()
+        row = box.row()
+        row.label(text="Step 2: Export Structural BOQ", icon="DOCUMENTS")
+
+        if structural_props.last_boq_export and structural_props.last_boq_file:
+            # Show status + buttons
+            status_col = box.column(align=True)
+            status_col.scale_y = 0.7
+            status_col.label(text=f"Last exported: {structural_props.last_boq_export}")
+            status_col.label(text=f"File: {os.path.basename(structural_props.last_boq_file)}")
+
+            row = box.row(align=True)
+            row.operator("bim.export_structural_boq", text="Regenerate", icon="FILE_REFRESH")
+
+            if os.path.exists(structural_props.last_boq_file):
+                op = row.operator("bim.open_boq_report", text="Open", icon="FILE_FOLDER")
+                op.filepath = structural_props.last_boq_file
+        else:
+            # Show generate button
+            row = box.row()
+            row.scale_y = 1.5
+            row.operator("bim.export_structural_boq", text="Export Structural BOQ", icon="DOCUMENTS")
+
+            hint = box.column(align=True)
+            hint.scale_y = 0.6
+            if structural_props.rebar_generated:
+                hint.label(text="(Concrete + Reinforcement)")
+            else:
+                hint.label(text="(Concrete only - generate rebar first for full BOQ)")
+
+        # Help text
+        help_box = layout.box()
+        help_col = help_box.column(align=True)
+        help_col.scale_y = 0.6
+        help_col.label(text="ℹ️ Structural BOQ vs Comprehensive BOQ:")
+        help_col.label(text="  • Structural: Concrete + Rebar (MS 1347:2020)")
+        help_col.label(text="  • Comprehensive: All disciplines (PWD Form 203A)")
+
+
 class BIM_PT_nlp_query(Panel):
     """Natural Language Query Panel"""
 

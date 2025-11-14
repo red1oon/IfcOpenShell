@@ -4686,6 +4686,172 @@ class BIM_OT_regenerate_boq_report(bpy.types.Operator):
 
 
 # ============================================================================
+# Structural Works - Rebar & Concrete Operators
+# ============================================================================
+
+
+class BIM_OT_generate_rebar_structural(bpy.types.Operator):
+    """Generate reinforcement (rebar) for structural concrete elements"""
+    bl_idname = "bim.generate_rebar_structural"
+    bl_label = "Generate Rebar Design"
+    bl_description = "Automatically generate reinforcement for beams, slabs, and columns (MS 1347:2020)"
+
+    def execute(self, context):
+        from datetime import datetime
+
+        # Get database path
+        fed_props = context.scene.BIMFederationProperties
+        db_path = fed_props.federation_database_path
+
+        if not db_path or not os.path.exists(db_path):
+            self.report({'ERROR'}, "Federation database not found. Set database path first.")
+            return {'CANCELLED'}
+
+        # Get structural settings
+        structural_props = context.scene.BIMStructuralProperties
+        is_airport = structural_props.is_airport_grade
+        concrete_grade = structural_props.concrete_grade
+        exposure_class = structural_props.exposure_class
+
+        try:
+            self.report({'INFO'}, f"Generating rebar design (Airport: {is_airport})...")
+
+            # Import rebar generator
+            from bonsai.bim.module.federation.structural.rebar_generator import RebarGenerator
+
+            # Create generator
+            generator = RebarGenerator(db_path, is_airport=is_airport)
+            generator.connect()
+
+            # Get STR elements count
+            cursor = generator.conn.execute(
+                "SELECT COUNT(*) FROM elements_meta WHERE discipline='STR' AND ifc_class IN ('IfcSlab', 'IfcBeam', 'IfcColumn')"
+            )
+            element_count = cursor.fetchone()[0]
+
+            if element_count == 0:
+                generator.disconnect()
+                self.report({'WARNING'}, "No structural elements found in database")
+                return {'CANCELLED'}
+
+            self.report({'INFO'}, f"Processing {element_count} structural elements...")
+
+            # Generate rebar for all STR elements
+            results = generator.generate_all_rebar()
+
+            generator.disconnect()
+
+            # Report results
+            total_bars = sum(r['rebar_count'] for r in results.values())
+            total_weight = sum(r['total_weight_kg'] for r in results.values())
+
+            self.report({'INFO'},
+                f"✅ Rebar generated: {len(results)} elements, {total_bars} bars, {total_weight:.1f} tonnes")
+
+            # Update UI property to indicate rebar is ready
+            structural_props.rebar_generated = True
+            structural_props.last_generation_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            logger.exception("Rebar generation failed")
+            self.report({'ERROR'}, f"Rebar generation failed: {str(e)}")
+            return {'CANCELLED'}
+
+
+class BIM_OT_export_structural_boq(bpy.types.Operator):
+    """Export structural BOQ (Concrete + Rebar only) - MS 1347:2020"""
+    bl_idname = "bim.export_structural_boq"
+    bl_label = "Export Structural BOQ"
+    bl_description = "Generate Excel BOQ for concrete and reinforcement works only"
+
+    def execute(self, context):
+        from datetime import datetime
+        import subprocess
+        import sys
+
+        # Get database path
+        fed_props = context.scene.BIMFederationProperties
+        db_path = fed_props.federation_database_path
+
+        if not db_path or not os.path.exists(db_path):
+            self.report({'ERROR'}, "Federation database not found. Set database path first.")
+            return {'CANCELLED'}
+
+        # Check if rebar has been generated
+        structural_props = context.scene.BIMStructuralProperties
+
+        # Check if reinforcement_bars table exists
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='reinforcement_bars'"
+        )
+        has_rebar = cursor.fetchone() is not None
+        conn.close()
+
+        if not has_rebar:
+            self.report({'WARNING'}, "No rebar data found. Run 'Generate Rebar Design' first.")
+            # Offer to continue anyway (will show concrete only)
+            self.report({'INFO'}, "Exporting concrete works only (no reinforcement)...")
+
+        try:
+            self.report({'INFO'}, "Generating structural BOQ report...")
+
+            # Import BOQ exporter
+            from bonsai.bim.module.federation.structural.boq_concrete_rebar_export import ConcreteRebarBOQ
+
+            # Generate timestamped output
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_dir = os.path.expanduser("~/Documents/bonsai")
+            os.makedirs(output_dir, exist_ok=True)
+            output_path = os.path.join(output_dir, f"BOQ_Structural_{timestamp}.xlsx")
+
+            # Create exporter and generate
+            exporter = ConcreteRebarBOQ(db_path, output_path)
+            project_name = structural_props.project_name or "Terminal 1 Expansion Project"
+
+            # Generate BOQ
+            exporter.create_cover_sheet(project_name)
+            exporter.create_executive_summary(db_path, project_name)
+            exporter.create_concrete_summary(db_path)
+
+            if has_rebar:
+                exporter.create_rebar_summary(db_path)
+                exporter.create_detailed_schedules(db_path)
+
+            exporter.create_cost_breakdown(db_path)
+            exporter.create_logistics_schedule(db_path)
+
+            # Save workbook
+            exporter.wb.save(output_path)
+
+            self.report({'INFO'}, f"✅ Structural BOQ generated: {os.path.basename(output_path)}")
+
+            # Update UI property
+            structural_props.last_boq_export = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            structural_props.last_boq_file = output_path
+
+            # Auto-open Excel file
+            try:
+                if sys.platform.startswith('linux'):
+                    subprocess.Popen(['xdg-open', output_path])
+                elif sys.platform == 'darwin':
+                    subprocess.Popen(['open', output_path])
+                elif sys.platform == 'win32':
+                    os.startfile(output_path)
+            except Exception as e:
+                logger.warning(f"Could not auto-open file: {e}")
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            logger.exception("Structural BOQ export failed")
+            self.report({'ERROR'}, f"Structural BOQ export failed: {str(e)}")
+            return {'CANCELLED'}
+
+
+# ============================================================================
 # Natural Language Query (NLP) Operators
 # ============================================================================
 
