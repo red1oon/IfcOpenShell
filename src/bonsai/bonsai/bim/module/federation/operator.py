@@ -4761,6 +4761,11 @@ class BIM_OT_generate_rebar_structural(bpy.types.Operator):
             # Convert kg to tonnes
             total_weight_tonnes = total_weight / 1000.0
 
+            # Save results to database for BOQ export
+            logger.info(f"Saving {total_elements} rebar designs to database...")
+            generator.save_to_database(results)
+            logger.info("Rebar data saved successfully")
+
             self.report({'INFO'},
                 f"✅ Rebar generated: {total_elements} elements, {total_bars} bars, {total_weight_tonnes:.1f} tonnes")
 
