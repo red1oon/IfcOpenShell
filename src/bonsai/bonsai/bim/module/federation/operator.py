@@ -4764,10 +4764,25 @@ class BIM_OT_generate_rebar_structural(bpy.types.Operator):
             # Save results to database for BOQ export
             logger.info(f"Saving {total_elements} rebar designs to database...")
             generator.save_to_database(results)
-            logger.info("Rebar data saved successfully")
+            logger.info("Rebar data saved to reinforcement tables")
 
-            self.report({'INFO'},
-                f"✅ Rebar generated: {total_elements} elements, {total_bars} bars, {total_weight_tonnes:.1f} tonnes")
+            # NEW: Save as REB discipline elements for visualization & clash detection
+            logger.info("Creating REB discipline elements for federation viewer...")
+            from bonsai.bim.module.federation.structural.rebar_to_discipline import save_rebar_as_discipline
+
+            try:
+                reb_stats = save_rebar_as_discipline(db_path, results)
+                logger.info(f"✅ Created {reb_stats['total_reb_elements']} REB discipline elements")
+                self.report({'INFO'},
+                    f"✅ Rebar generated: {total_elements} STR elements → "
+                    f"{reb_stats['total_reb_elements']} REB elements, "
+                    f"{total_bars} bars, {total_weight_tonnes:.1f} tonnes")
+            except Exception as e:
+                logger.warning(f"REB discipline creation failed (non-critical): {e}")
+                # Continue even if REB creation fails - BOQ export will still work
+                self.report({'INFO'},
+                    f"✅ Rebar generated: {total_elements} elements, {total_bars} bars, {total_weight_tonnes:.1f} tonnes "
+                    f"(REB discipline creation skipped)")
 
             # Update UI property to indicate rebar is ready
             structural_props.rebar_generated = True
