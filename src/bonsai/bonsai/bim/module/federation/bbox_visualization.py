@@ -23,8 +23,9 @@ DISCIPLINE_COLORS = {
     'SP': (1.0, 0.5, 0.0, 1.0),          # Orange
     'ARC': (0.5, 0.5, 0.5, 0.7),         # Gray
     'ARCHITECTURE': (0.5, 0.5, 0.5, 0.7),
-    'STR': (0.6, 0.4, 0.2, 1.0),         # Brown
+    'STR': (0.6, 0.4, 0.2, 1.0),         # Brown (concrete)
     'STRUCTURE': (0.6, 0.4, 0.2, 1.0),
+    'REB': (0.9, 0.5, 0.2, 1.0),         # Rust/orange (reinforcement)
     'DEFAULT': (0.7, 0.7, 0.7, 0.5),     # Light gray
 }
 

@@ -1310,7 +1310,7 @@ class LoadSolidFederationViewport(bpy.types.Operator):
                     print(f"  ✓ Removed {coll_name} hierarchy")
 
             # Also remove standalone discipline collections (prevents duplication)
-            disciplines = ['ACMV', 'ARC', 'CW', 'ELEC', 'FP', 'SP', 'STR', 'LPG']
+            disciplines = ['ACMV', 'ARC', 'CW', 'ELEC', 'FP', 'SP', 'STR', 'LPG', 'REB']
             for disc in disciplines:
                 for pattern in [f'Discipline_{disc}', f'Federation_{disc}']:
                     if pattern in bpy.data.collections:

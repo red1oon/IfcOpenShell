@@ -16,7 +16,8 @@ from mathutils import Vector
 # Discipline color palette (bright distinct colors for easy identification)
 DISCIPLINE_COLORS = {
     'ARC': (0.7, 0.7, 0.7),      # Light gray (architecture/structure)
-    'STR': (0.5, 0.5, 0.5),      # Dark gray (structural)
+    'STR': (0.5, 0.5, 0.5),      # Dark gray (structural concrete)
+    'REB': (0.9, 0.5, 0.2),      # Rust/orange (reinforcement steel)
     'ACMV': (0.3, 0.7, 1.0),     # Sky blue (air conditioning)
     'ELEC': (1.0, 0.9, 0.2),     # Yellow (electrical)
     'FP': (1.0, 0.2, 0.2),       # Red (fire protection)
