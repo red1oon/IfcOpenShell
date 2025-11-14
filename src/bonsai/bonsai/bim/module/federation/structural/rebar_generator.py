@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import uuid
 import math
 
-from rebar_standards import (
+from .rebar_standards import (
     SlabReinforcementRules,
     BeamReinforcementRules,
     ColumnReinforcementRules,

@@ -12,8 +12,8 @@ from openpyxl.utils import get_column_letter
 from openpyxl.chart import PieChart, BarChart, Reference
 from typing import Dict, List
 
-from concrete_calculator import ConcreteCalculator, ConcreteGrade
-from rebar_standards import RebarProperties
+from .concrete_calculator import ConcreteCalculator, ConcreteGrade
+from .rebar_standards import RebarProperties
 
 
 class ConcreteRebarBOQ:
