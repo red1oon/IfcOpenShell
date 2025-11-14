@@ -522,6 +522,7 @@ def register_federation_properties():
         items=[
             ('ARC', 'Architecture', 'Architectural elements'),
             ('STR', 'Structure', 'Structural elements'),
+            ('REB', 'Reinforcement', 'Reinforcement bars (rebar)'),
             ('MEP', 'MEP', 'Mechanical, Electrical, Plumbing'),
             ('ACMV', 'ACMV', 'Air Conditioning & Mechanical Ventilation'),
             ('ELEC', 'Electrical', 'Electrical systems'),
@@ -538,6 +539,7 @@ def register_federation_properties():
         items=[
             ('ARC', 'Architecture', 'Architectural elements'),
             ('STR', 'Structure', 'Structural elements'),
+            ('REB', 'Reinforcement', 'Reinforcement bars (rebar)'),
             ('MEP', 'MEP', 'Mechanical, Electrical, Plumbing'),
             ('ACMV', 'ACMV', 'Air Conditioning & Mechanical Ventilation'),
             ('ELEC', 'Electrical', 'Electrical systems'),
