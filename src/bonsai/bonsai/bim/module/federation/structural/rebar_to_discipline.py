@@ -101,10 +101,10 @@ def save_rebar_as_discipline(database_path: str, rebar_results: Dict[str, List[D
                 stats['total_reb_elements'] += 1
                 stats['total_bars'] += column['longitudinal_bars']['count']
 
-            # Ties
-            if _create_reb_element(conn, column, 'TIES', column['ties']):
+            # Links (not 'ties' - that's the field name in rebar_standards.py)
+            if _create_reb_element(conn, column, 'LINKS', column['links']):
                 stats['total_reb_elements'] += 1
-                stats['total_bars'] += column['ties']['count']
+                stats['total_bars'] += column['links']['count']
 
             stats['total_weight_kg'] += column['total_weight_kg']
 
@@ -185,7 +185,7 @@ def _create_reb_element(conn, parent_element: Dict, bar_type: str, bar_spec: Dic
 
         # Get parent element info from database
         parent_row = conn.execute("""
-            SELECT id, ifc_file_id, element_name
+            SELECT id, filepath, element_name
             FROM elements_meta WHERE guid = ?
         """, (parent_guid,)).fetchone()
 
@@ -194,7 +194,7 @@ def _create_reb_element(conn, parent_element: Dict, bar_type: str, bar_spec: Dic
             return False
 
         parent_id = parent_row['id']
-        file_id = parent_row['ifc_file_id']
+        filepath = parent_row['filepath']
         parent_name = parent_row['element_name']
 
         # Create descriptive element name
@@ -209,14 +209,14 @@ def _create_reb_element(conn, parent_element: Dict, bar_type: str, bar_spec: Dic
         cursor = conn.execute("""
             INSERT INTO elements_meta (
                 guid, discipline, ifc_class, element_name, element_type,
-                element_description, ifc_file_id
+                element_description, filepath
             ) VALUES (?, 'REB', 'IfcReinforcingBar', ?, ?, ?, ?)
         """, (
             rebar_guid,
             element_name,
             bar_type,
             f"Reinforcement: Y{bar_spec['diameter']}, {bar_spec['count']} bars",
-            file_id
+            filepath
         ))
 
         reb_id = cursor.lastrowid
