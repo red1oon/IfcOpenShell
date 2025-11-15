@@ -384,7 +384,7 @@ def get_clash_groups(context):
         cursor = conn.cursor()
 
         query = """
-            SELECT
+            SELECT DISTINCT
                 group_id,
                 cascade_element_class,
                 cascade_element_discipline,

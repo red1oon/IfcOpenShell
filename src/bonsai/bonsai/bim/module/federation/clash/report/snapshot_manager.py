@@ -150,9 +150,10 @@ class SnapshotManager:
             }
 
             # Generate cascade group snapshot showing ALL affected elements
-            # Highlights all elements in cascade group (not just one clash pair)
-            # Note: Engineers visualize proposed changes in their BIM software (Revit/Blender)
-            # No "after" snapshot needed for POC
+            # Proximity-aware coloring:
+            # - ORANGE: Cascade element (root cause)
+            # - RED: Direct clashing elements
+            # - YELLOW: Nearby elements (from proximity analysis)
             snapshot_file = output_dir / f"group_{group_id}_overview.png"
             snapshot_bytes = self.renderer.render_group_snapshot(
                 guids=all_guids,  # All unique GUIDs from cascade group
@@ -160,7 +161,8 @@ class SnapshotManager:
                 width=width,
                 height=height,
                 target_size_kb=300,
-                group_id=group_id  # Pass group_id for unique temp filenames
+                group_id=group_id,  # Pass group_id for unique temp filenames
+                cascade_guid=group['root_element_guid']  # Pass cascade GUID for orange coloring
             )
 
             if snapshot_bytes:

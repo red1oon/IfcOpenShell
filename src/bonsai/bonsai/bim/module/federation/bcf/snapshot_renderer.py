@@ -93,7 +93,8 @@ class SnapshotRenderer:
         width: int = 800,
         height: int = 600,
         target_size_kb: int = 200,
-        group_id: str = None
+        group_id: str = None,
+        cascade_guid: str = None
     ) -> Optional[bytes]:
         """
         Render snapshot for a cascade group with multiple elements.
@@ -134,8 +135,51 @@ class SnapshotRenderer:
                 print(f"  Warning: Failed to load cascade elements: {e}")
                 return None
 
-            # Highlight all cascade elements
-            highlighted_objects = self._highlight_elements_viewport(guids)
+            # Get proximity data for intelligent coloring (if available)
+            proximity_data_map = {}
+
+            # Use provided cascade_guid parameter (passed from snapshot_manager)
+            cascade_guid_for_coloring = cascade_guid
+
+            try:
+                # Try to load proximity analyzer and get data
+                from ..clash.proximity_analyzer import ProximityAnalyzer
+                analyzer = ProximityAnalyzer(self.database_path)
+
+                # Try to get proximity report for this group
+                # Note: This requires proximity analysis to have been run previously
+                try:
+                    report = analyzer.generate_proximity_report(
+                        clash_group_id=group_id,
+                        cascade_guid=cascade_guid_for_coloring
+                    )
+
+                    # Build proximity data map: GUID -> {'severity': str, 'clearance_mm': float}
+                    for clash in report.get('potential_clashes', []):
+                        proximity_data_map[clash['guid']] = {
+                            'severity': clash['severity'],
+                            'clearance_mm': clash['clearance_mm']
+                        }
+
+                    for warning in report.get('clearance_warnings', []):
+                        proximity_data_map[warning['guid']] = {
+                            'severity': warning['severity'],
+                            'clearance_mm': warning['clearance_mm']
+                        }
+                except Exception:
+                    # Proximity analysis not available for this group - use default coloring
+                    pass
+
+            except ImportError:
+                # Proximity analyzer not available - use default red coloring
+                pass
+
+            # Highlight all cascade elements with proximity-aware colors
+            highlighted_objects = self._highlight_elements_viewport(
+                guids,
+                cascade_guid=cascade_guid_for_coloring,
+                proximity_data=proximity_data_map if proximity_data_map else None
+            )
 
             # Position viewport to cascade location
             positioned = self.set_viewport_to_viewpoint(viewpoint_data)
@@ -599,17 +643,30 @@ class SnapshotRenderer:
             obj.display_type = item['display_type']
             obj.show_in_front = False
 
-    def _highlight_elements_viewport(self, guids: List[str]) -> List[Dict]:
+    def _highlight_elements_viewport(
+        self,
+        guids: List[str],
+        cascade_guid: str = None,
+        proximity_data: Dict = None
+    ) -> List[Dict]:
         """
-        Highlight elements for viewport screenshots.
+        Highlight elements for viewport screenshots with proximity-aware coloring.
 
-        Makes elements stand out by selecting them and setting bright color.
-        Works with viewport shading modes and database-only procedural objects.
+        Color scheme:
+        - ORANGE (1.0, 0.5, 0.0): Cascade element (root cause)
+        - RED (1.0, 0.0, 0.0): Direct clashing elements / high severity (<50mm)
+        - YELLOW (1.0, 1.0, 0.0): Nearby elements / medium severity (50-200mm)
 
-        Returns list of original states for restoration.
+        Args:
+            guids: List of element GUIDs to highlight
+            cascade_guid: GUID of cascade element (colored orange if provided)
+            proximity_data: Optional dict mapping GUIDs to proximity info:
+                            {'guid': {'severity': 'HIGH'|'MEDIUM'|'LOW', 'clearance_mm': float}}
+
+        Returns:
+            List of original states for restoration.
         """
         highlighted = []
-
 
         for obj in bpy.data.objects:
             # Check if object has IFC GUID (in various possible locations)
@@ -650,8 +707,24 @@ class SnapshotRenderer:
                 }
                 highlighted.append(original)
 
-                # Apply bright red highlight visible in viewport
-                obj.color = (1.0, 0.0, 0.0, 1.0)  # Bright red
+                # Determine color based on element role and proximity
+                highlight_color = (1.0, 0.0, 0.0, 1.0)  # Default: bright red (clashing)
+
+                if cascade_guid and ifc_guid == cascade_guid:
+                    # CASCADE ELEMENT: Orange (root cause)
+                    highlight_color = (1.0, 0.5, 0.0, 1.0)
+                elif proximity_data and ifc_guid in proximity_data:
+                    # PROXIMITY-AWARE COLORING
+                    severity = proximity_data[ifc_guid].get('severity', 'HIGH')
+                    if severity == 'HIGH':
+                        highlight_color = (1.0, 0.0, 0.0, 1.0)  # Red (direct clash / <50mm)
+                    elif severity == 'MEDIUM':
+                        highlight_color = (1.0, 1.0, 0.0, 1.0)  # Yellow (nearby / 50-200mm)
+                    else:
+                        highlight_color = (0.5, 0.5, 1.0, 1.0)  # Light blue (low risk)
+
+                # Apply highlight color
+                obj.color = highlight_color
                 obj.hide_viewport = False
                 obj.hide_select = False
                 obj.select_set(True)  # Select for visibility
