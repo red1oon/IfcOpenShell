@@ -303,7 +303,7 @@ class ClashGroupAnalyzer:
             import json
 
             cursor.execute("""
-                INSERT INTO clash_groups (
+                INSERT OR REPLACE INTO clash_groups (
                     group_id,
                     cascade_element_guid,
                     cascade_element_class,
