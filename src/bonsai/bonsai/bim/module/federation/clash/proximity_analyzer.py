@@ -124,7 +124,9 @@ class ProximityAnalyzer:
         min_z = center_mm[2] - radius_mm
         max_z = center_mm[2] + radius_mm
 
-        cursor.execute("""
+        # NOTE: Using f-string instead of parameters due to SQLite R-tree parameter binding bug
+        # FIXED: Changed JOIN from 'r.id = m.guid' to 'r.id = m.id' (was joining int to text!)
+        cursor.execute(f"""
             SELECT
                 m.guid,
                 m.discipline,
@@ -133,12 +135,12 @@ class ProximityAnalyzer:
                 r.minY, r.maxY,
                 r.minZ, r.maxZ
             FROM elements_rtree r
-            JOIN elements_meta m ON r.id = m.guid
+            JOIN elements_meta m ON r.id = m.id
             WHERE
-                r.minX <= ? AND r.maxX >= ? AND
-                r.minY <= ? AND r.maxY >= ? AND
-                r.minZ <= ? AND r.maxZ >= ?
-        """, (max_x, min_x, max_y, min_y, max_z, min_z))
+                r.minX <= {max_x} AND r.maxX >= {min_x} AND
+                r.minY <= {max_y} AND r.maxY >= {min_y} AND
+                r.minZ <= {max_z} AND r.maxZ >= {min_z}
+        """)
 
         results = []
         for row in cursor.fetchall():

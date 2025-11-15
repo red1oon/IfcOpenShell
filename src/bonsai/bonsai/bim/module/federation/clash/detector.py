@@ -162,7 +162,9 @@ def detect_clashes_from_database(db_path: str,
         # - Using id > would exclude disciplines added later (e.g., REB has highest IDs)
         if discipline_a and discipline_b and discipline_a != discipline_b:
             # Cross-discipline: Check all spatial candidates (discipline filter handles duplicates)
-            cursor.execute("""
+            # NOTE: Using f-string instead of parameters due to SQLite R-tree parameter binding bug
+            # See: https://github.com/red1oon/IfcOpenShell/issues/REB-clash-detection
+            cursor.execute(f"""
                 SELECT
                     m.id,
                     m.guid,
@@ -173,14 +175,15 @@ def detect_clashes_from_database(db_path: str,
                     r.minZ, r.maxZ
                 FROM elements_rtree r
                 JOIN elements_meta m ON r.id = m.id
-                WHERE r.minX <= ? AND r.maxX >= ?
-                  AND r.minY <= ? AND r.maxY >= ?
-                  AND r.minZ <= ? AND r.maxZ >= ?
-                  AND m.id != ?
-            """, (*query_bbox, elem_a_id))
+                WHERE r.minX <= {query_bbox[1]} AND r.maxX >= {query_bbox[0]}
+                  AND r.minY <= {query_bbox[3]} AND r.maxY >= {query_bbox[2]}
+                  AND r.minZ <= {query_bbox[5]} AND r.maxZ >= {query_bbox[4]}
+                  AND m.id != {elem_a_id}
+            """)
         else:
             # Same discipline or legacy mode: Use id > to avoid duplicate pairs
-            cursor.execute("""
+            # NOTE: Using f-string instead of parameters due to SQLite R-tree parameter binding bug
+            cursor.execute(f"""
                 SELECT
                     m.id,
                     m.guid,
@@ -191,11 +194,11 @@ def detect_clashes_from_database(db_path: str,
                     r.minZ, r.maxZ
                 FROM elements_rtree r
                 JOIN elements_meta m ON r.id = m.id
-                WHERE r.minX <= ? AND r.maxX >= ?
-                  AND r.minY <= ? AND r.maxY >= ?
-                  AND r.minZ <= ? AND r.maxZ >= ?
-                  AND m.id > ?
-            """, (*query_bbox, elem_a_id))
+                WHERE r.minX <= {query_bbox[1]} AND r.maxX >= {query_bbox[0]}
+                  AND r.minY <= {query_bbox[3]} AND r.maxY >= {query_bbox[2]}
+                  AND r.minZ <= {query_bbox[5]} AND r.maxZ >= {query_bbox[4]}
+                  AND m.id > {elem_a_id}
+            """)
 
         # Filter candidates by discipline using fast in-memory set lookup
         all_candidates = cursor.fetchall()
