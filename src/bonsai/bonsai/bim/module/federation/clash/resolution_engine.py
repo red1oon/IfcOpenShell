@@ -785,6 +785,55 @@ class ResolutionAnalysisEngine:
 
         return options
 
+    def enhance_options_with_proximity(
+        self,
+        options: List[ResolutionOption],
+        cascade_position_mm: Tuple[float, float, float],
+        check_radius_mm: float = 2000
+    ) -> List[Dict]:
+        """
+        Enhance resolution options with proximity impact analysis
+
+        Adds proximity data for:
+        - Visualization (highlight impacted elements in red)
+        - Report generation (list nearby elements, take snapshots)
+        - Impact warnings (new potential clashes)
+
+        Args:
+            options: List of resolution options to enhance
+            cascade_position_mm: Current position of cascade element (x,y,z) in mm
+            check_radius_mm: Radius to check for nearby elements (default 2m)
+
+        Returns:
+            Enhanced options (as dicts) with proximity_impact field added
+        """
+        from .proximity_analyzer import ProximityAnalyzer
+
+        analyzer = ProximityAnalyzer(self.db_path)
+
+        enhanced_options = []
+        for option in options:
+            # Analyze proximity impact
+            impact = analyzer.analyze_impact_radius(
+                element_guid=option.option_id,  # Using option_id as temp GUID
+                current_position_mm=cascade_position_mm,
+                proposed_position_mm=cascade_position_mm,  # Same pos for now, analyze current state
+                check_radius_mm=check_radius_mm
+            )
+
+            # Convert option to dict and add proximity data
+            option_dict = option.__dict__.copy()
+            option_dict['proximity_impact'] = {
+                'nearby_elements_count': impact['nearby_count'],
+                'potential_new_clashes': len(impact['potential_clashes']),
+                'clearance_warnings': impact['clearance_warnings'],
+                'impacted_elements': impact['potential_clashes'],  # For red visualization
+            }
+
+            enhanced_options.append(option_dict)
+
+        return enhanced_options
+
     def close(self):
         """Close database connection"""
         self.conn.close()
@@ -857,6 +906,7 @@ if __name__ == "__main__":
 
     # Summary
     total_options = sum(len(opts) for opts in results.values())
+
     if total_options > 0:
         print("\n" + "=" * 60)
         print("NEXT STEPS")
