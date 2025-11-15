@@ -20,6 +20,7 @@ import uuid
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 import json
 
 
@@ -807,7 +808,19 @@ class ResolutionAnalysisEngine:
         Returns:
             Enhanced options (as dicts) with proximity_impact field added
         """
-        from .proximity_analyzer import ProximityAnalyzer
+        # Import proximity analyzer (absolute path for standalone tests compatibility)
+        try:
+            from .proximity_analyzer import ProximityAnalyzer
+        except ImportError:
+            # Fallback for standalone testing (no package context)
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "proximity_analyzer",
+                str(Path(__file__).parent / "proximity_analyzer.py")
+            )
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            ProximityAnalyzer = module.ProximityAnalyzer
 
         analyzer = ProximityAnalyzer(self.db_path)
 

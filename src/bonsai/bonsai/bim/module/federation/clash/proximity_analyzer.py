@@ -328,3 +328,156 @@ class ProximityAnalyzer:
 
         conn.close()
         return results
+
+    def generate_proximity_report(
+        self,
+        clash_group_id: str,
+        cascade_guid: str,
+        output_path: Optional[str] = None
+    ) -> Dict:
+        """
+        Generate proximity analysis report for a clash group
+
+        Creates comprehensive report showing:
+        - Nearby elements within impact radius
+        - Potential new clashes if element is moved
+        - Clearance warnings
+        - Affected disciplines
+
+        Args:
+            clash_group_id: ID of clash group
+            cascade_guid: GUID of cascade element
+            output_path: Optional path to save report JSON
+
+        Returns:
+            Report dict with analysis results
+        """
+        # Get proximity data from database
+        proximity_data = self.get_proximity_data_for_group(clash_group_id)
+
+        # Get element metadata
+        conn = sqlite3.connect(self.database_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT discipline, ifc_class
+            FROM elements_meta
+            WHERE guid = ?
+        """, (cascade_guid,))
+        cascade_meta = cursor.fetchone()
+
+        cascade_discipline = cascade_meta[0] if cascade_meta else 'Unknown'
+        cascade_class = cascade_meta[1] if cascade_meta else 'Unknown'
+
+        # Categorize nearby elements
+        potential_clashes = []
+        clearance_warnings = []
+        nearby_by_discipline = {}
+
+        for elem in proximity_data:
+            # Get element details
+            cursor.execute("""
+                SELECT discipline, ifc_class
+                FROM elements_meta
+                WHERE guid = ?
+            """, (elem['nearby_guid'],))
+            elem_meta = cursor.fetchone()
+
+            if elem_meta:
+                discipline = elem_meta[0] or 'Unknown'
+                ifc_class = elem_meta[1] or 'Unknown'
+
+                # Categorize by clearance
+                if elem['is_potential_clash']:
+                    potential_clashes.append({
+                        'guid': elem['nearby_guid'],
+                        'discipline': discipline,
+                        'ifc_class': ifc_class,
+                        'clearance_mm': elem['clearance_mm'],
+                        'severity': 'HIGH'
+                    })
+                elif elem['distance_mm'] < 200:  # Warning threshold
+                    clearance_warnings.append({
+                        'guid': elem['nearby_guid'],
+                        'discipline': discipline,
+                        'ifc_class': ifc_class,
+                        'clearance_mm': elem['clearance_mm'],
+                        'severity': 'MEDIUM'
+                    })
+
+                # Count by discipline
+                if discipline not in nearby_by_discipline:
+                    nearby_by_discipline[discipline] = 0
+                nearby_by_discipline[discipline] += 1
+
+        conn.close()
+
+        # Build report
+        report = {
+            'clash_group_id': clash_group_id,
+            'cascade_element': {
+                'guid': cascade_guid,
+                'discipline': cascade_discipline,
+                'ifc_class': cascade_class
+            },
+            'analysis_summary': {
+                'total_nearby_elements': len(proximity_data),
+                'potential_new_clashes': len(potential_clashes),
+                'clearance_warnings': len(clearance_warnings),
+                'affected_disciplines': list(nearby_by_discipline.keys()),
+                'discipline_breakdown': nearby_by_discipline
+            },
+            'potential_clashes': potential_clashes,
+            'clearance_warnings': clearance_warnings,
+            'timestamp': datetime.now().isoformat()
+        }
+
+        # Save to file if requested
+        if output_path:
+            import json
+            with open(output_path, 'w') as f:
+                json.dump(report, f, indent=2)
+
+        return report
+
+    def generate_proximity_report_for_all_groups(
+        self,
+        output_dir: Optional[str] = None
+    ) -> List[Dict]:
+        """
+        Generate proximity reports for all clash groups
+
+        Args:
+            output_dir: Optional directory to save individual report JSONs
+
+        Returns:
+            List of report dicts, one per group
+        """
+        conn = sqlite3.connect(self.database_path)
+        cursor = conn.cursor()
+
+        # Get all clash groups
+        cursor.execute("""
+            SELECT group_id, cascade_element_guid
+            FROM clash_groups
+        """)
+        groups = cursor.fetchall()
+        conn.close()
+
+        reports = []
+        for group_id, cascade_guid in groups:
+            # Generate report
+            report_path = None
+            if output_dir:
+                from pathlib import Path
+                Path(output_dir).mkdir(parents=True, exist_ok=True)
+                report_path = str(Path(output_dir) / f"proximity_report_{group_id}.json")
+
+            report = self.generate_proximity_report(
+                clash_group_id=group_id,
+                cascade_guid=cascade_guid,
+                output_path=report_path
+            )
+            reports.append(report)
+
+        return reports
