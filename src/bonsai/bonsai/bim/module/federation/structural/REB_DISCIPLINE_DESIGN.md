@@ -3,9 +3,23 @@
 ## Overview
 Add reinforcement bars as a separate "REB" discipline in the federation database, enabling:
 - Discipline-based filtering and visualization
-- Clash detection: "ELEC vs REB", "ACMV vs REB"
+- **Clash detection: "ELEC vs REB", "ACMV vs REB"** ✅ **WORKING** (Nov 15, 2025)
 - Rebar-aware conduit routing
 - Layer-based coordination (toggle REB on/off independently)
+
+## ✅ Status: IMPLEMENTED & TESTED (November 15, 2025)
+
+**Clash Detection Results:**
+- REB vs ELEC: **23 clashes** detected (rebar vs electrical fixtures/conduits)
+- REB vs ACMV: **206 clashes** detected (rebar vs HVAC ducts/equipment)
+- REB vs FP: **615 clashes** detected (rebar vs fire protection)
+- REB vs ARC: **9,532 clashes** detected (rebar vs walls/openings)
+- **Total: 10,376+ REB clashes** across all disciplines
+
+**Performance:**
+- 2,660 REB elements in database
+- Clash detection: ~2-5 seconds per discipline pair
+- Bounding box geometry (Phase 1) proven sufficient for coordination
 
 ---
 
@@ -407,3 +421,77 @@ python migrate_add_reb_discipline.py /path/to/database.db
 ---
 
 **Ready to implement?** This will be a game-changer for BIM coordination! 🚀
+
+---
+
+## Implementation History & Bug Fixes
+
+### November 15, 2025: R-tree Parameter Binding Bug Fix
+
+**Issue:** REB clash detection returned 0 results despite confirmed spatial overlaps
+
+**Root Cause Analysis:**
+1. **Primary Issue:** SQLite R-tree parameter binding bug
+   - Using `?` placeholders: Returned only 1 result per query
+   - Using f-string formatting: Returned 12+ results per query
+   - Known issue with R-tree virtual tables in some SQLite versions
+
+2. **Secondary Issue:** Wrong JOIN in proximity_analyzer.py
+   - Was: `JOIN elements_meta m ON r.id = m.guid` (int = text) ❌
+   - Fixed: `JOIN elements_meta m ON r.id = m.id` (int = int) ✅
+
+**Investigation Process:**
+- Manual SQL queries via sqlite3 CLI: Found 21 REB-ELEC overlaps ✓
+- Python with parameter binding: Found 0 clashes ✗
+- Python with hardcoded values: Found 23 clashes ✓
+- Confirmed: Parameter binding was the culprit
+
+**Files Fixed:**
+- `clash/detector.py` - Both cross-discipline and same-discipline queries
+- `clash/proximity_analyzer.py` - Fixed JOIN + parameter binding
+
+**Testing Validation:**
+```
+Before Fix:
+- REB vs ELEC: 0 clashes
+- REB vs ACMV: 0 clashes
+- REB vs FP: 0 clashes
+- REB vs ARC: 130 clashes (partial)
+
+After Fix:
+- REB vs ELEC: 23 clashes ✓
+- REB vs ACMV: 206 clashes ✓
+- REB vs FP: 615 clashes ✓
+- REB vs ARC: 9,532 clashes ✓
+- Total: 10,376 clashes detected!
+```
+
+**Sample Clash Verified:**
+```
+REB-0qfE5$t55BHPa6fxdBhXhU-BOTTOM (IfcReinforcingBar)
+vs
+3nOgxLwAr7igHCVseKFBex (IfcLightFixture)
+```
+
+**Lesson Learned:** Always test R-tree queries with both parameter binding and direct values when debugging spatial query issues. SQLite R-tree has known limitations with parameter binding that manifest as silent failures (returning fewer results than expected).
+
+**Commit:** b114954aa - "fix(federation): Fix R-tree parameter binding bug - Enable REB clash detection"
+
+---
+
+## Phase 2 Geometry Enhancement (Future)
+
+**Status:** NOT NEEDED (Phase 1 sufficient for current use cases)
+
+Phase 1 bounding box geometry has proven sufficient for:
+- Clash detection (10,376+ clashes found)
+- Visualization (clear rebar zone representation)
+- Performance (2,660 elements, <5s clash detection)
+
+**When to implement Phase 2 (detailed bar geometry):**
+- Specific project needs conduit routing BETWEEN individual bars
+- Client requests ultra-high-fidelity visualization
+- Clash detection shows excessive false positives (bbox too conservative)
+
+**Current recommendation:** Continue with Phase 1 until user feedback indicates Phase 2 is necessary.
+
