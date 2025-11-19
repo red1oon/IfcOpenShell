@@ -384,15 +384,18 @@ def get_clash_groups(context):
         cursor = conn.cursor()
 
         query = """
-            SELECT DISTINCT
-                group_id,
-                cascade_element_class,
-                cascade_element_discipline,
-                total_clashes,
-                severity,
-                cascade_element_guid
-            FROM clash_groups
-            ORDER BY total_clashes DESC, severity DESC
+            SELECT
+                cg.group_id,
+                cg.cascade_element_class,
+                cg.cascade_element_discipline,
+                cg.total_clashes,
+                cg.severity,
+                cg.cascade_element_guid,
+                em.element_name,
+                em.element_type
+            FROM clash_groups cg
+            LEFT JOIN elements_meta em ON cg.cascade_element_guid = em.guid
+            ORDER BY cg.total_clashes DESC, cg.severity DESC
         """
 
         cursor.execute(query)
@@ -403,18 +406,35 @@ def get_clash_groups(context):
             items.append(("NO_GROUPS", "No clash groups found", "Run 'Analyze Clash Groups' first"))
             return items
 
-        # Build dropdown items
-        for row in results:
-            group_id, elem_class, discipline, total, severity, guid = row
+        # Build dropdown items - show groups with element info
+        # Add sequential numbering to ensure visual distinction
+        for idx, row in enumerate(results, start=1):
+            group_id, elem_class, discipline, total, severity, guid, elem_name, elem_type = row
 
-            # Format display text
-            elem_name = elem_class.replace('Ifc', '') if elem_class else 'Unknown'
+            # Format display text - emphasize GROUP identity
+            elem_type_short = elem_class.replace('Ifc', '') if elem_class else 'Unknown'
             disc_name = discipline if discipline else 'Unknown'
-            guid_short = guid[:8] if guid else 'Unknown'  # First 8 chars of GUID for uniqueness
 
-            # Include GUID prefix for uniqueness when multiple groups have same element type
-            label = f"{elem_name} ({disc_name}) [{guid_short}]: {total} clashes [{severity}]"
-            tooltip = f"Group: {group_id}\nElement: {elem_name} (GUID: {guid})\nDiscipline: {disc_name}\nClashes: {total}\nSeverity: {severity}"
+            # Display element name if available for better context
+            if elem_name and elem_name.strip():
+                elem_display = f"{elem_name[:18]}"  # Use element name (keep short)
+            else:
+                elem_display = elem_type_short  # Fallback to IFC class
+
+            # Concise label format: "#N: Element (DISC) - X clashes"
+            # Removed severity to save space - it's in the tooltip
+            label = f"#{idx}: {elem_display} ({disc_name}) - {total}"
+
+            # Create detailed tooltip
+            elem_desc_for_tooltip = elem_name if elem_name else (elem_type if elem_type else elem_type_short)
+            tooltip = (f"Group #{idx}\n"
+                      f"Group ID: {group_id}\n"
+                      f"Element: {elem_type_short}\n"
+                      f"Name: {elem_desc_for_tooltip}\n"
+                      f"GUID: {guid}\n"
+                      f"Discipline: {disc_name}\n"
+                      f"Total Clashes: {total}\n"
+                      f"Severity: {severity}")
 
             items.append((group_id, label, tooltip))
 

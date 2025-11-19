@@ -3876,14 +3876,77 @@ class BIM_OT_preview_clash_group(bpy.types.Operator):
                 self.report({'WARNING'}, f"No clashes found in group")
                 return {'CANCELLED'}
 
-            # Collect all unique GUIDs
-            all_guids = set()
-            all_guids.add(group['cascade_element_guid'])
-            for row in clash_rows:
-                all_guids.add(row['guid_a'])
-                all_guids.add(row['guid_b'])
+            # Identify clash pair elements (guid_a and guid_b from first clash in group)
+            # These are the two elements that are actually clashing
+            first_clash = clash_rows[0]
+            clash_pair_guid_a = first_clash['guid_a']
+            clash_pair_guid_b = first_clash['guid_b']
 
-            logger.info(f"Loading group {selected_group}: {len(all_guids)} unique elements")
+            # Collect all unique GUIDs from clash pairs
+            all_clash_guids = set()
+            for row in clash_rows:
+                all_clash_guids.add(row['guid_a'])
+                all_clash_guids.add(row['guid_b'])
+
+            # Build cascade levels for elements that clash with the clash pair elements
+            # This creates the cascade: clash pair → immediate cascade → subsequent cascade
+            cascade_levels = {}  # guid -> level (1=orange, 2+=yellow)
+
+            # Level 1: Find elements that clash with the clash pair (ORANGE - immediate cascade)
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.cursor()
+
+            placeholders = ','.join('?' * len(all_clash_guids))
+            query = f"""
+                SELECT DISTINCT guid_a, guid_b
+                FROM clash_status
+                WHERE (guid_a IN ({placeholders}) OR guid_b IN ({placeholders}))
+                AND status != 'RESOLVED'
+            """
+            cursor.execute(query, list(all_clash_guids) * 2)
+            level1_rows = cursor.fetchall()
+
+            for guid_a, guid_b in level1_rows:
+                # Add elements that aren't in the clash pair itself
+                if guid_a not in all_clash_guids:
+                    cascade_levels[guid_a] = 1  # Orange - immediate cascade
+                if guid_b not in all_clash_guids:
+                    cascade_levels[guid_b] = 1  # Orange - immediate cascade
+
+            # Level 2+: Find elements that clash with level 1 (YELLOW - subsequent cascade)
+            current_level_guids = set([g for g, l in cascade_levels.items() if l == 1])
+            for level in range(2, 5):  # Levels 2, 3, 4 (all yellow)
+                if not current_level_guids:
+                    break
+
+                placeholders = ','.join('?' * len(current_level_guids))
+                query = f"""
+                    SELECT DISTINCT guid_a, guid_b
+                    FROM clash_status
+                    WHERE (guid_a IN ({placeholders}) OR guid_b IN ({placeholders}))
+                    AND status != 'RESOLVED'
+                """
+                cursor.execute(query, list(current_level_guids) * 2)
+                next_level_rows = cursor.fetchall()
+
+                next_level_guids = set()
+                for guid_a, guid_b in next_level_rows:
+                    if guid_a not in cascade_levels and guid_a not in all_clash_guids:
+                        cascade_levels[guid_a] = level
+                        next_level_guids.add(guid_a)
+                    if guid_b not in cascade_levels and guid_b not in all_clash_guids:
+                        cascade_levels[guid_b] = level
+                        next_level_guids.add(guid_b)
+
+                current_level_guids = next_level_guids
+
+            conn.close()
+
+            # All GUIDs to load: clash pair + cascade elements
+            all_guids = all_clash_guids | set(cascade_levels.keys())
+
+            logger.info(f"Loading group {selected_group}: {len(all_guids)} elements "
+                       f"({len(all_clash_guids)} clash pair + {len(cascade_levels)} cascade)")
 
             # Create or get collection
             collection_name = f"Clash_Group_{selected_group}"
@@ -3899,6 +3962,12 @@ class BIM_OT_preview_clash_group(bpy.types.Operator):
             # Load elements using visualization helper
             from .visualization.federation_viz_helper import find_or_create_element_from_database
 
+            # Define colors
+            clash_pair_color_a = (1.0, 0.0, 0.0, 1.0)  # RED - first element in clash pair
+            clash_pair_color_b = (0.0, 0.5, 1.0, 1.0)  # BLUE - second element in clash pair
+            immediate_cascade_color = (1.0, 0.5, 0.0, 1.0)  # ORANGE - immediate cascade (level 1)
+            subsequent_cascade_color = (1.0, 1.0, 0.0, 1.0)  # YELLOW - subsequent cascade (levels 2+)
+
             loaded_count = 0
             for guid in all_guids:
                 obj = find_or_create_element_from_database(
@@ -3908,15 +3977,35 @@ class BIM_OT_preview_clash_group(bpy.types.Operator):
                 )
 
                 if obj:
-                    # Apply red material to all elements
+                    # Determine color based on element type
+                    if guid == clash_pair_guid_a:
+                        color = clash_pair_color_a
+                        color_name = "Clash_Pair_Red"
+                    elif guid == clash_pair_guid_b:
+                        color = clash_pair_color_b
+                        color_name = "Clash_Pair_Blue"
+                    elif guid in cascade_levels:
+                        level = cascade_levels[guid]
+                        if level == 1:
+                            color = immediate_cascade_color
+                            color_name = "Immediate_Cascade_Orange"
+                        else:
+                            color = subsequent_cascade_color
+                            color_name = "Subsequent_Cascade_Yellow"
+                    else:
+                        # Other clash pair elements (if multiple clashes in group)
+                        color = clash_pair_color_a
+                        color_name = "Clash_Pair_Red"
+
+                    # Apply material
                     if not obj.data.materials:
-                        mat = bpy.data.materials.new(name="Clash_Red")
-                        mat.diffuse_color = (1.0, 0.0, 0.0, 1.0)  # Red
+                        mat = bpy.data.materials.new(name=color_name)
+                        mat.diffuse_color = color
                         mat.use_nodes = False
                         obj.data.materials.append(mat)
                     else:
-                        # Modify existing material to red
-                        obj.data.materials[0].diffuse_color = (1.0, 0.0, 0.0, 1.0)
+                        # Modify existing material
+                        obj.data.materials[0].diffuse_color = color
 
                     loaded_count += 1
 
@@ -3944,7 +4033,26 @@ class BIM_OT_preview_clash_group(bpy.types.Operator):
                                 break
                         break
 
-            self.report({'INFO'}, f"Loaded {loaded_count} elements from group {selected_group}")
+            # Report with color legend
+            orange_count = len([g for g, l in cascade_levels.items() if l == 1])
+            yellow_count = len([g for g, l in cascade_levels.items() if l > 1])
+
+            color_legend = (
+                f"Loaded {loaded_count} elements - Color legend: "
+                f"RED/BLUE=clash pair, ORANGE=immediate cascade ({orange_count}), "
+                f"YELLOW=subsequent cascade ({yellow_count})"
+            )
+            self.report({'INFO'}, color_legend)
+
+            print(f"\n{'='*70}")
+            print(f"CLASH GROUP PREVIEW - Color Scheme:")
+            print(f"{'='*70}")
+            print(f"  🔴 RED:    First element in clash pair")
+            print(f"  🔵 BLUE:   Second element in clash pair")
+            print(f"  🟠 ORANGE: Immediate cascade ({orange_count} elements - clash with pair)")
+            print(f"  🟡 YELLOW: Subsequent cascade ({yellow_count} elements - levels 2-4)")
+            print(f"{'='*70}\n")
+
             return {'FINISHED'}
 
         except Exception as e:

@@ -117,12 +117,23 @@ class SnapshotRenderer:
             import tempfile
             from pathlib import Path
 
+            # CRITICAL: Clear visualization collection before loading new elements
+            # This prevents accumulation of elements from previous group snapshots
+            clash_viz_collection_name = "Clash_Viz"
+            if clash_viz_collection_name in bpy.data.collections:
+                collection = bpy.data.collections[clash_viz_collection_name]
+                # Remove all objects from collection
+                for obj in list(collection.objects):
+                    bpy.data.objects.remove(obj, do_unlink=True)
+                # Remove collection itself
+                bpy.data.collections.remove(collection)
+
             # Load all elements in viewport
             try:
                 from ..visualization.federation_viz_helper import get_clash_elements_for_visualization
                 loaded_count = 0
                 for guid in guids:
-                    # Try to load each element (may already be loaded)
+                    # Try to load each element (will create new Clash_Viz collection)
                     obj, _ = get_clash_elements_for_visualization(guid, guid, self.database_path)
                     if obj:
                         loaded_count += 1

@@ -130,6 +130,29 @@ def get_model_offset(db_path: str = None) -> Vector:
         except Exception as e:
             print(f"  Warning: Could not read offset from site_context: {e}")
 
+        # Try global_offset table as fallback
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT offset_x, offset_y, offset_z
+                FROM global_offset
+                LIMIT 1
+            """)
+            global_offset = cursor.fetchone()
+            conn.close()
+
+            if global_offset and all(v is not None for v in global_offset):
+                offset = Vector((global_offset[0], global_offset[1], global_offset[2]))
+                print(f"  Using global_offset from database: ({offset.x:.1f}, {offset.y:.1f}, {offset.z:.1f})")
+
+                # Cache it for future use
+                bpy.context.scene["MEP_cached_offset"] = (offset.x, offset.y, offset.z)
+
+                return offset
+        except Exception as e:
+            print(f"  Warning: Could not read offset from global_offset: {e}")
+
     # Fallback: assume zero offset (IFC world coords = Blender coords)
     return Vector((0, 0, 0))
 
@@ -281,9 +304,46 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
     total_elements = sum(len(bboxes) for bboxes in discipline_bboxes.values())
     print(f"Loaded {total_elements:,} elements across {len(discipline_bboxes)} disciplines")
 
+    # DEBUG: Show sample bbox coordinates from database
+    print(f"\n🔍 DEBUG: Sample bounding boxes from database:")
+    for discipline, bbox_list in list(discipline_bboxes.items())[:3]:
+        if bbox_list:
+            bbox, guid = bbox_list[0]
+            print(f"   {discipline}: minXYZ=({bbox[0]:.2f}, {bbox[1]:.2f}, {bbox[2]:.2f}) maxXYZ=({bbox[3]:.2f}, {bbox[4]:.2f}, {bbox[5]:.2f})")
+
+    # Calculate actual bbox range from loaded data
+    all_min_x = min(bbox[0] for bboxes in discipline_bboxes.values() for bbox, _ in bboxes)
+    all_max_x = max(bbox[3] for bboxes in discipline_bboxes.values() for bbox, _ in bboxes)
+    all_min_y = min(bbox[1] for bboxes in discipline_bboxes.values() for bbox, _ in bboxes)
+    all_max_y = max(bbox[4] for bboxes in discipline_bboxes.values() for bbox, _ in bboxes)
+    all_min_z = min(bbox[2] for bboxes in discipline_bboxes.values() for bbox, _ in bboxes)
+    all_max_z = max(bbox[5] for bboxes in discipline_bboxes.values() for bbox, _ in bboxes)
+
+    extent_x = all_max_x - all_min_x
+    extent_y = all_max_y - all_min_y
+    extent_z = all_max_z - all_min_z
+
+    print(f"\n🔍 DEBUG: Loaded bbox extents:")
+    print(f"   X: {all_min_x:.2f} to {all_max_x:.2f} (extent: {extent_x:.2f}m = {extent_x/1000:.2f}km)")
+    print(f"   Y: {all_min_y:.2f} to {all_max_y:.2f} (extent: {extent_y:.2f}m = {extent_y/1000:.2f}km)")
+    print(f"   Z: {all_min_z:.2f} to {all_max_z:.2f} (extent: {extent_z:.2f}m)")
+
     # Get coordinate offset (auto-calculate from database if not cached)
     offset = get_model_offset(db_path)
-    print(f"Using coordinate offset: ({offset.x:.1f}, {offset.y:.1f}, {offset.z:.1f})")
+    print(f"\n🔍 DEBUG: Coordinate offset: ({offset.x:.1f}, {offset.y:.1f}, {offset.z:.1f})")
+
+    # DEBUG: Show what coordinates will be after offset
+    print(f"\n🔍 DEBUG: After applying offset, Blender coordinates will be:")
+    blender_min_x = all_min_x - offset.x
+    blender_max_x = all_max_x - offset.x
+    blender_min_y = all_min_y - offset.y
+    blender_max_y = all_max_y - offset.y
+    blender_min_z = all_min_z - offset.z
+    blender_max_z = all_max_z - offset.z
+    print(f"   X: {blender_min_x:.2f} to {blender_max_x:.2f} (extent: {blender_max_x - blender_min_x:.2f}m)")
+    print(f"   Y: {blender_min_y:.2f} to {blender_max_y:.2f} (extent: {blender_max_y - blender_min_y:.2f}m)")
+    print(f"   Z: {blender_min_z:.2f} to {blender_max_z:.2f} (extent: {blender_max_z - blender_min_z:.2f}m)")
+    print(f"   Center: ({(blender_min_x + blender_max_x)/2:.2f}, {(blender_min_y + blender_max_y)/2:.2f}, {(blender_min_z + blender_max_z)/2:.2f})")
 
     # Create GPU batches
     print(f"\nCreating GPU batches...")
