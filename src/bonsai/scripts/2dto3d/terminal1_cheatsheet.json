@@ -309,5 +309,57 @@
       "Scripts/generate_base_arc_str_multifloor.py": "Added per-discipline filtering and GPS alignment logic",
       "BASE_ARC_STR.db": "Regenerated with correct extraction (6893 elements, 8 floors)"
     }
+  },
+
+  "visualization_2d_html": {
+    "description": "2D HTML visualization with ARC/STR toggles - FROZEN 2025-11-19",
+    "status": "POC COMPLETE",
+
+    "rotation_transform": {
+      "applied": "90° counter-clockwise",
+      "formula": "(x, y) → (-y, x)",
+      "reason": "DXF coordinate system differs from Blender viewport orientation",
+      "effect": "Portrait orientation matching Blender top-down X-ray views"
+    },
+
+    "alignment_offsets": {
+      "method": "Center-to-center with manual adjustment",
+      "str_offset_mm": {
+        "x": -1643000,
+        "y": -37900
+      },
+      "manual_adjustment": {
+        "x": "+10000 mm (10m up in rotated view)",
+        "y": "-5000 mm (5m right in rotated view)"
+      },
+      "reason": "STR extracted bounds larger than Terminal 1 actual footprint, requires compensation"
+    },
+
+    "verified_correlation": {
+      "date": "2025-11-19",
+      "reference": "DXF_PlanViews/STR_XRAY.png",
+      "matches": [
+        "Dense roof beams at top",
+        "Horizontal beam grid pattern",
+        "Stepped entrance at bottom-left",
+        "Vertical frame on right side",
+        "Column positions along beams"
+      ]
+    },
+
+    "output_file": "SourceFiles/Terminal1_Extracted_View.html",
+    "script": "Scripts/visualize_extracted_terminal1.py",
+
+    "limitations": {
+      "dome": "Not visible in plan view - exists in elevation region Y=200-300k mm",
+      "heights": "No Z-data in 2D - all elements shown at same level",
+      "element_thickness": "Lines have no thickness - visual approximation only"
+    },
+
+    "next_steps": [
+      "Use these bounds for database extraction",
+      "Apply same rotation transform when generating 3D geometry",
+      "Dome can be added later from elevation arc curves"
+    ]
   }
 }
