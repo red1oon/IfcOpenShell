@@ -1,0 +1,8 @@
+# Large database files (use Git LFS or external storage)
+*.db
+*.sqlite
+*.sqlite3
+
+# Keep structure and docs
+!README.md
+!.gitignore
