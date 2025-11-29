@@ -66,6 +66,16 @@ code_patterns_complete.txt
 mep_structure_report.txt
 bonsai_config_finder.py
 
+# Working directory (databases, IFC files, test artifacts)
+WORK_DIR/
+*.db
+*.ifc
+*.blend
+*.xlsx
+*.mpp
+*.bcf
+*.bcfzip
+
 # Documentation (keep in docs/ directory, not root)
 /docs/project-knowledge/
 

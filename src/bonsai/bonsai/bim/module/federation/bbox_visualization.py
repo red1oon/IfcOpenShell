@@ -19,6 +19,10 @@ DISCIPLINE_COLORS = {
     'ACMV': (0.0, 0.75, 1.0, 1.0),      # Cyan/Blue
     'FP': (1.0, 0.0, 0.0, 1.0),          # Red
     'ELEC': (1.0, 1.0, 0.0, 1.0),        # Yellow
+    'PLUMB': (0.0, 0.4, 1.0, 1.0),       # Dark Blue (water)
+    'GAS': (0.8, 0.0, 0.8, 1.0),         # Purple/Magenta
+    'ICT': (0.0, 1.0, 0.0, 1.0),         # Green (data/comms)
+    'FURN': (0.6, 0.4, 0.2, 1.0),        # Brown/wood (furniture)
     'CW': (0.0, 1.0, 1.0, 1.0),          # Cyan
     'SP': (1.0, 0.5, 0.0, 1.0),          # Orange
     'ARC': (0.5, 0.5, 0.5, 0.7),         # Gray

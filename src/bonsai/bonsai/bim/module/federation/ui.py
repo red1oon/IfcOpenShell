@@ -954,15 +954,207 @@ class BIM_UL_resolution_options(UIList):
             layout.label(text="", translate=False)
 
 
+class BIM_PT_tab_4d_5d(Panel):
+    """4D/5D BIM Tab"""
+
+    bl_label = "4D/5D BIM"
+    bl_idname = "BIM_PT_tab_4d_5d"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "scene"
+    bl_order = 4
+
+    def draw(self, context):
+        pass
+
+
+class BIM_PT_4d_schedule_export(Panel):
+    """4D Construction Schedule Export Panel"""
+
+    bl_label = "4D Construction Schedule"
+    bl_idname = "BIM_PT_4d_schedule_export"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "scene"
+    bl_parent_id = "BIM_PT_tab_4d_5d"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context):
+        assert self.layout
+        layout = self.layout
+
+        # Get federation database path
+        fed_props = context.scene.BIMFederationProperties
+        db_path = bpy.path.abspath(fed_props.federation_database_path) if fed_props.federation_database_path else None
+
+        # Check schedule status
+        import os
+        import glob
+        from datetime import datetime
+        from pathlib import Path
+
+        schedule_exists = False
+        schedule_file = None
+        schedule_timestamp = ""
+        has_schedule_table = False
+        task_count = 0
+
+        # Search for existing schedule XML files in WORK_DIR/schedules/
+        if db_path and os.path.exists(db_path):
+            db_path_obj = Path(db_path)
+            work_dir = db_path_obj.parent.parent  # ../.. from databases/Terminal1.db
+            schedules_dir = work_dir / "schedules"
+
+            if schedules_dir.exists():
+                schedule_pattern = str(schedules_dir / "Terminal1_Schedule_*.xml")
+                schedule_files = sorted(glob.glob(schedule_pattern), reverse=True)
+                if schedule_files:
+                    schedule_file = schedule_files[0]  # Most recent
+                    schedule_exists = True
+                    mtime = os.path.getmtime(schedule_file)
+                    schedule_timestamp = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+
+        # Check if database has construction_schedule table with data
+        if db_path and os.path.exists(db_path):
+            import sqlite3
+
+            try:
+                conn = sqlite3.connect(db_path)
+                # Check if table exists
+                cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='construction_schedule'")
+                table_exists = cursor.fetchone() is not None
+
+                # Check if table has data
+                if table_exists:
+                    cursor = conn.execute("SELECT COUNT(*) FROM construction_schedule")
+                    task_count = cursor.fetchone()[0]
+                    has_schedule_table = task_count > 0
+                else:
+                    has_schedule_table = False
+
+                conn.close()
+            except:
+                has_schedule_table = False
+
+        # Header with status indicator
+        box = layout.box()
+        row = box.row()
+        row.label(text="4D Construction Schedule", icon="TIME")
+
+        # Status indicator (right-aligned)
+        status_row = row.row()
+        status_row.alignment = "RIGHT"
+        if has_schedule_table:
+            status_row.label(text="Ready", icon="CHECKMARK")
+        else:
+            status_row.label(text="Not Generated", icon="INFO")
+
+        # Info text
+        info_col = box.column(align=True)
+        info_col.scale_y = 0.7
+        info_col.label(text="💡 MS Project XML export format", icon="INFO")
+        info_col.label(text="   Duration from labor productivity (CIDB 2024)")
+
+        box.separator()
+
+        # Check database path
+        if not db_path or not os.path.exists(db_path):
+            warn_row = box.row()
+            warn_row.alert = True
+            warn_row.label(text="⚠ Set database in Multi-Model Federation panel first", icon="ERROR")
+            return
+
+        # Step 1: Generate Schedule
+        step_box = box.box()
+        step_row = step_box.row()
+        step_row.label(text="Step 1: Generate Schedule", icon="SEQUENCE")
+
+        if has_schedule_table:
+            # Schedule exists - show info and regenerate option
+            info_col = step_box.column(align=True)
+            info_col.scale_y = 0.7
+            info_col.label(text=f"✓ {task_count} tasks in database")
+
+            row = step_box.row(align=True)
+            row.scale_y = 1.3
+            row.operator("bim.generate_construction_schedule", text="Regenerate Schedule", icon="FILE_REFRESH")
+        else:
+            # No schedule - show generate button
+            row = step_box.row()
+            row.scale_y = 1.5
+            row.operator("bim.generate_construction_schedule", text="Generate Schedule", icon="PLAY")
+
+            hint = step_box.column(align=True)
+            hint.scale_y = 0.6
+            hint.label(text="(Analyzes elements and calculates task durations)")
+
+        box.separator()
+
+        # Step 2: Export to MPP
+        step_box = box.box()
+        step_row = step_box.row()
+        step_row.label(text="Step 2: Export to MS Project", icon="EXPORT")
+
+        if schedule_exists and has_schedule_table:
+            # Both schedule table and XML file exist
+            row = step_box.row(align=True)
+            row.scale_y = 1.3
+
+            # Open existing button
+            op = row.operator("bim.open_boq_report", text="Open XML", icon="FILE_FOLDER")
+            op.filepath = schedule_file
+
+            # Export button
+            row.operator("bim.export_mpp_schedule", text="Export", icon="EXPORT")
+
+            # Show file info
+            info_col = step_box.column(align=True)
+            info_col.scale_y = 0.6
+            info_col.label(text=f"Last exported: {schedule_timestamp}")
+            info_col.label(text=f"File: {os.path.basename(schedule_file)}")
+
+        elif has_schedule_table:
+            # Schedule table exists but no XML file
+            row = step_box.row()
+            row.scale_y = 1.5
+            row.operator("bim.export_mpp_schedule", text="Export to MS Project XML", icon="EXPORT")
+
+            hint = step_box.column(align=True)
+            hint.scale_y = 0.6
+            hint.label(text="(Creates XML file for MS Project/ProjectLibre)")
+        else:
+            # No schedule table - disabled
+            row = step_box.row()
+            row.scale_y = 1.5
+            row.enabled = False
+            row.operator("bim.export_mpp_schedule", text="Export to MS Project XML", icon="EXPORT")
+
+            hint = step_box.column(align=True)
+            hint.scale_y = 0.6
+            hint.alert = True
+            hint.label(text="(Generate schedule first)")
+
+        # Compatibility info
+        box.separator()
+        compat_box = box.box()
+        compat_box.label(text="Compatible Software:", icon="INFO")
+        compat_col = compat_box.column(align=True)
+        compat_col.scale_y = 0.7
+        compat_col.label(text="  • Microsoft Project 2010+")
+        compat_col.label(text="  • ProjectLibre (free & open source)")
+        compat_col.label(text="  • Primavera P6 (via import)")
+        compat_col.label(text="  • Asta Powerproject")
+
+
 class BIM_PT_boq_export(Panel):
     """Bill of Quantities Export Panel"""
 
-    bl_label = "Bill of Quantities (BOQ)"
+    bl_label = "Bill of Quantities (5D)"
     bl_idname = "BIM_PT_boq_export"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
-    bl_parent_id = "BIM_PT_tab_clash_detection"
+    bl_parent_id = "BIM_PT_tab_4d_5d"
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw(self, context):
@@ -977,20 +1169,27 @@ class BIM_PT_boq_export(Panel):
         import os
         import glob
         from datetime import datetime
+        from pathlib import Path
 
         boq_exists = False
         boq_file = None
         boq_timestamp = ""
         has_qto_table = False
 
-        # Search for existing BOQ files
-        boq_pattern = os.path.expanduser("~/Documents/bonsai/BOQ_Comprehensive_*.xlsx")
-        boq_files = sorted(glob.glob(boq_pattern), reverse=True)
-        if boq_files:
-            boq_file = boq_files[0]  # Most recent
-            boq_exists = True
-            mtime = os.path.getmtime(boq_file)
-            boq_timestamp = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+        # Search for existing BOQ files in WORK_DIR/boq_reports/
+        if db_path and os.path.exists(db_path):
+            db_path_obj = Path(db_path)
+            work_dir = db_path_obj.parent.parent  # ../.. from databases/Terminal1.db
+            boq_reports_dir = work_dir / "boq_reports"
+
+            if boq_reports_dir.exists():
+                boq_pattern = str(boq_reports_dir / "BOQ_Comprehensive_*.xlsx")
+                boq_files = sorted(glob.glob(boq_pattern), reverse=True)
+                if boq_files:
+                    boq_file = boq_files[0]  # Most recent
+                    boq_exists = True
+                    mtime = os.path.getmtime(boq_file)
+                    boq_timestamp = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
 
         # Check if database has simple_qto table with data
         if db_path and os.path.exists(db_path):

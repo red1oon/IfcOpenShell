@@ -118,6 +118,10 @@ classes = (
     # Report Generation
     operator.BIM_OT_generate_clash_resolution_report,
 
+    # 4D Schedule Export
+    operator.BIM_OT_generate_construction_schedule,
+    operator.BIM_OT_export_mpp_schedule,
+
     # BOQ (Bill of Quantities) Export
     operator.BIM_OT_export_comprehensive_boq,
     operator.BIM_OT_open_boq_report,
@@ -138,9 +142,13 @@ classes = (
     ui.BIM_PT_federation,
     ui.BIM_UL_federated_files,
     ui.BIM_UL_discipline_clashes,
+    ui.BIM_UL_clash_groups,
+    ui.BIM_UL_resolution_options,
     ui.BIM_PT_federation_clash_detection,
     ui.BIM_PT_federation_lod_visualization,
     ui.BIM_PT_clash_adjustment,
+    ui.BIM_PT_tab_4d_5d,
+    ui.BIM_PT_4d_schedule_export,
     ui.BIM_PT_boq_export,
     ui.BIM_PT_structural_works,
     ui.BIM_PT_nlp_query,

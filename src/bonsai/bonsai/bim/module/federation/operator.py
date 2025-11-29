@@ -4652,6 +4652,123 @@ class BIM_OT_generate_clash_resolution_report(bpy.types.Operator):
 
 
 # ============================================================================
+# 4D SCHEDULING OPERATORS
+# ============================================================================
+
+class BIM_OT_generate_construction_schedule(bpy.types.Operator):
+    """Generate 4D construction schedule from federation database"""
+    bl_idname = "bim.generate_construction_schedule"
+    bl_label = "Generate Construction Schedule"
+    bl_description = "Generate 4D construction schedule with task durations based on labor productivity"
+
+    def execute(self, context):
+        from datetime import datetime
+
+        # Get database path
+        fed_props = context.scene.BIMFederationProperties
+        db_path = fed_props.federation_database_path
+
+        if not db_path or not os.path.exists(db_path):
+            self.report({'ERROR'}, "Federation database not found. Set database path first.")
+            return {'CANCELLED'}
+
+        try:
+            self.report({'INFO'}, "Generating construction schedule...")
+
+            # Import schedule generator
+            from bonsai.bim.module.federation.schedule.schedule_generator import generate_construction_schedule
+
+            # Generate schedule
+            project_name = "Terminal 1 Construction"
+            start_date = "2025-01-06"  # TODO: Make this configurable in UI
+
+            tasks_created = generate_construction_schedule(db_path, start_date, project_name)
+
+            self.report({'INFO'}, f"✅ Schedule generated: {tasks_created} tasks created")
+            return {'FINISHED'}
+
+        except Exception as e:
+            logger.exception("Schedule generation failed")
+            self.report({'ERROR'}, f"Schedule generation failed: {str(e)}")
+            return {'CANCELLED'}
+
+
+class BIM_OT_export_mpp_schedule(bpy.types.Operator):
+    """Export construction schedule to MS Project XML format"""
+    bl_idname = "bim.export_mpp_schedule"
+    bl_label = "Export to MS Project"
+    bl_description = "Export schedule to MS Project XML (compatible with MS Project, ProjectLibre, Primavera P6)"
+
+    def execute(self, context):
+        from datetime import datetime
+        import subprocess
+        import sys
+
+        # Get database path
+        fed_props = context.scene.BIMFederationProperties
+        db_path = fed_props.federation_database_path
+
+        if not db_path or not os.path.exists(db_path):
+            self.report({'ERROR'}, "Federation database not found. Set database path first.")
+            return {'CANCELLED'}
+
+        # Check if construction_schedule table exists
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='construction_schedule'"
+        )
+        has_schedule_table = cursor.fetchone() is not None
+        conn.close()
+
+        if not has_schedule_table:
+            self.report({'ERROR'}, "Schedule not generated yet. Click 'Generate Schedule' first.")
+            return {'CANCELLED'}
+
+        try:
+            self.report({'INFO'}, "Exporting to MS Project XML...")
+
+            # Import MPP exporter
+            from bonsai.bim.module.federation.schedule.mpp_export import export_to_mpp_xml
+            from pathlib import Path
+
+            # Generate output path in WORK_DIR/schedules/
+            # Database is in WORK_DIR/databases/, so go up one level to find WORK_DIR
+            db_path_obj = Path(db_path)
+            work_dir = db_path_obj.parent.parent  # ../.. from databases/Terminal1.db
+            schedules_dir = work_dir / "schedules"
+            schedules_dir.mkdir(parents=True, exist_ok=True)
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_path = schedules_dir / f"Terminal1_Schedule_{timestamp}.xml"
+
+            # Export
+            project_name = "Terminal 1 Construction"
+            result_path = export_to_mpp_xml(str(db_path), str(output_path), project_name)
+
+            self.report({'INFO'}, f"✅ Schedule exported: {os.path.basename(result_path)}")
+
+            # Auto-open XML file (can be imported into MS Project/ProjectLibre)
+            try:
+                if sys.platform.startswith('linux'):
+                    # Try to open with default XML viewer
+                    subprocess.Popen(['xdg-open', result_path])
+                elif sys.platform == 'darwin':
+                    subprocess.Popen(['open', result_path])
+                elif sys.platform == 'win32':
+                    os.startfile(result_path)
+            except Exception as e:
+                logger.warning(f"Could not auto-open file: {e}")
+                self.report({'INFO'}, f"File saved: {result_path}")
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            logger.exception("MPP export failed")
+            self.report({'ERROR'}, f"MPP export failed: {str(e)}")
+            return {'CANCELLED'}
+
+
+# ============================================================================
 # BOQ (BILL OF QUANTITIES) OPERATORS
 # ============================================================================
 
@@ -4710,15 +4827,20 @@ class BIM_OT_export_comprehensive_boq(bpy.types.Operator):
 
             # Import BOQ exporter
             from bonsai.bim.module.federation.dataintelligence.comprehensive_boq_export import ComprehensiveBOQExporter
+            from pathlib import Path
 
-            # Generate timestamped output
+            # Generate output path in WORK_DIR/boq_reports/
+            # Database is in WORK_DIR/databases/, so go up one level to find WORK_DIR
+            db_path_obj = Path(db_path)
+            work_dir = db_path_obj.parent.parent  # ../.. from databases/Terminal1.db
+            boq_reports_dir = work_dir / "boq_reports"
+            boq_reports_dir.mkdir(parents=True, exist_ok=True)
+
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_dir = os.path.expanduser("~/Documents/bonsai")
-            os.makedirs(output_dir, exist_ok=True)
-            output_path = os.path.join(output_dir, f"BOQ_Comprehensive_{timestamp}.xlsx")
+            output_path = boq_reports_dir / f"BOQ_Comprehensive_{timestamp}.xlsx"
 
             # Create exporter and generate
-            exporter = ComprehensiveBOQExporter(output_path)
+            exporter = ComprehensiveBOQExporter(str(output_path))
             project_name = "Terminal 1 Expansion Project"
             result_path = exporter.generate_comprehensive_boq(db_path, project_name)
 
@@ -4944,15 +5066,20 @@ class BIM_OT_export_structural_boq(bpy.types.Operator):
 
             # Import BOQ exporter
             from bonsai.bim.module.federation.structural.boq_concrete_rebar_export import ConcreteRebarBOQ
+            from pathlib import Path
 
-            # Generate timestamped output
+            # Generate output path in WORK_DIR/boq_reports/
+            # Database is in WORK_DIR/databases/, so go up one level to find WORK_DIR
+            db_path_obj = Path(db_path)
+            work_dir = db_path_obj.parent.parent  # ../.. from databases/Terminal1.db
+            boq_reports_dir = work_dir / "boq_reports"
+            boq_reports_dir.mkdir(parents=True, exist_ok=True)
+
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_dir = os.path.expanduser("~/Documents/bonsai")
-            os.makedirs(output_dir, exist_ok=True)
-            output_path = os.path.join(output_dir, f"BOQ_Structural_{timestamp}.xlsx")
+            output_path = boq_reports_dir / f"BOQ_Structural_{timestamp}.xlsx"
 
             # Create exporter and generate complete BOQ
-            exporter = ConcreteRebarBOQ(db_path, output_path)
+            exporter = ConcreteRebarBOQ(db_path, str(output_path))
             project_name = structural_props.project_name or "Terminal 1 Expansion Project"
 
             # Generate complete BOQ (orchestrates all sheets)
