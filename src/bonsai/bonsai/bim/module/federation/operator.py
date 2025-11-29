@@ -4768,6 +4768,80 @@ class BIM_OT_export_mpp_schedule(bpy.types.Operator):
             return {'CANCELLED'}
 
 
+class BIM_OT_export_schedule_excel(bpy.types.Operator):
+    """Export construction schedule to Excel format (for users without MS Project)"""
+    bl_idname = "bim.export_schedule_excel"
+    bl_label = "Export to Excel"
+    bl_description = "Export schedule to Excel spreadsheet with Gantt-style layout"
+
+    def execute(self, context):
+        from datetime import datetime
+        import subprocess
+        import sys
+
+        # Get database path
+        fed_props = context.scene.BIMFederationProperties
+        db_path = fed_props.federation_database_path
+
+        if not db_path or not os.path.exists(db_path):
+            self.report({'ERROR'}, "Federation database not found. Set database path first.")
+            return {'CANCELLED'}
+
+        # Check if construction_schedule table exists
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='construction_schedule'"
+        )
+        has_schedule_table = cursor.fetchone() is not None
+        conn.close()
+
+        if not has_schedule_table:
+            self.report({'ERROR'}, "Schedule not generated yet. Click 'Generate Schedule' first.")
+            return {'CANCELLED'}
+
+        try:
+            self.report({'INFO'}, "Exporting to Excel...")
+
+            # Import Excel exporter
+            from bonsai.bim.module.federation.schedule.excel_export import export_schedule_to_excel
+            from pathlib import Path
+
+            # Generate output path in WORK_DIR/schedules/
+            # Database is in WORK_DIR/databases/, so go up one level to find WORK_DIR
+            db_path_obj = Path(db_path)
+            work_dir = db_path_obj.parent.parent  # ../.. from databases/Terminal1.db
+            schedules_dir = work_dir / "schedules"
+            schedules_dir.mkdir(parents=True, exist_ok=True)
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_path = schedules_dir / f"Terminal1_Schedule_{timestamp}.xlsx"
+
+            # Export
+            project_name = "Terminal 1 Construction"
+            result_path = export_schedule_to_excel(str(db_path), str(output_path), project_name)
+
+            self.report({'INFO'}, f"✅ Schedule exported to Excel: {os.path.basename(result_path)}")
+
+            # Auto-open Excel file
+            try:
+                if sys.platform.startswith('linux'):
+                    subprocess.Popen(['xdg-open', result_path])
+                elif sys.platform == 'darwin':
+                    subprocess.Popen(['open', result_path])
+                elif sys.platform == 'win32':
+                    os.startfile(result_path)
+            except Exception as e:
+                logger.warning(f"Could not auto-open file: {e}")
+                self.report({'INFO'}, f"File saved: {result_path}")
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            logger.exception("Excel export failed")
+            self.report({'ERROR'}, f"Excel export failed: {str(e)}")
+            return {'CANCELLED'}
+
+
 # ============================================================================
 # BOQ (BILL OF QUANTITIES) OPERATORS
 # ============================================================================

@@ -121,6 +121,7 @@ classes = (
     # 4D Schedule Export
     operator.BIM_OT_generate_construction_schedule,
     operator.BIM_OT_export_mpp_schedule,
+    operator.BIM_OT_export_schedule_excel,
 
     # BOQ (Bill of Quantities) Export
     operator.BIM_OT_export_comprehensive_boq,

@@ -1090,10 +1090,10 @@ class BIM_PT_4d_schedule_export(Panel):
 
         box.separator()
 
-        # Step 2: Export to MPP
+        # Step 2: Export Schedule
         step_box = box.box()
         step_row = step_box.row()
-        step_row.label(text="Step 2: Export to MS Project", icon="EXPORT")
+        step_row.label(text="Step 2: Export Schedule", icon="EXPORT")
 
         if schedule_exists and has_schedule_table:
             # Both schedule table and XML file exist
@@ -1104,8 +1104,9 @@ class BIM_PT_4d_schedule_export(Panel):
             op = row.operator("bim.open_boq_report", text="Open XML", icon="FILE_FOLDER")
             op.filepath = schedule_file
 
-            # Export button
-            row.operator("bim.export_mpp_schedule", text="Export", icon="EXPORT")
+            # Export buttons
+            row.operator("bim.export_mpp_schedule", text="XML", icon="EXPORT")
+            row.operator("bim.export_schedule_excel", text="Excel", icon="DOCUMENTS")
 
             # Show file info
             info_col = step_box.column(align=True)
@@ -1115,19 +1116,21 @@ class BIM_PT_4d_schedule_export(Panel):
 
         elif has_schedule_table:
             # Schedule table exists but no XML file
-            row = step_box.row()
-            row.scale_y = 1.5
-            row.operator("bim.export_mpp_schedule", text="Export to MS Project XML", icon="EXPORT")
+            row = step_box.row(align=True)
+            row.scale_y = 1.3
+            row.operator("bim.export_mpp_schedule", text="Export to XML (MS Project)", icon="EXPORT")
+            row.operator("bim.export_schedule_excel", text="Export to Excel", icon="DOCUMENTS")
 
             hint = step_box.column(align=True)
             hint.scale_y = 0.6
-            hint.label(text="(Creates XML file for MS Project/ProjectLibre)")
+            hint.label(text="XML: For MS Project/ProjectLibre | Excel: For spreadsheet viewers")
         else:
             # No schedule table - disabled
-            row = step_box.row()
-            row.scale_y = 1.5
+            row = step_box.row(align=True)
+            row.scale_y = 1.3
             row.enabled = False
-            row.operator("bim.export_mpp_schedule", text="Export to MS Project XML", icon="EXPORT")
+            row.operator("bim.export_mpp_schedule", text="Export to XML", icon="EXPORT")
+            row.operator("bim.export_schedule_excel", text="Export to Excel", icon="DOCUMENTS")
 
             hint = step_box.column(align=True)
             hint.scale_y = 0.6
