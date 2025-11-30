@@ -715,12 +715,207 @@ for task in tasks:
 
 ---
 
+## 🎬 Example Scripts: Automated MEP Showcase
+
+**Location**: `src/bonsai/docs/federation/examples/`
+
+Ready-to-use scripts for creating professional construction showcases with sectional reveals and automated camera paths.
+
+### Script 1: Sectional Reveal MEP (`sectional_reveal_mep.py`)
+
+**What it does:**
+- Hides building envelope (ARC + STR) at specified frame
+- Reveals hidden MEP systems (ACMV, ELEC, FP) dramatically
+- Configurable timing and duration
+
+**Usage:**
+```bash
+# In Blender Scripting workspace:
+# 1. Open: src/bonsai/docs/federation/examples/sectional_reveal_mep.py
+# 2. Click "Run Script"
+# 3. Save file (Ctrl+S)
+# 4. Scrub to frame 4000 → See envelope hide!
+```
+
+**Available presets:**
+```python
+preset_single_reveal_midpoint()    # Frame 4000 (default)
+preset_three_stage_reveal()        # Multiple reveals at 2000, 4500, 7000
+preset_long_section()              # Extended 500-frame reveal
+preset_mep_only_reveal()           # Hide everything except MEP
+```
+
+**Custom usage:**
+```python
+add_sectional_reveal(
+    reveal_start_frame=4000,    # When to hide envelope
+    reveal_duration=200,         # How long to stay hidden
+    disciplines_to_hide=['ARC', 'STR']  # Which disciplines
+)
+```
+
+---
+
+### Script 2: Automated MEP Showcase (`automated_mep_showcase.py`)
+
+**What it does:**
+- ✅ Sectional reveal (hides envelope during MEP phase)
+- ✅ Automated camera flythrough (orbits around/inside building)
+- ✅ Auto-switches to camera view (no numpad needed!)
+- ✅ Perfectly timed to construction schedule
+
+**Features:**
+- **Auto-calculated camera path** based on building bounds
+- **Smooth Bezier interpolation** for cinematic movement
+- **Three-phase sequence**: Approach → Interior orbit → Exit
+- **Hands-free operation** - just press SPACEBAR!
+
+**Usage:**
+```bash
+# In Blender Scripting workspace:
+# 1. Open: src/bonsai/docs/federation/examples/automated_mep_showcase.py
+# 2. Click "Run Script" (▶)
+# 3. Wait ~2-5 minutes (processing 49k objects)
+# 4. Save file (Ctrl+S)
+# 5. Already in camera view - just press SPACEBAR!
+```
+
+**Timeline sequence:**
+```
+Frame 3800:      Camera approaches from outside
+Frame 4000:      💥 Envelope HIDES + Camera ENTERS building
+                 (ARC + STR disappear, MEP visible!)
+Frame 4000-4200: Camera orbits INSIDE building
+                 (Shows ACMV ducts, ELEC conduits, FP pipes)
+Frame 4200:      Envelope RETURNS + Camera EXITS
+Frame 4300:      Overview shot (end)
+```
+
+**Available presets:**
+```python
+preset_early_mep_reveal()      # Frame 2000 (early construction)
+preset_midpoint_mep_reveal()   # Frame 4000 (DEFAULT - MEP rough-in)
+preset_late_mep_reveal()       # Frame 6500 (ceiling MEP before finishes)
+preset_extended_showcase()     # 500 frames (long detailed examination)
+```
+
+**Custom camera path:**
+```python
+automated_mep_showcase(
+    reveal_start=4000,          # When reveal begins
+    reveal_duration=200,        # How long reveal lasts
+    auto_calculate_bounds=True  # Auto-detect building size
+)
+```
+
+**Output:**
+```
+✅ AUTOMATED MEP SHOWCASE - Ready!
+
+🎮 HOW TO USE:
+   1. Save file (Ctrl+S)
+   2. Already in camera view! (no numpad needed)
+   3. Press SPACEBAR → Watch automated showcase!
+   4. Sit back and enjoy the flythrough 🍿
+
+📹 Camera Path:
+   Phase 1: Approach (frames 3800 → 4000)
+   Phase 2: Interior orbit (frames 4000 → 4200)
+   Phase 3: Exit overview (frames 4200 → 4300)
+```
+
+---
+
+### Script 3: Fast Version (`automated_mep_showcase_fast.py`)
+
+**Why use this:**
+- Same as Script 2 but with **real-time progress output**
+- Shows progress every 1000 objects
+- Displays estimated time remaining
+- Use if original script seems stuck
+
+**Progress output:**
+```
+📐 Calculating building bounds...
+   Center: (121.5, -21.7, -0.8)
+   Radius: 51.6m
+
+🎭 Adding sectional reveal (MEP systems)...
+   Processing 49,059 objects...
+      Progress: 10,000/49,059 (20%) - 5,234 envelope objects - ETA: 120s
+      Progress: 20,000/49,059 (41%) - 10,891 envelope objects - ETA: 60s
+      ...
+   ✅ 25,000 envelope objects configured in 180s
+
+📹 Creating automated camera path...
+   ✅ Camera path: 9 keyframes
+
+✅ SETUP COMPLETE!
+```
+
+---
+
+### Workflow: Creating Multiple Showcase Versions
+
+**Best practice:** Create specialized versions for different audiences
+
+```bash
+# Version 1: Basic Construction (for architects)
+# - Don't run any scripts
+# - Save as: "Terminal1_4D_Basic.blend"
+
+# Version 2: MEP Sectional Reveal (for MEP coordinators)
+# - Run: sectional_reveal_mep.py
+# - Save as: "Terminal1_4D_MEP_Reveal.blend"
+
+# Version 3: Full Showcase with Camera (for clients/stakeholders)
+# - Run: automated_mep_showcase.py
+# - Save as: "Terminal1_4D_Showcase.blend"
+
+# Version 4: Custom Timing (for project managers)
+# - Edit script to use different frame (e.g., 2000 for early phase)
+# - Save as: "Terminal1_4D_Early_MEP.blend"
+```
+
+**Benefits:**
+- Different versions for different audiences
+- Experiment safely (keep originals)
+- Each ~840MB (manage file sizes)
+
+---
+
+### Camera Tips for Best Results
+
+**Before running showcase script:**
+1. Note building orientation in viewport
+2. Identify best viewing angles manually
+3. Script will auto-calculate, but you can customize camera positions in code
+
+**After script runs:**
+- Camera automatically points at building center
+- Smooth Bezier interpolation for cinematic feel
+- To exit camera view: View menu → Viewport Navigation → Orbit
+
+**For final presentation:**
+```python
+# In script, adjust these values:
+orbit_radius = 100.0    # Distance from building
+cam_data.lens = 35      # Wide angle (28-50mm)
+
+# Enable motion blur for render:
+scene.render.use_motion_blur = True
+scene.render.resolution_percentage = 100  # Full quality
+```
+
+---
+
 ## 🚀 Future Enhancements
 
 ### Planned Features
 
 - **Smooth fade-in** - Gradual alpha transparency instead of binary toggle
-- **Camera path automation** - Auto-generate flythrough animations
+- ~~**Camera path automation**~~ - ✅ **IMPLEMENTED** (see Example Scripts above)
+- ~~**Sectional reveals**~~ - ✅ **IMPLEMENTED** (see Example Scripts above)
 - **Progress tracking** - Show % complete overlay on viewport
 - **Resource loading** - Assign crews, equipment from schedule
 - **Clash timeline** - Show when/where clashes occur
@@ -745,8 +940,16 @@ See: [5D Dashboard Design](../../../../WORK_DIR/PROJECT_STATUS_4D_READINESS.md)
 
 ## 📄 Related Documentation
 
+**Core Documentation:**
 - **[Federation Module README](../../bonsai/bim/module/federation/README.md)** - Spatial indexing and federated models
 - **[BOQ System Guide](../../bonsai/bim/module/federation/ProjectKnowledge/BOQ_System_User_Guide_For_Accountants.md)** - 5D cost analysis
+
+**Example Scripts** (Ready to use!):**
+- **[Sectional Reveal MEP](examples/sectional_reveal_mep.py)** - Hide envelope to show MEP systems
+- **[Automated MEP Showcase](examples/automated_mep_showcase.py)** - Full automated flythrough with camera
+- **[Fast Version](examples/automated_mep_showcase_fast.py)** - Same with progress output
+
+**Quick Reference:**
 - **[4D Quick Start](../../../../WORK_DIR/4D_QUICK_START.md)** - Quick reference guide
 - **[Timeline Controls](../../../../WORK_DIR/timeline_controls.md)** - Blender shortcuts
 - **[Performance Guide](../../../../WORK_DIR/schedules/4D_PERFORMANCE_GUIDE.md)** - Optimization for 50k+ elements
