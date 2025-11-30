@@ -1137,6 +1137,35 @@ class BIM_PT_4d_schedule_export(Panel):
             hint.alert = True
             hint.label(text="(Generate schedule first)")
 
+        box.separator()
+
+        # Step 3: Animate 4D Construction
+        step_box = box.box()
+        step_row = step_box.row()
+        step_row.label(text="Step 3: Animate Construction (4D)", icon="PLAY")
+
+        if has_schedule_table:
+            # Schedule exists - enable animation
+            row = step_box.row(align=True)
+            row.scale_y = 1.5
+            op = row.operator("bim.animate_4d_construction", text="🎬 Create 4D Animation", icon="SEQUENCE")
+
+            hint = step_box.column(align=True)
+            hint.scale_y = 0.6
+            hint.label(text="Shows construction sequence over time in Blender viewport")
+            hint.label(text="Press SPACE to play timeline after creating animation")
+        else:
+            # No schedule - disabled
+            row = step_box.row(align=True)
+            row.scale_y = 1.5
+            row.enabled = False
+            row.operator("bim.animate_4d_construction", text="Create 4D Animation", icon="SEQUENCE")
+
+            hint = step_box.column(align=True)
+            hint.scale_y = 0.6
+            hint.alert = True
+            hint.label(text="(Generate schedule first)")
+
         # Compatibility info
         box.separator()
         compat_box = box.box()

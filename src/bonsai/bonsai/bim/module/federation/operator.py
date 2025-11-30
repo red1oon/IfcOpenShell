@@ -4842,6 +4842,79 @@ class BIM_OT_export_schedule_excel(bpy.types.Operator):
             return {'CANCELLED'}
 
 
+class BIM_OT_animate_4d_construction(bpy.types.Operator):
+    """Animate construction sequence in Blender viewport (4D BIM)"""
+    bl_idname = "bim.animate_4d_construction"
+    bl_label = "Animate 4D Construction"
+    bl_description = "Create visibility animation showing construction sequence over time\n\nNote: All elements will be hidden at frame 0, then progressively appear based on construction schedule"
+
+    frames_per_day: bpy.props.IntProperty(
+        name="Frames per Day",
+        description="How many Blender frames represent one calendar day (2 = 12 frames/week, smooth playback)",
+        default=2,
+        min=1,
+        max=10
+    )
+
+    reset_to_end: bpy.props.BoolProperty(
+        name="Show Complete Building After Creation",
+        description="Jump to final frame after animation creation (shows complete building instead of empty frame 0)",
+        default=True
+    )
+
+    def execute(self, context):
+        # Get database path
+        fed_props = context.scene.BIMFederationProperties
+        db_path = fed_props.federation_database_path
+
+        if not db_path or not os.path.exists(db_path):
+            self.report({'ERROR'}, "Federation database not found. Set database path first.")
+            return {'CANCELLED'}
+
+        # Check if construction_schedule table exists
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='construction_schedule'"
+        )
+        has_schedule_table = cursor.fetchone() is not None
+        conn.close()
+
+        if not has_schedule_table:
+            self.report({'ERROR'}, "Schedule not generated yet. Click 'Generate Schedule' first.")
+            return {'CANCELLED'}
+
+        try:
+            self.report({'INFO'}, f"🎬 Creating 4D construction animation ({self.frames_per_day} frames/day)...")
+
+            # Import optimized animator for better performance with large models
+            from bonsai.bim.module.federation.schedule.animation_optimized import animate_construction_sequence_optimized
+
+            # Create animation
+            stats = animate_construction_sequence_optimized(db_path, self.frames_per_day)
+
+            if stats['success']:
+                # Optionally jump to end frame to show complete building
+                if self.reset_to_end and stats['end_frame']:
+                    bpy.context.scene.frame_set(stats['end_frame'])
+                    self.report({'INFO'}, "Viewport reset to final frame (complete building)")
+
+                self.report({'INFO'},
+                    f"✅ Animation created: {stats['objects_animated']} objects, "
+                    f"{stats['project_duration_days']:.0f} days, "
+                    f"frames 0-{stats['end_frame']}"
+                )
+                self.report({'INFO'}, "Timeline: Frame 0 = empty, Frame {0} = complete | Press SPACE to play".format(stats['end_frame']))
+                return {'FINISHED'}
+            else:
+                self.report({'WARNING'}, stats['message'])
+                return {'CANCELLED'}
+
+        except Exception as e:
+            logger.exception("4D animation failed")
+            self.report({'ERROR'}, f"Animation failed: {str(e)}")
+            return {'CANCELLED'}
+
+
 # ============================================================================
 # BOQ (BILL OF QUANTITIES) OPERATORS
 # ============================================================================

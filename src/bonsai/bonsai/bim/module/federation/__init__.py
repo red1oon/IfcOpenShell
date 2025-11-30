@@ -118,10 +118,11 @@ classes = (
     # Report Generation
     operator.BIM_OT_generate_clash_resolution_report,
 
-    # 4D Schedule Export
+    # 4D Schedule Export & Animation
     operator.BIM_OT_generate_construction_schedule,
     operator.BIM_OT_export_mpp_schedule,
     operator.BIM_OT_export_schedule_excel,
+    operator.BIM_OT_animate_4d_construction,
 
     # BOQ (Bill of Quantities) Export
     operator.BIM_OT_export_comprehensive_boq,
