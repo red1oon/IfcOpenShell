@@ -1,0 +1,647 @@
+"""
+Digital Twin - Blender Operators
+UI operators for asset management in Blender
+
+Operators:
+- Import assets from IFC
+- View asset details
+- Update asset status
+- Visualize assets by condition
+"""
+
+import bpy
+import os
+from datetime import datetime, timedelta
+from bpy.types import Operator
+from bpy.props import StringProperty, EnumProperty, BoolProperty
+from pathlib import Path
+
+from .asset_registry import AssetRegistry
+from .asset_importer import AssetImporter
+
+
+def get_tandem_db_path(context) -> str:
+    """Get path to digital twin database"""
+    # Check scene property first
+    if hasattr(context.scene, 'BIMTandemProperties'):
+        db_path = context.scene.BIMTandemProperties.database_path
+        if db_path and os.path.exists(db_path):
+            return db_path
+
+    # Default to WORK_DIR
+    work_dir = Path.home() / 'Projects' / 'IfcOpenShell' / 'WORK_DIR' / 'databases'
+    if work_dir.exists():
+        db_path = work_dir / 'digital_twin.db'
+        return str(db_path)
+
+    # Fallback to temp
+    return str(Path(bpy.app.tempdir) / 'digital_twin.db')
+
+
+class BIM_OT_import_assets_from_ifc(Operator):
+    """Import equipment assets from loaded IFC model"""
+    bl_idname = "bim.import_assets_from_ifc"
+    bl_label = "Import Assets from IFC"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        import bonsai.tool as tool
+        return tool.Ifc.get() is not None
+
+    def execute(self, context):
+        import bonsai.tool as tool
+
+        ifc_file = tool.Ifc.get()
+        if not ifc_file:
+            self.report({'ERROR'}, "No IFC file loaded")
+            return {'CANCELLED'}
+
+        try:
+            # Get database path
+            db_path = get_tandem_db_path(context)
+
+            # Initialize registry and importer
+            registry = AssetRegistry(db_path)
+            importer = AssetImporter(registry)
+
+            # Progress tracking
+            self.progress_current = 0
+            self.progress_total = 0
+
+            def progress_callback(current, total, message):
+                self.progress_current = current
+                self.progress_total = total
+                print(f"[{current}/{total}] {message}")
+
+            # Import from blend
+            stats = importer.import_from_blend(progress_callback)
+
+            # Report results
+            message = (
+                f"Import complete: {stats['imported']} assets imported, "
+                f"{stats['skipped']} skipped, {stats['errors']} errors"
+            )
+            self.report({'INFO'}, message)
+
+            print("\nImport Statistics:")
+            print(f"  Total scanned: {stats['total_scanned']}")
+            print(f"  Imported: {stats['imported']}")
+            print(f"  Skipped: {stats['skipped']}")
+            print(f"  Errors: {stats['errors']}")
+            print("\nBy Discipline:")
+            for disc, count in stats['by_discipline'].items():
+                print(f"  {disc}: {count}")
+
+            # Update scene properties
+            if hasattr(context.scene, 'BIMTandemProperties'):
+                context.scene.BIMTandemProperties.database_path = db_path
+                context.scene.BIMTandemProperties.last_sync = bpy.context.scene.frame_current
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Import failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {'CANCELLED'}
+
+
+class BIM_OT_refresh_asset_list(Operator):
+    """Refresh asset list from database"""
+    bl_idname = "bim.refresh_asset_list"
+    bl_label = "Refresh Asset List"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        try:
+            db_path = get_tandem_db_path(context)
+            registry = AssetRegistry(db_path)
+
+            # Get filter settings
+            props = context.scene.BIMTandemProperties
+            discipline = props.filter_discipline if props.filter_discipline != 'ALL' else None
+            status = props.filter_status if props.filter_status != 'ALL' else None
+
+            # List assets
+            assets = registry.list_assets(
+                discipline=discipline,
+                status=status
+            )
+
+            # Update UI collection
+            context.scene.bim_tandem_assets.clear()
+            for asset in assets:
+                item = context.scene.bim_tandem_assets.add()
+                item.guid = asset['guid']
+                item.name = asset['name']
+                item.ifc_class = asset['ifc_class']
+                item.discipline = asset.get('discipline', 'Unknown')
+                item.status = asset.get('status', 'Unknown')
+                item.condition = asset.get('condition', 'Unknown')
+
+            self.report({'INFO'}, f"Loaded {len(assets)} assets")
+            return {'FINISHED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Refresh failed: {str(e)}")
+            return {'CANCELLED'}
+
+
+class BIM_OT_view_asset_details(Operator):
+    """View detailed information about selected asset"""
+    bl_idname = "bim.view_asset_details"
+    bl_label = "View Asset Details"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    asset_guid: StringProperty()
+
+    def execute(self, context):
+        try:
+            db_path = get_tandem_db_path(context)
+            registry = AssetRegistry(db_path)
+
+            asset = registry.get_asset(self.asset_guid)
+            if not asset:
+                self.report({'ERROR'}, f"Asset {self.asset_guid} not found")
+                return {'CANCELLED'}
+
+            # Store in scene properties for display
+            props = context.scene.BIMTandemProperties
+            props.selected_asset_guid = self.asset_guid
+            props.selected_asset_name = asset.get('name', 'Unknown')
+            props.selected_asset_manufacturer = asset.get('manufacturer', '')
+            props.selected_asset_model = asset.get('model', '')
+            props.selected_asset_status = asset.get('status', 'Unknown')
+            props.selected_asset_condition = asset.get('condition', 'Unknown')
+
+            self.report({'INFO'}, f"Viewing: {asset['name']}")
+            return {'FINISHED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to load asset: {str(e)}")
+            return {'CANCELLED'}
+
+
+class BIM_OT_highlight_asset_in_3d(Operator):
+    """Highlight selected asset in 3D viewport"""
+    bl_idname = "bim.highlight_asset_in_3d"
+    bl_label = "Highlight in 3D"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    asset_guid: StringProperty()
+
+    def execute(self, context):
+        import bonsai.tool as tool
+
+        ifc_file = tool.Ifc.get()
+        if not ifc_file:
+            self.report({'ERROR'}, "No IFC file loaded")
+            return {'CANCELLED'}
+
+        try:
+            # Find element by GUID
+            element = ifc_file.by_guid(self.asset_guid)
+            if not element:
+                self.report({'ERROR'}, f"Asset {self.asset_guid} not found in IFC")
+                return {'CANCELLED'}
+
+            # Find corresponding Blender object
+            obj = tool.Ifc.get_object(element)
+            if obj:
+                # Deselect all
+                bpy.ops.object.select_all(action='DESELECT')
+
+                # Select and make active
+                obj.select_set(True)
+                context.view_layer.objects.active = obj
+
+                # Frame in viewport
+                for area in context.screen.areas:
+                    if area.type == 'VIEW_3D':
+                        for region in area.regions:
+                            if region.type == 'WINDOW':
+                                with context.temp_override(area=area, region=region):
+                                    bpy.ops.view3d.view_selected()
+
+                self.report({'INFO'}, f"Selected: {obj.name}")
+                return {'FINISHED'}
+            else:
+                self.report({'WARNING'}, "Asset not visible in 3D view")
+                return {'CANCELLED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to highlight: {str(e)}")
+            return {'CANCELLED'}
+
+
+class BIM_OT_update_asset_status(Operator):
+    """Update asset status or condition"""
+    bl_idname = "bim.update_asset_status"
+    bl_label = "Update Asset Status"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    asset_guid: StringProperty()
+    field: EnumProperty(
+        items=[
+            ('status', 'Status', 'Update status field'),
+            ('condition', 'Condition', 'Update condition field')
+        ]
+    )
+    value: StringProperty()
+
+    def execute(self, context):
+        try:
+            db_path = get_tandem_db_path(context)
+            registry = AssetRegistry(db_path)
+
+            updates = {self.field: self.value}
+            success = registry.update_asset(self.asset_guid, updates, changed_by='blender_user')
+
+            if success:
+                self.report({'INFO'}, f"Updated {self.field} to {self.value}")
+                # Refresh list
+                bpy.ops.bim.refresh_asset_list()
+                return {'FINISHED'}
+            else:
+                self.report({'ERROR'}, "Asset not found")
+                return {'CANCELLED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Update failed: {str(e)}")
+            return {'CANCELLED'}
+
+
+class BIM_OT_visualize_assets_by_condition(Operator):
+    """Color-code assets in 3D by condition"""
+    bl_idname = "bim.visualize_assets_by_condition"
+    bl_label = "Visualize by Condition"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        import bonsai.tool as tool
+
+        ifc_file = tool.Ifc.get()
+        if not ifc_file:
+            self.report({'ERROR'}, "No IFC file loaded")
+            return {'CANCELLED'}
+
+        try:
+            db_path = get_tandem_db_path(context)
+            registry = AssetRegistry(db_path)
+
+            # Get all assets
+            assets = registry.list_assets()
+
+            # Condition color mapping
+            condition_colors = {
+                'Excellent': (0.0, 0.8, 0.0, 1.0),  # Green
+                'Good': (0.4, 0.8, 0.4, 1.0),       # Light green
+                'Fair': (1.0, 0.8, 0.0, 1.0),       # Yellow
+                'Poor': (1.0, 0.5, 0.0, 1.0),       # Orange
+                'Failed': (1.0, 0.0, 0.0, 1.0),     # Red
+            }
+
+            colored_count = 0
+
+            for asset in assets:
+                try:
+                    element = ifc_file.by_guid(asset['guid'])
+                    if not element:
+                        continue
+
+                    obj = tool.Ifc.get_object(element)
+                    if not obj:
+                        continue
+
+                    condition = asset.get('condition', 'Good')
+                    color = condition_colors.get(condition, (0.5, 0.5, 0.5, 1.0))
+
+                    # Set viewport display color
+                    obj.color = color
+                    colored_count += 1
+
+                except:
+                    pass
+
+            # Enable color display in viewport
+            for area in context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    for space in area.spaces:
+                        if space.type == 'VIEW_3D':
+                            space.shading.color_type = 'OBJECT'
+
+            self.report({'INFO'}, f"Colored {colored_count} assets by condition")
+            return {'FINISHED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Visualization failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {'CANCELLED'}
+
+
+class BIM_OT_export_asset_report(Operator):
+    """Export asset list to CSV"""
+    bl_idname = "bim.export_asset_report"
+    bl_label = "Export Asset Report"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    filepath: StringProperty(subtype='FILE_PATH')
+
+    def execute(self, context):
+        try:
+            import csv
+
+            db_path = get_tandem_db_path(context)
+            registry = AssetRegistry(db_path)
+
+            assets = registry.list_assets()
+
+            if not self.filepath:
+                work_dir = Path.home() / 'Projects' / 'IfcOpenShell' / 'WORK_DIR'
+                self.filepath = str(work_dir / 'asset_report.csv')
+
+            # Write CSV
+            with open(self.filepath, 'w', newline='', encoding='utf-8') as f:
+                if not assets:
+                    self.report({'WARNING'}, "No assets to export")
+                    return {'CANCELLED'}
+
+                writer = csv.DictWriter(f, fieldnames=assets[0].keys())
+                writer.writeheader()
+                writer.writerows(assets)
+
+            self.report({'INFO'}, f"Exported {len(assets)} assets to {self.filepath}")
+            return {'FINISHED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Export failed: {str(e)}")
+            return {'CANCELLED'}
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+
+# =========================================================================
+# MAINTENANCE OPERATORS (Phase 2)
+# =========================================================================
+
+class BIM_OT_generate_pm_schedule(Operator):
+    """Generate PM work orders for upcoming period"""
+    bl_idname = "bim.generate_pm_schedule"
+    bl_label = "Generate PM Schedule"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    days_ahead: bpy.props.IntProperty(name="Days Ahead", default=90, min=1, max=365)
+
+    def execute(self, context):
+        try:
+            from .maintenance_manager import MaintenanceManager
+            from .pm_scheduler import PMScheduler
+
+            db_path = get_tandem_db_path(context)
+            registry = AssetRegistry(db_path)
+            maintenance = MaintenanceManager(db_path)
+            scheduler = PMScheduler(registry, maintenance)
+
+            print(f"\nGenerating PM schedule for next {self.days_ahead} days...")
+
+            def progress(current, total, message):
+                print(f"  [{current}/{total}] {message}")
+
+            stats = scheduler.generate_pm_schedule(self.days_ahead, progress)
+
+            message = (
+                f"PM Schedule generated: {stats['work_orders_created']} work orders created, "
+                f"{stats['work_orders_skipped']} skipped"
+            )
+            self.report({'INFO'}, message)
+
+            print(f"\n{message}")
+            print(f"  Templates processed: {stats['templates_processed']}")
+            print(f"  Assets scanned: {stats['assets_scanned']}")
+            print(f"  Errors: {stats['errors']}")
+
+            # Refresh work order list
+            bpy.ops.bim.refresh_work_order_list()
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"PM generation failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {'CANCELLED'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+
+class BIM_OT_create_work_order(Operator):
+    """Create new work order"""
+    bl_idname = "bim.create_work_order"
+    bl_label = "Create Work Order"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    asset_guid: StringProperty()
+    work_type: EnumProperty(
+        items=[
+            ('PM', 'Preventive Maintenance', ''),
+            ('Corrective', 'Corrective', ''),
+            ('Emergency', 'Emergency', ''),
+            ('Inspection', 'Inspection', '')
+        ],
+        default='Corrective'
+    )
+    priority: EnumProperty(
+        items=[
+            ('Low', 'Low', ''),
+            ('Medium', 'Medium', ''),
+            ('High', 'High', ''),
+            ('Critical', 'Critical', '')
+        ],
+        default='Medium'
+    )
+    title: StringProperty(name="Title")
+    description: StringProperty(name="Description")
+
+    def execute(self, context):
+        try:
+            from .maintenance_manager import MaintenanceManager
+
+            if not self.asset_guid or not self.title:
+                self.report({'ERROR'}, "Asset and title required")
+                return {'CANCELLED'}
+
+            db_path = get_tandem_db_path(context)
+            maintenance = MaintenanceManager(db_path)
+
+            wo_number = maintenance._generate_wo_number()
+
+            wo_data = {
+                'work_order_number': wo_number,
+                'asset_guid': self.asset_guid,
+                'work_type': self.work_type,
+                'priority': self.priority,
+                'title': self.title,
+                'description': self.description,
+                'due_date': (datetime.now() + timedelta(days=7)).date().isoformat(),
+                'created_by': 'blender_user',
+            }
+
+            wo_id = maintenance.create_work_order(wo_data)
+
+            self.report({'INFO'}, f"Work order {wo_number} created")
+            bpy.ops.bim.refresh_work_order_list()
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to create work order: {str(e)}")
+            return {'CANCELLED'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+
+class BIM_OT_refresh_work_order_list(Operator):
+    """Refresh work order list"""
+    bl_idname = "bim.refresh_work_order_list"
+    bl_label = "Refresh Work Orders"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        try:
+            from .maintenance_manager import MaintenanceManager
+
+            db_path = get_tandem_db_path(context)
+            maintenance = MaintenanceManager(db_path)
+
+            # Get filter from properties
+            props = context.scene.BIMTandemProperties
+            status = props.filter_wo_status if hasattr(props, 'filter_wo_status') and props.filter_wo_status != 'ALL' else None
+
+            work_orders = maintenance.list_work_orders(status=status)
+
+            # Update UI collection
+            context.scene.bim_tandem_work_orders.clear()
+            for wo in work_orders:
+                item = context.scene.bim_tandem_work_orders.add()
+                item.wo_id = wo['id']
+                item.wo_number = wo['work_order_number']
+                item.title = wo['title']
+                item.work_type = wo['work_type']
+                item.priority = wo['priority']
+                item.status = wo['status']
+                item.due_date = wo.get('due_date', '')
+
+            self.report({'INFO'}, f"Loaded {len(work_orders)} work orders")
+            return {'FINISHED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Refresh failed: {str(e)}")
+            return {'CANCELLED'}
+
+
+class BIM_OT_complete_work_order(Operator):
+    """Mark work order as completed"""
+    bl_idname = "bim.complete_work_order"
+    bl_label = "Complete Work Order"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    wo_id: bpy.props.IntProperty()
+    actual_hours: bpy.props.FloatProperty(name="Actual Hours", default=0.0, min=0.0)
+
+    def execute(self, context):
+        try:
+            from .maintenance_manager import MaintenanceManager
+
+            db_path = get_tandem_db_path(context)
+            maintenance = MaintenanceManager(db_path)
+
+            success = maintenance.complete_work_order(self.wo_id, self.actual_hours)
+
+            if success:
+                self.report({'INFO'}, f"Work order {self.wo_id} completed")
+                bpy.ops.bim.refresh_work_order_list()
+                return {'FINISHED'}
+            else:
+                self.report({'ERROR'}, "Work order not found")
+                return {'CANCELLED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to complete: {str(e)}")
+            return {'CANCELLED'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+
+class BIM_OT_view_pm_summary(Operator):
+    """View PM schedule summary"""
+    bl_idname = "bim.view_pm_summary"
+    bl_label = "View PM Summary"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        try:
+            from .maintenance_manager import MaintenanceManager
+            from .pm_scheduler import PMScheduler
+
+            db_path = get_tandem_db_path(context)
+            registry = AssetRegistry(db_path)
+            maintenance = MaintenanceManager(db_path)
+            scheduler = PMScheduler(registry, maintenance)
+
+            summary = scheduler.get_upcoming_pm_summary(days=30)
+
+            print("\n=== PM Schedule Summary (Next 30 Days) ===")
+            print(f"Total upcoming: {summary['total_upcoming']}")
+            print(f"Overdue: {summary['overdue']}")
+            print(f"Due this week: {summary['due_this_week']}")
+            print(f"Due next week: {summary['due_next_week']}")
+
+            if summary['by_discipline']:
+                print("\nBy Discipline:")
+                for disc, count in sorted(summary['by_discipline'].items()):
+                    print(f"  {disc}: {count}")
+
+            self.report({'INFO'}, f"{summary['total_upcoming']} PM work orders upcoming")
+            return {'FINISHED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to load summary: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {'CANCELLED'}
+
+
+# Registration
+classes = (
+    # Asset operators
+    BIM_OT_import_assets_from_ifc,
+    BIM_OT_refresh_asset_list,
+    BIM_OT_view_asset_details,
+    BIM_OT_highlight_asset_in_3d,
+    BIM_OT_update_asset_status,
+    BIM_OT_visualize_assets_by_condition,
+    BIM_OT_export_asset_report,
+    # Maintenance operators (Phase 2)
+    BIM_OT_generate_pm_schedule,
+    BIM_OT_create_work_order,
+    BIM_OT_refresh_work_order_list,
+    BIM_OT_complete_work_order,
+    BIM_OT_view_pm_summary,
+)
+
+
+def register():
+    for cls in classes:
+        bpy.utils.register_class(cls)
+
+
+def unregister():
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
