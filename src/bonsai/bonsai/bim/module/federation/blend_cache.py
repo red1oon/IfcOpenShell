@@ -154,11 +154,14 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
     cursor = conn.cursor()
 
     # Get all unique geometries with their associated elements (for discipline grouping)
+    # Also fetch transforms for GI databases (geometry at origin, needs transform)
     cursor.execute("""
         SELECT DISTINCT eg.geometry_hash, eg.vertices, eg.faces,
-               em.guid, em.ifc_class, em.discipline
+               em.guid, em.ifc_class, em.discipline,
+               et.center_x, et.center_y, et.center_z
         FROM element_geometry eg
         JOIN elements_meta em ON eg.guid = em.guid
+        LEFT JOIN element_transforms et ON eg.guid = et.guid
         WHERE eg.geometry_hash IS NOT NULL
     """)
 
@@ -170,9 +173,16 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
     start_time = time.time()
 
     # Group geometries by geometry_hash (deduplicate)
-    # Map: geometry_hash -> (vertices_blob, faces_blob, [(guid, ifc_class, discipline), ...])
+    # Map: geometry_hash -> (vertices_blob, faces_blob, [(guid, ifc_class, discipline, transform), ...])
     unique_geoms = {}
-    for geom_hash, verts_blob, faces_blob, guid, ifc_class, discipline in geom_data:
+    for row in geom_data:
+        if len(row) == 9:  # With transforms
+            geom_hash, verts_blob, faces_blob, guid, ifc_class, discipline, cx, cy, cz = row
+            transform = (cx, cy, cz) if cx is not None else None
+        else:  # Legacy without transforms
+            geom_hash, verts_blob, faces_blob, guid, ifc_class, discipline = row
+            transform = None
+
         if geom_hash not in unique_geoms:
             unique_geoms[geom_hash] = {
                 'vertices': verts_blob,
@@ -182,7 +192,8 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
         unique_geoms[geom_hash]['elements'].append({
             'guid': guid,
             'ifc_class': ifc_class or 'Unknown',
-            'discipline': discipline or 'Unknown'
+            'discipline': discipline or 'Unknown',
+            'transform': transform
         })
 
     total_unique = len(unique_geoms)
@@ -262,6 +273,12 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
             obj['guid'] = guid
             obj['ifc_class'] = ifc_class
             obj['discipline'] = discipline
+
+            # Apply transform if available (for GI databases with local-space geometry)
+            if element.get('transform'):
+                cx, cy, cz = element['transform']
+                obj.location = (cx, cy, cz)
+
             disc_coll.objects.link(obj)
             obj_count += 1
 
@@ -276,6 +293,11 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
     props = context.scene.BIMFederationProperties
     props.federation_database_path = str(db_path)
     print(f"Stored database path in scene properties: {db_path}")
+
+    # Enable discipline legend before saving (so it's active when .blend is opened)
+    from . import discipline_legend
+    discipline_legend.enable_legend()
+    print(f"✓ Discipline legend enabled for cache")
 
     # Save .blend
     print(f"Saving cache to {cache_path}...")

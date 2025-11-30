@@ -63,6 +63,7 @@ classes = (
     operator.PreviewFederationViewport,
     operator.LoadSolidFederationViewport,
     operator.LoadFullFederationViewport,
+    operator.LoadFullFederationViewportGI,  # GI-enabled version (experimental)
     operator.ReloadFederationViewport,
     operator.UnloadFederationViewport,
     operator.ExtractSampleDatabase,
@@ -198,6 +199,12 @@ def restore_federation_index_on_load(dummy):
 
                     print(f"✓ Federation index restored: {stats['total_elements']:,} elements")
                     print(f"  Database path updated to: {db_path_resolved}")
+
+                    # Enable discipline legend if this is a GI cache (organized by discipline)
+                    if "Federation_Cached" in bpy.data.collections:
+                        discipline_legend.enable_legend()
+                        print(f"✓ Discipline legend enabled")
+
             except Exception as e:
                 print(f"⚠ Could not restore federation index: {e}")
 
