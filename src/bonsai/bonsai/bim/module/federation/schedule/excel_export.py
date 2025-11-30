@@ -31,8 +31,9 @@ def export_schedule_to_excel(db_path: str, output_path: str = None, project_name
     # Check openpyxl availability
     try:
         from openpyxl import Workbook
-        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side, numbers
         from openpyxl.utils import get_column_letter
+        from openpyxl.chart import PieChart, BarChart, Reference
     except ImportError:
         raise ImportError("openpyxl required for Excel export. Install: pip install openpyxl")
 
@@ -148,11 +149,15 @@ def export_schedule_to_excel(db_path: str, output_path: str = None, project_name
             cell.value = value
             cell.border = border
 
+            # Format duration with 2 decimal points
+            if col_idx == 9:  # Duration column
+                cell.number_format = '0.00'
+                cell.alignment = Alignment(horizontal='right')
             # Align numbers right
-            if col_idx in [6, 8, 9, 13, 16]:
+            elif col_idx in [6, 8, 13, 16]:
                 cell.alignment = Alignment(horizontal='right')
 
-        print(f"  [{wbs_code}] {task_name} | {duration_days:.1f} days | {start_date} → {finish_date}")
+        print(f"  [{wbs_code}] {task_name} | {duration_days:.2f} days | {start_date} → {finish_date}")
 
     # Auto-size columns
     for col_idx in range(1, len(headers) + 1):
@@ -161,20 +166,35 @@ def export_schedule_to_excel(db_path: str, output_path: str = None, project_name
     # Widen task name column
     ws_schedule.column_dimensions['B'].width = 40
 
-    # Sheet 2: Summary
+    # Sheet 2: Summary with Charts
     ws_summary = wb.create_sheet("Project Summary")
 
-    # Project info
-    summary_data = [
-        ["Project Name", project_name],
+    # Calculate project duration
+    if tasks:
+        start_date = datetime.fromisoformat(tasks[0][9])
+        finish_date = datetime.fromisoformat(tasks[-1][10])
+        total_duration = (finish_date - start_date).days + 1
+    else:
+        total_duration = 0
+
+    # Project info header
+    title_cell = ws_summary.cell(row=1, column=1)
+    title_cell.value = project_name
+    title_cell.font = Font(bold=True, size=14, color="366092")
+
+    # Project statistics
+    info_data = [
         ["Database", Path(db_path).name],
         ["Total Tasks", len(tasks)],
         ["Project Start", tasks[0][9] if tasks else "N/A"],
         ["Project Finish", tasks[-1][10] if tasks else "N/A"],
+        ["Total Duration", f"{total_duration} days"],
         ["Generated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
-        [],
-        ["Phase Summary", "Task Count"],
     ]
+
+    for idx, (label, value) in enumerate(info_data, start=2):
+        ws_summary.cell(row=idx, column=1, value=label).font = Font(bold=True)
+        ws_summary.cell(row=idx, column=2, value=value)
 
     # Count tasks by phase
     phase_counts = {}
@@ -182,13 +202,20 @@ def export_schedule_to_excel(db_path: str, output_path: str = None, project_name
         phase = task[3]
         phase_counts[phase] = phase_counts.get(phase, 0) + 1
 
-    for phase, count in sorted(phase_counts.items()):
-        summary_data.append([phase, count])
+    # Phase summary section
+    phase_start_row = len(info_data) + 4
+    header = ws_summary.cell(row=phase_start_row, column=1)
+    header.value = "Phase Summary"
+    header.font = Font(bold=True, size=12)
+    header.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+    header.font = Font(bold=True, color="FFFFFF")
 
-    summary_data.extend([
-        [],
-        ["Discipline Summary", "Task Count"],
-    ])
+    ws_summary.cell(row=phase_start_row, column=2, value="Task Count").font = Font(bold=True, color="FFFFFF")
+    ws_summary.cell(row=phase_start_row, column=2).fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+
+    for idx, (phase, count) in enumerate(sorted(phase_counts.items()), start=1):
+        ws_summary.cell(row=phase_start_row + idx, column=1, value=phase)
+        ws_summary.cell(row=phase_start_row + idx, column=2, value=count)
 
     # Count tasks by discipline
     discipline_counts = {}
@@ -196,21 +223,58 @@ def export_schedule_to_excel(db_path: str, output_path: str = None, project_name
         discipline = task[16]
         discipline_counts[discipline] = discipline_counts.get(discipline, 0) + 1
 
-    for discipline, count in sorted(discipline_counts.items()):
-        summary_data.append([discipline, count])
+    # Discipline summary section
+    disc_start_row = phase_start_row + len(phase_counts) + 3
+    header = ws_summary.cell(row=disc_start_row, column=1)
+    header.value = "Discipline Summary"
+    header.font = Font(bold=True, size=12)
+    header.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+    header.font = Font(bold=True, color="FFFFFF")
 
-    # Write summary
-    for row_idx, row_data in enumerate(summary_data, 1):
-        for col_idx, value in enumerate(row_data, 1):
-            cell = ws_summary.cell(row=row_idx, column=col_idx)
-            cell.value = value
+    ws_summary.cell(row=disc_start_row, column=2, value="Task Count").font = Font(bold=True, color="FFFFFF")
+    ws_summary.cell(row=disc_start_row, column=2).fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
 
-            # Style headers
-            if row_idx in [1, 8, 8 + len(phase_counts) + 2]:
-                cell.font = Font(bold=True)
+    for idx, (discipline, count) in enumerate(sorted(discipline_counts.items()), start=1):
+        ws_summary.cell(row=disc_start_row + idx, column=1, value=discipline)
+        ws_summary.cell(row=disc_start_row + idx, column=2, value=count)
 
+    # Column widths
     ws_summary.column_dimensions['A'].width = 25
     ws_summary.column_dimensions['B'].width = 20
+
+    # Add Pie Chart - Phase Distribution
+    pie_phase = PieChart()
+    pie_phase.title = "Task Distribution by Phase"
+    pie_phase.style = 10
+    pie_phase.height = 10
+    pie_phase.width = 15
+
+    # Data references
+    labels = Reference(ws_summary, min_col=1, min_row=phase_start_row + 1, max_row=phase_start_row + len(phase_counts))
+    data = Reference(ws_summary, min_col=2, min_row=phase_start_row, max_row=phase_start_row + len(phase_counts))
+    pie_phase.add_data(data, titles_from_data=True)
+    pie_phase.set_categories(labels)
+
+    # Position chart
+    ws_summary.add_chart(pie_phase, 'D2')
+
+    # Add Bar Chart - Discipline Distribution
+    bar_disc = BarChart()
+    bar_disc.title = "Task Count by Discipline"
+    bar_disc.style = 10
+    bar_disc.height = 10
+    bar_disc.width = 15
+    bar_disc.y_axis.title = "Number of Tasks"
+    bar_disc.x_axis.title = "Discipline"
+
+    # Data references
+    labels = Reference(ws_summary, min_col=1, min_row=disc_start_row + 1, max_row=disc_start_row + len(discipline_counts))
+    data = Reference(ws_summary, min_col=2, min_row=disc_start_row, max_row=disc_start_row + len(discipline_counts))
+    bar_disc.add_data(data, titles_from_data=True)
+    bar_disc.set_categories(labels)
+
+    # Position chart
+    ws_summary.add_chart(bar_disc, 'D18')
 
     # Save workbook
     wb.save(output_path)
