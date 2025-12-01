@@ -145,6 +145,8 @@ class BIMFederationColorProperties(PropertyGroup):
             ('ELEC', 'Electrical', 'Electrical elements'),
             ('PLB', 'Plumbing', 'Plumbing elements'),
             ('FP', 'Fire Protection', 'Fire protection'),
+            ('CW', 'Curtain Wall', 'Curtain wall elements'),
+            ('ACMV', 'ACMV', 'Air conditioning & mechanical ventilation'),
         ],
         default='ALL'
     )
@@ -280,7 +282,8 @@ class BIM_OT_apply_palette_color(Operator):
                 if obj.type == 'MESH' and sample_count < 5:
                     disc = obj.get('discipline', 'MISSING')
                     ifc = obj.get('ifc_class', 'MISSING')
-                    print(f"   Sample '{obj.name[:40]}': disc={disc}, ifc={ifc}")
+                    mat_count = len(obj.material_slots) if hasattr(obj, 'material_slots') else 0
+                    print(f"   Sample '{obj.name[:40]}': disc={disc}, ifc={ifc}, materials={mat_count}")
                     sample_count += 1
 
         self.report({'INFO'}, f"Applied color to {colored_count} objects")
@@ -360,9 +363,15 @@ class BIM_OT_get_type_from_selection(Operator):
                 types.add(ifc_class)
                 props.cached_ifc_types = ','.join(sorted(types))
 
-        # Set filters
-        if discipline:
+        # Set filters (validate discipline is in enum)
+        valid_disciplines = ['ALL', 'ARC', 'STR', 'MEP', 'ELEC', 'PLB', 'FP', 'CW', 'ACMV']
+        if discipline and discipline in valid_disciplines:
             props.filter_discipline = discipline
+        elif discipline:
+            # Unknown discipline - use ALL and warn
+            props.filter_discipline = 'ALL'
+            self.report({'WARNING'}, f"Unknown discipline '{discipline}' - using ALL")
+
         props.filter_ifc_type = ifc_class
 
         self.report({'INFO'}, f"Set filter to {discipline}:{ifc_class}")
