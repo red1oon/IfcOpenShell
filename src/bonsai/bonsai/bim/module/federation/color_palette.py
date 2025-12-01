@@ -158,7 +158,7 @@ class BIMFederationColorProperties(PropertyGroup):
 
     def get_ifc_types_static(self, context):
         """Get IFC types from cache with friendly names"""
-        from ..ifc_label_mapper import get_friendly_label
+        from .ifc_label_mapper import get_friendly_label
 
         cached = self.cached_ifc_types
         if not cached or cached == "ALL":
