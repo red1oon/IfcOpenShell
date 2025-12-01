@@ -272,6 +272,11 @@ def register():
         type=prop.BIMStructuralProperties
     )
 
+    # Color Palette properties
+    bpy.types.Scene.BIMFederationColorProperties = bpy.props.PointerProperty(
+        type=color_palette.BIMFederationColorProperties
+    )
+
     # Digital Twin (Tandem) properties
     bpy.types.Scene.BIMTandemProperties = bpy.props.PointerProperty(
         type=tandem_ui.BIMTandemProperties
@@ -313,3 +318,5 @@ def unregister():
     # Remove properties from Scene
     del bpy.types.Scene.BIMFederationProperties
     del bpy.types.Scene.BIMStructuralProperties
+    if hasattr(bpy.types.Scene, 'BIMFederationColorProperties'):
+        del bpy.types.Scene.BIMFederationColorProperties

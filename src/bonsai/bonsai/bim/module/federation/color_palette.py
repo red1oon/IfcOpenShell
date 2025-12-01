@@ -437,15 +437,10 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
-    # Property registration handled by main federation module
-    bpy.types.Scene.BIMFederationColorProperties = bpy.props.PointerProperty(
-        type=BIMFederationColorProperties
-    )
+    # Property registration handled by main federation module __init__.py
 
 
 def unregister():
-    if hasattr(bpy.types.Scene, 'BIMFederationColorProperties'):
-        del bpy.types.Scene.BIMFederationColorProperties
-
+    # Property unregistration handled by main federation module __init__.py
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
