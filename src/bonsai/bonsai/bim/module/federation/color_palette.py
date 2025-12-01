@@ -324,26 +324,6 @@ class BIM_OT_apply_color_to_selected(Operator):
         return {'FINISHED'}
 
 
-class BIM_OT_hide_openings(Operator):
-    """Hide all IfcOpeningElement objects (voids that obscure doors/windows)"""
-    bl_idname = "bim.hide_openings"
-    bl_label = "Hide Opening Elements"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        import bpy
-
-        hidden_count = 0
-        for obj in bpy.data.objects:
-            if obj.get('ifc_class') == 'IfcOpeningElement':
-                if not obj.hide_get():
-                    obj.hide_set(True)
-                    hidden_count += 1
-
-        self.report({'INFO'}, f"Hidden {hidden_count} opening elements")
-        return {'FINISHED'}
-
-
 class BIM_OT_strip_materials_from_type(Operator):
     """Remove materials from filtered IFC type to enable object color display"""
     bl_idname = "bim.strip_materials_from_type"
@@ -675,9 +655,6 @@ class BIM_PT_federation_color_palette(Panel):
         row.operator("bim.strip_materials_from_type", text="Strip Materials", icon='MATERIAL')
 
         row = action_box.row(align=True)
-        row.operator("bim.hide_openings", text="Hide Openings", icon='HIDE_ON')
-
-        row = action_box.row(align=True)
         row.operator("bim.save_color_scheme", text="Save Scheme", icon='FILE_TICK')
         row.operator("bim.load_color_scheme", text="Load Scheme", icon='FILE_FOLDER')
 
@@ -697,7 +674,6 @@ classes = (
     BIMFederationColorProperties,
     BIM_OT_apply_palette_color,
     BIM_OT_apply_color_to_selected,
-    BIM_OT_hide_openings,
     BIM_OT_strip_materials_from_type,
     BIM_OT_get_type_from_selection,
     BIM_OT_refresh_ifc_types,
