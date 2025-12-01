@@ -200,7 +200,6 @@ class BIM_OT_apply_palette_color(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     color: FloatVectorProperty(size=4, default=(0.5, 0.5, 0.5, 1.0))
-    apply_to_selected: BoolProperty(default=False)
 
     def execute(self, context):
         props = context.scene.BIMFederationColorProperties
@@ -208,30 +207,33 @@ class BIM_OT_apply_palette_color(Operator):
         # Store history for undo
         color_history = []
 
-        # Determine which objects to color
-        if self.apply_to_selected and context.selected_objects:
-            objects_to_color = context.selected_objects
-        else:
-            # Use bpy.data.objects to include all objects (even in hidden collections)
-            import bpy
-            objects_to_color = bpy.data.objects
+        # Always use all objects (filtered by discipline/type)
+        import bpy
+        objects_to_color = bpy.data.objects
 
         colored_count = 0
+        total_checked = 0
+        discipline_filtered = 0
+        type_filtered = 0
 
         for obj in objects_to_color:
             if obj.type != 'MESH':
                 continue
 
+            total_checked += 1
+
             # Check discipline filter
             if props.filter_discipline != 'ALL':
                 obj_discipline = obj.get('discipline', '')
                 if obj_discipline != props.filter_discipline:
+                    discipline_filtered += 1
                     continue
 
             # Check IFC type filter
             if props.filter_ifc_type != 'ALL':
                 obj_ifc_class = obj.get('ifc_class', '')
                 if obj_ifc_class != props.filter_ifc_type:
+                    type_filtered += 1
                     continue
 
             # Store previous color
@@ -240,18 +242,82 @@ class BIM_OT_apply_palette_color(Operator):
                 'previous': obj.color[:]
             })
 
-            # Apply new color
+            # Apply new color (preserve custom properties)
+            old_discipline = obj.get('discipline', '')
+            old_ifc = obj.get('ifc_class', '')
+
             obj.color = self.color
+
+            # Restore properties if they were cleared
+            if old_discipline and not obj.get('discipline'):
+                obj['discipline'] = old_discipline
+            if old_ifc and not obj.get('ifc_class'):
+                obj['ifc_class'] = old_ifc
+
             colored_count += 1
 
-        # Set viewport to show colors
+        # Set viewport to show colors and force refresh
+        import bpy
         for area in context.screen.areas:
             if area.type == 'VIEW_3D':
                 for space in area.spaces:
                     if space.type == 'VIEW_3D':
                         space.shading.color_type = 'OBJECT'
+                area.tag_redraw()  # Force viewport refresh
+
+        # Force depsgraph update to refresh colors
+        bpy.context.view_layer.update()
+
+        # Always show debug when something seems wrong
+        print(f"🎨 Color Stats: checked={total_checked}, colored={colored_count}, disc_filtered={discipline_filtered}, type_filtered={type_filtered}")
+
+        if colored_count < 10:  # Debug when few objects colored
+            print(f"   🔍 Looking for: discipline={props.filter_discipline}, type={props.filter_ifc_type}")
+
+            # Sample first 5 objects to check properties
+            sample_count = 0
+            for obj in objects_to_color:
+                if obj.type == 'MESH' and sample_count < 5:
+                    disc = obj.get('discipline', 'MISSING')
+                    ifc = obj.get('ifc_class', 'MISSING')
+                    print(f"   Sample '{obj.name[:40]}': disc={disc}, ifc={ifc}")
+                    sample_count += 1
 
         self.report({'INFO'}, f"Applied color to {colored_count} objects")
+        return {'FINISHED'}
+
+
+class BIM_OT_apply_color_to_selected(Operator):
+    """Apply color only to selected objects (ignores filters)"""
+    bl_idname = "bim.apply_color_to_selected"
+    bl_label = "Apply to Selected"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    color: FloatVectorProperty(size=4, default=(0.5, 0.5, 0.5, 1.0))
+
+    def execute(self, context):
+        if not context.selected_objects:
+            self.report({'WARNING'}, "No objects selected")
+            return {'CANCELLED'}
+
+        colored_count = 0
+        for obj in context.selected_objects:
+            if obj.type == 'MESH':
+                obj.color = self.color
+                colored_count += 1
+
+        # Force viewport refresh
+        import bpy
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                for space in area.spaces:
+                    if space.type == 'VIEW_3D':
+                        space.shading.color_type = 'OBJECT'
+                area.tag_redraw()
+
+        bpy.context.view_layer.update()
+
+        self.report({'INFO'}, f"Applied color to {colored_count} selected objects")
         return {'FINISHED'}
 
 
@@ -507,9 +573,8 @@ class BIM_PT_federation_color_palette(Panel):
         action_box.label(text="Actions:", icon='TOOL_SETTINGS')
 
         row = action_box.row(align=True)
-        op = row.operator("bim.apply_palette_color", text="Apply to Selected", icon='RESTRICT_SELECT_OFF')
+        op = row.operator("bim.apply_color_to_selected", text="Apply to Selected", icon='RESTRICT_SELECT_OFF')
         op.color = props.selected_color
-        op.apply_to_selected = True
 
         row = action_box.row(align=True)
         row.operator("bim.reset_federation_colors", text="Reset All", icon='FILE_REFRESH')
@@ -533,6 +598,7 @@ classes = (
     ColorHistoryItem,
     BIMFederationColorProperties,
     BIM_OT_apply_palette_color,
+    BIM_OT_apply_color_to_selected,
     BIM_OT_get_type_from_selection,
     BIM_OT_refresh_ifc_types,
     BIM_OT_reset_colors,
