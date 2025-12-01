@@ -39,13 +39,22 @@ merging, solving spatial hierarchy mismatch problems through coordinate-based qu
 import bpy
 from bpy.app.handlers import persistent
 from pathlib import Path
-from . import ui, prop, operator, discipline_legend, cache_monitor
+from . import ui, prop, operator, discipline_legend, cache_monitor, color_palette
 from .loading.unified_progressive_loader import GlassOutlineLoader
 from .clash import gizmo
 from .tandem import ui as tandem_ui, operator as tandem_operator, sensor_overlay
 
 # Expose classes so main __init__.py can find them
 classes = (
+    # Color Palette (first in UI)
+    color_palette.ColorHistoryItem,
+    color_palette.BIMFederationColorProperties,
+    color_palette.BIM_OT_apply_palette_color,
+    color_palette.BIM_OT_reset_colors,
+    color_palette.BIM_OT_save_color_scheme,
+    color_palette.BIM_OT_load_color_scheme,
+    color_palette.BIM_PT_federation_color_palette,
+
     # Core Federation Properties & Operators
     prop.FederatedFile,
     prop.DisciplineClashCandidate,
