@@ -324,32 +324,54 @@ class BIM_OT_apply_color_to_selected(Operator):
         return {'FINISHED'}
 
 
-class BIM_OT_strip_door_materials(Operator):
-    """Remove materials from doors to enable object color display"""
-    bl_idname = "bim.strip_door_materials"
-    bl_label = "Strip Door Materials"
+class BIM_OT_strip_materials_from_type(Operator):
+    """Remove materials from filtered IFC type to enable object color display"""
+    bl_idname = "bim.strip_materials_from_type"
+    bl_label = "Strip Materials from Filtered Type"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
         import bpy
+        props = context.scene.BIMFederationColorProperties
 
-        door_count = 0
+        # Get current filter
+        target_discipline = props.filter_discipline
+        target_ifc_type = props.filter_ifc_type
+
+        if target_ifc_type == 'ALL':
+            self.report({'WARNING'}, "Select a specific IFC type first (not 'ALL')")
+            return {'CANCELLED'}
+
+        obj_count = 0
         materials_removed = 0
 
         for obj in bpy.data.objects:
             if obj.type != 'MESH':
                 continue
 
-            ifc_class = obj.get('ifc_class', '')
-            if ifc_class == 'IfcDoor':
-                door_count += 1
-                mat_count = len(obj.material_slots)
-                materials_removed += mat_count
+            # Check filters (same logic as color apply)
+            if target_discipline != 'ALL':
+                obj_discipline = obj.get('discipline', '')
+                if obj_discipline != target_discipline:
+                    continue
 
-                # Clear all material slots
-                obj.data.materials.clear()
+            obj_ifc_class = obj.get('ifc_class', '')
+            if obj_ifc_class != target_ifc_type:
+                continue
 
-        self.report({'INFO'}, f"Stripped {materials_removed} materials from {door_count} doors")
+            # Strip materials from this object
+            obj_count += 1
+            mat_count = len(obj.material_slots)
+            materials_removed += mat_count
+
+            # Clear all material slots
+            obj.data.materials.clear()
+
+        if obj_count > 0:
+            self.report({'INFO'}, f"Stripped {materials_removed} materials from {obj_count} {target_ifc_type} objects")
+        else:
+            self.report({'WARNING'}, f"No {target_ifc_type} objects found matching filters")
+
         return {'FINISHED'}
 
 
@@ -617,9 +639,9 @@ class BIM_PT_federation_color_palette(Panel):
         row = action_box.row(align=True)
         row.operator("bim.reset_federation_colors", text="Reset All", icon='FILE_REFRESH')
 
-        # Utility: Strip materials from doors
+        # Utility: Strip materials from filtered type
         row = action_box.row(align=True)
-        row.operator("bim.strip_door_materials", text="Strip Door Materials", icon='MATERIAL')
+        row.operator("bim.strip_materials_from_type", text="Strip Materials", icon='MATERIAL')
 
         row = action_box.row(align=True)
         row.operator("bim.save_color_scheme", text="Save Scheme", icon='FILE_TICK')
@@ -641,7 +663,7 @@ classes = (
     BIMFederationColorProperties,
     BIM_OT_apply_palette_color,
     BIM_OT_apply_color_to_selected,
-    BIM_OT_strip_door_materials,
+    BIM_OT_strip_materials_from_type,
     BIM_OT_get_type_from_selection,
     BIM_OT_refresh_ifc_types,
     BIM_OT_reset_colors,
