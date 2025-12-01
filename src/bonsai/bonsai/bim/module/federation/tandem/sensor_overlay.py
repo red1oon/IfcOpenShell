@@ -14,6 +14,7 @@ Features:
 import bpy
 import gpu
 import numpy as np
+import sqlite3
 from gpu_extras.batch import batch_for_shader
 from mathutils import Vector, Matrix
 from datetime import datetime
@@ -215,7 +216,13 @@ class IoTSensorOverlay:
             ) sr ON s.sensor_id = sr.sensor_id
             WHERE s.is_active = 1
             """
-            cursor.execute(query)
+            try:
+                cursor.execute(query)
+            except sqlite3.OperationalError as e:
+                if "no such table: sensors" in str(e):
+                    print("ℹ️  No sensors table found - create sensors first via IoT panel")
+                    return
+                raise
 
         for row in cursor.fetchall():
             sensor_id, sensor_type, x, y, z, value, thresh_min, thresh_max, asset_name = row
