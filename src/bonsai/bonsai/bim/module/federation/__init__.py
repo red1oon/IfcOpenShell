@@ -157,10 +157,11 @@ classes = (
     ui.BIM_PT_structural_works,
     ui.BIM_PT_nlp_query,
 
-    # Color Palette UI
+    # Color Palette UI (standalone panel)
     color_palette.ColorHistoryItem,
     color_palette.BIMFederationColorProperties,
     color_palette.BIM_OT_apply_palette_color,
+    color_palette.BIM_OT_refresh_ifc_types,
     color_palette.BIM_OT_reset_colors,
     color_palette.BIM_OT_save_color_scheme,
     color_palette.BIM_OT_load_color_scheme,

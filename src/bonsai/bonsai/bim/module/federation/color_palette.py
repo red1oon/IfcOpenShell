@@ -149,25 +149,29 @@ class BIMFederationColorProperties(PropertyGroup):
         default='ALL'
     )
 
-    def get_ifc_types(self, context):
-        """Get unique IFC types from loaded objects"""
-        types = set()
-        for obj in context.scene.objects:
-            if obj.type == 'MESH':
-                ifc_class = obj.get('ifc_class', '')
-                if ifc_class:
-                    types.add(ifc_class)
+    # Static cached IFC types (updated manually)
+    cached_ifc_types: StringProperty(
+        name="Cached IFC Types",
+        description="Cached list of IFC types (comma-separated)",
+        default="ALL"
+    )
+
+    def get_ifc_types_static(self, context):
+        """Get IFC types from cache"""
+        cached = self.cached_ifc_types
+        if not cached or cached == "ALL":
+            return [('ALL', 'All Types', 'Click Refresh to scan types')]
 
         items = [('ALL', 'All Types', 'Show all IFC types')]
-        for ifc_type in sorted(types):
-            items.append((ifc_type, ifc_type, f'Filter {ifc_type} elements'))
-
-        return items if len(items) > 1 else [('ALL', 'All Types', 'No IFC types found')]
+        for ifc_type in cached.split(','):
+            if ifc_type and ifc_type != 'ALL':
+                items.append((ifc_type, ifc_type, f'Filter {ifc_type} elements'))
+        return items
 
     filter_ifc_type: EnumProperty(
         name="Filter IFC Type",
         description="Filter by IFC class",
-        items=get_ifc_types,
+        items=get_ifc_types_static,
         default=0
     )
 
@@ -241,6 +245,34 @@ class BIM_OT_apply_palette_color(Operator):
                         space.shading.color_type = 'OBJECT'
 
         self.report({'INFO'}, f"Applied color to {colored_count} objects")
+        return {'FINISHED'}
+
+
+class BIM_OT_refresh_ifc_types(Operator):
+    """Scan model for IFC types (slow on large models)"""
+    bl_idname = "bim.refresh_ifc_types"
+    bl_label = "Refresh IFC Types"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        props = context.scene.BIMFederationColorProperties
+
+        # Scan objects for unique IFC types
+        types = set()
+        for obj in context.scene.objects:
+            if obj.type == 'MESH':
+                ifc_class = obj.get('ifc_class', '')
+                if ifc_class:
+                    types.add(ifc_class)
+
+        # Store as comma-separated string
+        if types:
+            props.cached_ifc_types = ','.join(sorted(types))
+            self.report({'INFO'}, f"Found {len(types)} IFC types")
+        else:
+            props.cached_ifc_types = "ALL"
+            self.report({'WARNING'}, "No IFC types found in model")
+
         return {'FINISHED'}
 
 
@@ -344,14 +376,13 @@ class BIM_OT_load_color_scheme(Operator):
 
 
 class BIM_PT_federation_color_palette(Panel):
-    """Color palette panel for Federation"""
-    bl_label = "Color Palette"
+    """Color palette panel - standalone outside Federation"""
+    bl_label = "🎨 BIM Color Palette"
     bl_idname = "BIM_PT_federation_color_palette"
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "scene"
-    bl_parent_id = "BIM_PT_federation"
-    bl_order = 0  # First item in Federation panel
+    bl_order = 100  # After other panels
 
     def draw(self, context):
         layout = self.layout
@@ -405,23 +436,9 @@ class BIM_PT_federation_color_palette(Panel):
         row = filter_box.row()
         row.prop(props, "filter_ifc_type", text="", icon='OBJECT_DATA')
 
-        # Show filtered object count
-        filtered_count = 0
-        for obj in context.scene.objects:
-            if obj.type != 'MESH':
-                continue
-            if props.filter_discipline != 'ALL':
-                if obj.get('discipline', '') != props.filter_discipline:
-                    continue
-            if props.filter_ifc_type != 'ALL':
-                if obj.get('ifc_class', '') != props.filter_ifc_type:
-                    continue
-            filtered_count += 1
-
-        if filtered_count > 0:
-            info_row = filter_box.row()
-            info_row.scale_y = 0.7
-            info_row.label(text=f"📊 {filtered_count:,} objects match filter", icon='INFO')
+        # Refresh button
+        row = filter_box.row()
+        row.operator("bim.refresh_ifc_types", text="Refresh Types", icon='FILE_REFRESH')
 
         # Options
         row = filter_box.row()
@@ -460,6 +477,7 @@ classes = (
     ColorHistoryItem,
     BIMFederationColorProperties,
     BIM_OT_apply_palette_color,
+    BIM_OT_refresh_ifc_types,
     BIM_OT_reset_colors,
     BIM_OT_save_color_scheme,
     BIM_OT_load_color_scheme,
