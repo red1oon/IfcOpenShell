@@ -21,21 +21,37 @@ from .asset_importer import AssetImporter
 
 
 def get_tandem_db_path(context) -> str:
-    """Get path to digital twin database"""
-    # Check scene property first
+    """Get path to enhanced federation database (integrated with 4D/5D)"""
+    # PRIORITY 1: Use Federation panel's database (main integration point)
+    if hasattr(context.scene, 'BIMFederationProperties'):
+        fed_db_path = context.scene.BIMFederationProperties.federation_database_path
+        if fed_db_path:
+            # Resolve Blender's // relative path
+            resolved_path = bpy.path.abspath(fed_db_path)
+            if os.path.exists(resolved_path):
+                return resolved_path
+
+    # PRIORITY 2: Check Tandem-specific property (if user manually set it)
     if hasattr(context.scene, 'BIMTandemProperties'):
         db_path = context.scene.BIMTandemProperties.database_path
         if db_path and os.path.exists(db_path):
             return db_path
 
-    # Default to WORK_DIR
+    # PRIORITY 3: Default locations
+    # Check WORK_DIR symlink
     work_dir = Path.home() / 'Projects' / 'IfcOpenShell' / 'WORK_DIR' / 'databases'
     if work_dir.exists():
-        db_path = work_dir / 'digital_twin.db'
-        return str(db_path)
+        db_path = work_dir / 'enhanced_federation.db'
+        if db_path.exists():
+            return str(db_path)
 
-    # Fallback to temp
-    return str(Path(bpy.app.tempdir) / 'digital_twin.db')
+    # Check Documents location
+    docs_db = Path.home() / 'Documents' / 'bonsai' / 'DatabaseFiles' / 'enhanced_federation.db'
+    if docs_db.exists():
+        return str(docs_db)
+
+    # Fallback to temp (will create new DB)
+    return str(Path(bpy.app.tempdir) / 'enhanced_federation.db')
 
 
 class BIM_OT_import_assets_from_ifc(Operator):
@@ -97,6 +113,169 @@ class BIM_OT_import_assets_from_ifc(Operator):
             if hasattr(context.scene, 'BIMTandemProperties'):
                 context.scene.BIMTandemProperties.database_path = db_path
                 context.scene.BIMTandemProperties.last_sync = bpy.context.scene.frame_current
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Import failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {'CANCELLED'}
+
+
+class BIM_OT_import_assets_from_federation(Operator):
+    """Import equipment assets from federation database (PRIMARY METHOD)"""
+    bl_idname = "bim.import_assets_from_federation"
+    bl_label = "Import from Federation DB"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    discipline_filter: EnumProperty(
+        name="Discipline Filter",
+        description="Only import specific disciplines",
+        items=[
+            ('ALL', 'All Disciplines', 'Import all equipment'),
+            ('ACMV', 'ACMV', 'HVAC equipment only'),
+            ('ELEC', 'Electrical', 'Electrical equipment only'),
+            ('PLB', 'Plumbing', 'Plumbing equipment only'),
+            ('FP', 'Fire Protection', 'Fire protection equipment only'),
+        ],
+        default='ALL',
+    )
+
+    @classmethod
+    def poll(cls, context):
+        # Check if federation DB exists (check both WORK_DIR and Documents locations)
+        work_dir = Path.home() / 'Projects' / 'IfcOpenShell' / 'WORK_DIR' / 'databases'
+        fed_db = work_dir / 'enhanced_federation.db'
+        if fed_db.exists():
+            return True
+        # Fallback to Documents location
+        docs_db = Path.home() / 'Documents' / 'bonsai' / 'DatabaseFiles' / 'enhanced_federation.db'
+        return docs_db.exists()
+
+    def execute(self, context):
+        try:
+            # Get database path
+            db_path = get_tandem_db_path(context)
+
+            # Federation DB path (check both locations)
+            work_dir = Path.home() / 'Projects' / 'IfcOpenShell' / 'WORK_DIR' / 'databases'
+            federation_db = work_dir / 'enhanced_federation.db'
+
+            if not federation_db.exists():
+                # Try Documents location
+                federation_db = Path.home() / 'Documents' / 'bonsai' / 'DatabaseFiles' / 'enhanced_federation.db'
+                if not federation_db.exists():
+                    self.report({'ERROR'}, f"Federation database not found in WORK_DIR or Documents")
+                    return {'CANCELLED'}
+
+            # Initialize registry and importer
+            registry = AssetRegistry(db_path)
+            importer = AssetImporter(registry)
+
+            # Prepare discipline filter
+            discipline_list = None if self.discipline_filter == 'ALL' else [self.discipline_filter]
+
+            # Progress tracking
+            def progress_callback(current, total, message):
+                print(f"[{current}/{total}] {message}")
+
+            # Import from federation DB
+            stats = importer.import_from_federation_db(
+                str(federation_db),
+                discipline_filter=discipline_list,
+                progress_callback=progress_callback
+            )
+
+            # Report results
+            message = (
+                f"Import complete: {stats['imported']} assets imported, "
+                f"{stats['skipped']} skipped, {stats['errors']} errors"
+            )
+            self.report({'INFO'}, message)
+
+            print("\nImport Statistics:")
+            print(f"  Total scanned: {stats['total_scanned']}")
+            print(f"  Imported: {stats['imported']}")
+            print(f"  Skipped: {stats['skipped']}")
+            print(f"  Errors: {stats['errors']}")
+            print("\nBy Discipline:")
+            for disc, count in stats['by_discipline'].items():
+                print(f"  {disc}: {count}")
+
+            # Update scene properties
+            if hasattr(context.scene, 'BIMTandemProperties'):
+                context.scene.BIMTandemProperties.database_path = db_path
+                context.scene.BIMTandemProperties.last_sync = bpy.context.scene.frame_current
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Import failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {'CANCELLED'}
+
+
+class BIM_OT_import_assets_from_csv(Operator):
+    """Import assets from CSV file (external sources - IoT devices, manual additions)"""
+    bl_idname = "bim.import_assets_from_csv"
+    bl_label = "Import from CSV"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    filepath: StringProperty(
+        name="CSV File",
+        subtype='FILE_PATH',
+    )
+
+    filter_glob: StringProperty(
+        default='*.csv',
+        options={'HIDDEN'}
+    )
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+    def execute(self, context):
+        try:
+            if not self.filepath:
+                self.report({'ERROR'}, "No file selected")
+                return {'CANCELLED'}
+
+            # Get database path
+            db_path = get_tandem_db_path(context)
+
+            # Initialize registry and importer
+            registry = AssetRegistry(db_path)
+            importer = AssetImporter(registry)
+
+            # Progress tracking
+            def progress_callback(current, total, message):
+                print(f"[{current}/{total}] {message}")
+
+            # Import from CSV
+            stats = importer.import_from_csv(
+                self.filepath,
+                skip_duplicates=True,
+                progress_callback=progress_callback
+            )
+
+            # Report results
+            message = (
+                f"Import complete: {stats['imported']} assets imported, "
+                f"{stats['skipped']} skipped, {stats['errors']} errors"
+            )
+            self.report({'INFO'}, message)
+
+            print("\nCSV Import Statistics:")
+            print(f"  Total scanned: {stats['total_scanned']}")
+            print(f"  Imported: {stats['imported']}")
+            print(f"  Skipped: {stats['skipped']}")
+            print(f"  Errors: {stats['errors']}")
+            print("\nBy Discipline:")
+            for disc, count in stats['by_discipline'].items():
+                print(f"  {disc}: {count}")
 
             return {'FINISHED'}
 
@@ -622,6 +801,8 @@ class BIM_OT_view_pm_summary(Operator):
 classes = (
     # Asset operators
     BIM_OT_import_assets_from_ifc,
+    BIM_OT_import_assets_from_federation,  # NEW: Federation DB import
+    BIM_OT_import_assets_from_csv,         # NEW: CSV import (external sources)
     BIM_OT_refresh_asset_list,
     BIM_OT_view_asset_details,
     BIM_OT_highlight_asset_in_3d,

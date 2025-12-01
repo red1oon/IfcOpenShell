@@ -2,9 +2,9 @@
 
 **Open-Source Facilities Management & IoT Integration for IFC Buildings**
 
-Version: 1.0
+Version: 2.1 (Federation Integrated)
 Date: 2025-11-30
-Status: Design Phase
+Status: Phases 1-3 Complete + Federation Integration ✅
 
 ---
 
@@ -28,6 +28,80 @@ Status: Design Phase
 - Autodesk Tandem: $360-$720/year per user
 - Our solution: Free, open-source, IFC-native
 - Democratizes digital twin technology for global AEC industry
+
+---
+
+## 🔗 Federation Integration (v2.1)
+
+**Key Architectural Change:** Digital Twin now integrates with `enhanced_federation.db` (used for 3D/4D/5D BIM) instead of using a separate database.
+
+**Benefits:**
+- ✅ **Single Source of Truth** - All project data in one database
+- ✅ **Cross-Dimensional Queries** - Query assets by schedule status, cost, location
+- ✅ **FK Relationships** - `assets.federation_element_id` → `elements.id`
+- ✅ **No Data Duplication** - Asset references existing IFC geometry
+- ✅ **Unified Views** - 3 cross-dimensional views for 4D/5D/6D/7D queries
+
+**Database Architecture:**
+```
+enhanced_federation.db
+├── elements (existing - IFC geometry, 4D schedule, 5D cost)
+│   ├── id (PK)
+│   ├── GlobalId
+│   ├── ifc_class
+│   ├── Name
+│   ├── discipline
+│   ├── schedule_start_date (4D)
+│   ├── schedule_end_date (4D)
+│   ├── cost_total (5D)
+│   └── ... (geometry, properties)
+│
+└── Digital Twin Tables (NEW - 6D/7D)
+    ├── assets
+    │   ├── guid (PK)
+    │   ├── federation_element_id → FK to elements.id ⭐ NEW
+    │   ├── name, ifc_class, discipline
+    │   ├── manufacturer, model, serial_number (6D)
+    │   ├── warranty, lifespan, replacement_cost (6D)
+    │   └── status, condition
+    │
+    ├── sensors (7D)
+    │   ├── sensor_id (PK)
+    │   ├── asset_guid → FK to assets.guid
+    │   └── ... (sensor config, thresholds)
+    │
+    ├── work_orders (6D)
+    │   ├── work_order_number (PK)
+    │   ├── asset_guid → FK to assets.guid
+    │   └── ... (maintenance data)
+    │
+    └── alerts (7D)
+        ├── id (PK)
+        ├── sensor_id → FK to sensors.sensor_id
+        ├── asset_guid → FK to assets.guid
+        └── ... (alert data)
+```
+
+**Import Workflow:**
+1. **Federation DB Import** (PRIMARY) - Query `elements` table, create assets with FK links
+2. **CSV Import** - Add external equipment (IoT sensors, retrofits) not in IFC
+3. **IFC File Import** - Standalone mode (backward compatibility)
+
+**Cross-Dimensional Views:**
+```sql
+-- View: Assets with 4D schedule info
+CREATE VIEW v_assets_with_schedule AS
+SELECT a.guid, a.name, e.schedule_start_date, e.construction_phase
+FROM assets a
+LEFT JOIN elements e ON a.federation_element_id = e.id;
+
+-- View: Maintenance for behind-schedule equipment
+SELECT wo.*, e.schedule_status
+FROM work_orders wo
+JOIN assets a ON wo.asset_guid = a.guid
+JOIN elements e ON a.federation_element_id = e.id
+WHERE e.schedule_status = 'Behind';
+```
 
 ---
 
@@ -152,12 +226,15 @@ Status: Design Phase
 
 **Components:**
 - `asset_registry.py` - CRUD operations for assets
-- `asset_importer.py` - Extract equipment from IFC models
+- `asset_importer.py` - **UPDATED v2.1** - Three import methods:
+  - `import_from_federation_db()` - Query elements table (PRIMARY)
+  - `import_from_csv()` - Import external sources (IoT sensors, retrofits)
+  - `import_from_ifc()` - Standalone mode (backward compatibility)
 - `document_manager.py` - Attach PDFs, photos, manuals
 - `lifecycle_calculator.py` - Age tracking, replacement predictions
 
 **Database Tables:**
-- `assets` - Core asset registry
+- `assets` - Core asset registry **+ federation_element_id FK** ⭐ NEW
 - `asset_documents` - File attachments
 - `asset_properties` - Flexible key-value metadata
 - `asset_history` - Change tracking

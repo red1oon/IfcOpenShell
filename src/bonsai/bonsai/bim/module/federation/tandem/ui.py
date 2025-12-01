@@ -125,11 +125,12 @@ class BIM_UL_tandem_assets(UIList):
 
 class BIM_PT_tandem_main(Panel):
     """Digital Twin main panel"""
-    bl_label = "Digital Twin - Facilities Management"
+    bl_label = "Digital Twin (6D/7D)"
     bl_idname = "BIM_PT_tandem_main"
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "scene"
+    bl_parent_id = "BIM_PT_tab_federation"
     bl_options = {'DEFAULT_CLOSED'}
 
     @classmethod
@@ -139,16 +140,29 @@ class BIM_PT_tandem_main(Panel):
     def draw(self, context):
         layout = self.layout
         props = context.scene.BIMTandemProperties
+        fed_props = context.scene.BIMFederationProperties
 
-        # Database connection
+        # Auto-use Federation database if available
+        if fed_props.federation_database_path and not props.database_path:
+            props.database_path = fed_props.federation_database_path
+
+        # Database status (read-only, shows Federation DB)
         box = layout.box()
-        box.label(text="Database:", icon='DATABASE')
-        row = box.row(align=True)
-        row.prop(props, "database_path", text="")
+        if fed_props.federation_database_path:
+            box.label(text="Using Federation Database:", icon='FILE')
+            row = box.row()
+            row.scale_y = 0.7
+            row.label(text=f"{fed_props.federation_database_path.split('/')[-1]}")
+        else:
+            box.label(text="⚠ No Federation Database Loaded", icon='ERROR')
+            row = box.row()
+            row.scale_y = 0.7
+            row.label(text="Load database in Federation panel first")
+            return
 
         # Quick actions
         box = layout.box()
-        box.label(text="Asset Management:", icon='ASSET_MANAGER')
+        box.label(text="Asset Management:", icon='PROPERTIES')
 
         row = box.row(align=True)
         row.operator("bim.import_assets_from_ifc", text="Import from IFC", icon='IMPORT')
@@ -160,7 +174,7 @@ class BIM_PT_tandem_main(Panel):
         # Visualization
         box = layout.box()
         box.label(text="Visualization:", icon='SHADING_RENDERED')
-        box.operator("bim.visualize_assets_by_condition", text="Color by Condition", icon='COLOR')
+        box.operator("bim.visualize_assets_by_condition", text="Color by Condition", icon='SHADING_SOLID')
 
 
 class BIM_PT_tandem_assets(Panel):
@@ -176,6 +190,18 @@ class BIM_PT_tandem_assets(Panel):
     def draw(self, context):
         layout = self.layout
         props = context.scene.BIMTandemProperties
+
+        # Import section (if no assets)
+        if not context.scene.bim_tandem_assets or len(context.scene.bim_tandem_assets) == 0:
+            box = layout.box()
+            box.label(text="No Assets Found", icon='INFO')
+            row = box.row(align=True)
+            row.scale_y = 1.5
+            row.operator("bim.import_assets_from_federation", text="Import from Federation", icon='IMPORT')
+            row = box.row()
+            row.scale_y = 0.8
+            row.label(text="💡 Imports equipment from enhanced_federation.db")
+            return
 
         # Filters
         box = layout.box()
@@ -252,7 +278,7 @@ class BIM_PT_tandem_asset_details(Panel):
 
         # Update actions
         box = layout.box()
-        box.label(text="Update Status:", icon='MODIFIER')
+        box.label(text="Update Status:", icon='SETTINGS')
 
         row = box.row()
         row.label(text="Condition:")
@@ -286,7 +312,7 @@ class BIM_PT_tandem_statistics(Panel):
             stats = registry.get_statistics()
 
             box = layout.box()
-            box.label(text=f"Total Assets: {stats.get('total_assets', 0)}", icon='ASSET_MANAGER')
+            box.label(text=f"Total Assets: {stats.get('total_assets', 0)}", icon='PROPERTIES')
 
             # By discipline
             if stats.get('by_discipline'):
@@ -299,7 +325,7 @@ class BIM_PT_tandem_statistics(Panel):
             # By condition
             if stats.get('by_condition'):
                 box = layout.box()
-                box.label(text="By Condition:", icon='SHADERFX')
+                box.label(text="By Condition:", icon='SHADING_SOLID')
                 for cond, count in sorted(stats['by_condition'].items()):
                     row = box.row()
                     row.label(text=f"  {cond}: {count}")

@@ -1,7 +1,7 @@
 # Digital Twin User Guide
 ## Facilities Management for IFC Buildings
 
-**Version:** 2.0 (Phases 1-3 Complete)
+**Version:** 2.1 (Federation Integrated)
 **Last Updated:** 2025-11-30
 
 ---
@@ -11,6 +11,9 @@
 1. [Introduction](#introduction)
 2. [Getting Started](#getting-started)
 3. [Asset Management](#asset-management)
+   - [Import Method A: Federation Database (Recommended)](#import-method-a-federation-database)
+   - [Import Method B: IFC File (Standalone)](#import-method-b-ifc-file)
+   - [Import Method C: CSV Import (External Sources)](#import-method-c-csv-import)
 4. [Maintenance Scheduling](#maintenance-scheduling)
 5. [IoT Monitoring](#iot-monitoring)
 6. [Common Workflows](#common-workflows)
@@ -27,6 +30,9 @@ Digital Twin is an open-source facilities management system integrated with Blen
 - **Asset Management (6D)** - Track equipment, warranties, and lifecycle
 - **Maintenance Scheduling (6D)** - Preventive maintenance and work orders
 - **IoT Integration (7D)** - Sensor monitoring and alerts
+- **Federation Integration** - Links with 3D/4D/5D BIM data for unified access
+
+**NEW in v2.1:** Digital Twin now integrates with the Federation module's `enhanced_federation.db`, linking asset lifecycle data (6D/7D) with geometry (3D), schedule (4D), and cost (5D) in a single database.
 
 ### Who is it for?
 
@@ -67,17 +73,92 @@ Digital Twin is included with Bonsai. No additional installation needed.
 
 ### Database Setup
 
-**Default Location:** `~/Projects/IfcOpenShell/WORK_DIR/databases/digital_twin.db`
+**Default Location:** `~/Projects/IfcOpenShell/WORK_DIR/databases/enhanced_federation.db`
 
-The database is created automatically on first use. You can specify a custom location in the panel.
+**Important:** Digital Twin now uses the **Federation database** (same database as 3D/4D/5D BIM modules). This provides:
+- ✅ Single source of truth for all project data
+- ✅ Direct links from assets to IFC elements
+- ✅ Cross-dimensional queries (e.g., "Show me assets that are behind schedule")
+- ✅ No data duplication
+
+**Prerequisites for Federation Mode (Recommended):**
+1. `enhanced_federation.db` must exist (created by Federation module)
+2. Database should contain federated IFC elements
+
+**Standalone Mode (No Federation):**
+- If federation DB doesn't exist, you can still import from IFC files or CSV
+- Digital Twin will create the database automatically
+- You won't have 3D/4D/5D integration
 
 ---
 
 ## Asset Management
 
-### Importing Assets from IFC
+Digital Twin supports **three import methods**. Choose based on your workflow:
 
-**Goal:** Extract all equipment from your IFC model into the asset database.
+| Method | Use When | Federation Link |
+|--------|----------|-----------------|
+| **A. Federation DB** | Initial setup with federated model (recommended) | ✅ Yes - FK to elements |
+| **B. IFC File** | Standalone mode without federation | ❌ No |
+| **C. CSV Import** | Adding external equipment (sensors, retrofits) | 🟡 Optional |
+
+---
+
+### Import Method A: Federation Database (Recommended)
+
+**Goal:** Import equipment that's already in your federated model with full 3D/4D/5D integration.
+
+**When to use:**
+- ✅ You have `enhanced_federation.db` from Federation module
+- ✅ Your IFC models are already federated (3D geometry + 4D schedule + 5D cost)
+- ✅ You want assets linked to elements table for cross-dimensional queries
+
+**Steps:**
+
+1. **Verify Prerequisites**
+   - Ensure `enhanced_federation.db` exists in `WORK_DIR/databases/`
+   - Federation database should contain elements (run Federation module first if needed)
+
+2. **Open Digital Twin Panel**
+   - Properties → Scene → Digital Twin
+
+3. **Import from Federation**
+   - Click: **Import from Federation DB**
+   - Select discipline filter (or "All Disciplines")
+   - Wait for import to complete (progress shown in console)
+
+**What gets imported?**
+- All MEP equipment from `elements` table
+- Automatically creates FK link: `assets.federation_element_id` → `elements.id`
+- Inherits: name, type, discipline, storey, space from elements table
+- Properties extracted from JSON if available
+
+**Example Results:**
+```
+Import complete: 476 assets imported (with federation links)
+  ACMV: 164 assets
+  ELEC: 312 assets
+By IFC Class:
+  IfcAirHandlingUnit: 12
+  IfcLightFixture: 203
+  ...
+```
+
+**Benefits:**
+- ✅ Query assets by schedule status: "Show overdue maintenance for behind-schedule equipment"
+- ✅ Cross-dimensional views available
+- ✅ Single source of truth
+
+---
+
+### Import Method B: IFC File (Standalone)
+
+**Goal:** Extract equipment directly from IFC file without federation.
+
+**When to use:**
+- You don't have federation database
+- Standalone facilities management only
+- Quick testing/prototyping
 
 **Steps:**
 
@@ -91,21 +172,92 @@ The database is created automatically on first use. You can specify a custom loc
 3. **Import Assets**
    - Click: **Import from IFC**
    - Wait for import to complete (progress shown in console)
-   - Success message will show number of assets imported
 
 **What gets imported?**
 - All MEP equipment (HVAC, Electrical, Plumbing, Fire Protection)
 - 36+ IFC classes supported (see README.md for full list)
 - Automatically extracts: name, type, manufacturer, model, location
 
-**Example Results:**
+**Limitations:**
+- ❌ No federation links (assets not linked to elements table)
+- ❌ No cross-dimensional queries
+- ❌ Can't query by schedule or cost data
+
+---
+
+### Import Method C: CSV Import (External Sources)
+
+**Goal:** Add equipment not in IFC files (IoT sensors, manual additions, retrofits).
+
+**When to use:**
+- ✅ Adding IoT sensors after construction
+- ✅ Importing equipment lists from other systems (Autodesk, CMMS)
+- ✅ Retrofit equipment not in original IFC
+- ✅ Temporary equipment
+
+**CSV Format (Minimum Required):**
+```csv
+guid,name,ifc_class,discipline
+SENSOR-AHU01-TEMP,Temperature Sensor AHU01,IfcSensor,ACMV
+SENSOR-CHILL-PRES,Pressure Sensor Chiller,IfcSensor,ACMV
+RETROFIT-PUMP-01,Replacement Pump,IfcPump,PLB
 ```
-Import complete: 1,247 assets imported
-  ACMV: 542 assets
-  ELEC: 312 assets
-  FP: 195 assets
-  PLB: 198 assets
+
+**CSV Format (Full - All Optional Fields):**
+```csv
+guid,name,ifc_class,discipline,manufacturer,model,serial_number,status,condition,storey,install_date
+SENSOR-01,Temp Sensor,IfcSensor,ACMV,Siemens,QAA2061,SN12345,Active,Good,Level 3,2025-12-01
 ```
+
+**Steps:**
+
+1. **Prepare CSV File**
+   - Create CSV with required columns (guid, name, ifc_class, discipline)
+   - Add optional columns as needed
+
+2. **Open Digital Twin Panel**
+   - Properties → Scene → Digital Twin
+
+3. **Import CSV**
+   - Click: **Import from CSV**
+   - Select your CSV file
+   - Assets imported with duplicate detection
+
+**Example Use Cases:**
+
+**Scenario 1: Terminal 1 - Adding IoT Sensors**
+```bash
+# Step 1: Initial import from federation
+Click "Import from Federation DB" → 476 assets imported
+
+# Step 2: Add IoT sensors via CSV
+Prepare: terminal1_sensors.csv (50 temperature/pressure sensors)
+Click "Import from CSV" → 50 sensors added
+```
+
+**Scenario 2: Autodesk Tandem Migration**
+```bash
+# Export from Autodesk Tandem to CSV
+# Import CSV → All assets migrated to open-source Digital Twin
+```
+
+---
+
+### Which Import Method Should I Use?
+
+**Decision Tree:**
+
+```
+Do you have enhanced_federation.db?
+├─ YES → Use Method A (Federation DB Import) ✅ RECOMMENDED
+│         Then use Method C for external sources (sensors, retrofits)
+│
+└─ NO → Do you have federation module?
+        ├─ YES → Run federation first, then use Method A
+        └─ NO → Use Method B (IFC File) for standalone mode
+```
+
+---
 
 ### Viewing Asset List
 

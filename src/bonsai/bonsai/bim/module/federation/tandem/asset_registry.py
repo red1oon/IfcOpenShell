@@ -26,11 +26,20 @@ class AssetRegistry:
         self._ensure_database()
 
     def _ensure_database(self):
-        """Create database and tables if they don't exist"""
+        """Create database and tables if they don't exist
+
+        Uses federation-integrated schema by default (v2.1+)
+        Falls back to standalone schema if federation schema not found
+        """
         conn = self._get_connection()
         try:
-            # Read and execute schema
-            schema_path = Path(__file__).parent / "schema.sql"
+            # Use federation schema by default (v2.1+)
+            schema_path = Path(__file__).parent / "schema_federation_integrated.sql"
+
+            # Fallback to standalone schema if federation schema doesn't exist
+            if not schema_path.exists():
+                schema_path = Path(__file__).parent / "schema.sql"
+
             with open(schema_path, 'r') as f:
                 schema_sql = f.read()
             conn.executescript(schema_sql)

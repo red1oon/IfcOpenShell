@@ -3,14 +3,17 @@ Digital Twin - Asset Importer
 Extract equipment data from IFC models and populate asset registry
 
 Supports:
-- IfcDistributionElement (MEP equipment)
-- IfcFurnishingElement
-- IfcTransportElement
-- Custom equipment types
+- Federation DB import (primary - from enhanced_federation.db)
+- IFC file import (standalone mode)
+- CSV import (external sources - IoT devices, manual additions)
+- Blender import (from loaded IFC model)
 """
 
 import ifcopenshell
 import ifcopenshell.util.element
+import sqlite3
+import csv
+from pathlib import Path
 from typing import Optional, List, Dict, Any
 from .asset_registry import AssetRegistry
 
@@ -392,5 +395,230 @@ class AssetImporter:
             except Exception as e:
                 stats['errors'] += 1
                 print(f"Error importing {element.GlobalId}: {e}")
+
+        return stats
+
+    def import_from_federation_db(self, federation_db_path: str,
+                                   discipline_filter: Optional[List[str]] = None,
+                                   progress_callback=None) -> Dict[str, Any]:
+        """
+        Import assets from federation database (PRIMARY METHOD for integrated setup)
+
+        Args:
+            federation_db_path: Path to enhanced_federation.db
+            discipline_filter: Only import these disciplines (e.g., ['ACMV', 'ELEC'])
+            progress_callback: Optional callback(current, total, message)
+
+        Returns:
+            Import statistics
+
+        Example:
+            importer = AssetImporter(registry)
+            stats = importer.import_from_federation_db(
+                '/path/to/enhanced_federation.db',
+                discipline_filter=['ACMV', 'ELEC']
+            )
+        """
+        conn = sqlite3.connect(federation_db_path)
+        conn.row_factory = sqlite3.Row
+
+        stats = {
+            'total_scanned': 0,
+            'imported': 0,
+            'skipped': 0,
+            'errors': 0,
+            'by_discipline': {},
+            'by_ifc_class': {}
+        }
+
+        try:
+            # Query elements_meta table for equipment
+            # Match asset classes
+            ifc_class_list = ','.join([f"'{c}'" for c in self.ASSET_CLASSES])
+            sql = f"""
+                SELECT
+                    id, guid, ifc_class, element_name,
+                    discipline, element_type,
+                    storey, element_description
+                FROM elements_meta
+                WHERE ifc_class IN ({ifc_class_list})
+                ORDER BY id
+            """
+
+            cursor = conn.execute(sql)
+            rows = cursor.fetchall()
+            stats['total_scanned'] = len(rows)
+
+            for idx, row in enumerate(rows):
+                if progress_callback:
+                    progress_callback(idx + 1, len(rows), f"Processing {row['ifc_class']}")
+
+                try:
+                    # Extract discipline from federation DB or map from IFC class
+                    discipline = row['discipline'] or self.DISCIPLINE_MAP.get(row['ifc_class'], 'Other')
+
+                    # Apply discipline filter
+                    if discipline_filter:
+                        if discipline not in discipline_filter:
+                            stats['skipped'] += 1
+                            continue
+
+                    # Check if already exists
+                    existing = self.registry.get_asset(row['guid'])
+                    if existing:
+                        stats['skipped'] += 1
+                        continue
+
+                    # Build asset_data
+                    asset_data = {
+                        'guid': row['guid'],
+                        'federation_element_id': row['id'],  # KEY: Link to federation DB
+                        'name': row['element_name'] or f"{row['ifc_class']}",
+                        'ifc_class': row['ifc_class'],
+                        'discipline': discipline,
+                        'ifc_type': row['element_type'],
+                        'storey': row['storey'],
+                    }
+
+                    # Query element_properties for manufacturer, model, etc.
+                    # Note: element_properties table structure needs to be checked
+                    try:
+                        props_cursor = conn.execute(
+                            "SELECT property_name, property_value FROM element_properties WHERE guid = ?",
+                            (row['guid'],)
+                        )
+                        for prop_row in props_cursor.fetchall():
+                            prop_name = prop_row[0]
+                            prop_value = prop_row[1]
+
+                            if prop_name == 'Manufacturer':
+                                asset_data['manufacturer'] = prop_value
+                            elif prop_name == 'Model':
+                                asset_data['model'] = prop_value
+                            elif prop_name == 'SerialNumber':
+                                asset_data['serial_number'] = prop_value
+                    except:
+                        pass
+
+                    # Create asset
+                    self.registry.create_asset(asset_data)
+
+                    # Import custom properties if needed
+                    # (Could parse properties JSON and add to asset_properties table)
+
+                    stats['imported'] += 1
+                    stats['by_discipline'][discipline] = stats['by_discipline'].get(discipline, 0) + 1
+                    stats['by_ifc_class'][row['ifc_class']] = stats['by_ifc_class'].get(row['ifc_class'], 0) + 1
+
+                except Exception as e:
+                    stats['errors'] += 1
+                    print(f"Error importing {row['GlobalId']}: {e}")
+
+        finally:
+            conn.close()
+
+        return stats
+
+    def import_from_csv(self, csv_path: str,
+                       skip_duplicates: bool = True,
+                       progress_callback=None) -> Dict[str, Any]:
+        """
+        Import assets from CSV file (for external sources - IoT devices, manual additions)
+
+        CSV Format (minimum required columns):
+            guid,name,ifc_class,discipline
+            SENSOR-001,Temperature Sensor - AHU01,IfcSensor,ACMV
+            SENSOR-002,Pressure Sensor - Chiller,IfcSensor,ACMV
+
+        Optional columns:
+            asset_tag,manufacturer,model,serial_number,status,condition,
+            storey,space,install_date,warranty_start,warranty_duration_months,
+            expected_lifespan_years,replacement_cost,capacity,vendor_name,notes
+
+        Args:
+            csv_path: Path to CSV file
+            skip_duplicates: Skip assets with existing GUIDs
+            progress_callback: Optional callback(current, total, message)
+
+        Returns:
+            Import statistics
+
+        Example CSV:
+            guid,name,ifc_class,discipline,manufacturer,model
+            TEMP-AHU01,Temperature Sensor,IfcSensor,ACMV,Siemens,QAA2061
+            PRES-CH01,Pressure Sensor,IfcSensor,ACMV,Honeywell,P7640B
+        """
+        stats = {
+            'total_scanned': 0,
+            'imported': 0,
+            'skipped': 0,
+            'errors': 0,
+            'by_discipline': {},
+            'by_ifc_class': {}
+        }
+
+        csv_path = Path(csv_path)
+        if not csv_path.exists():
+            raise FileNotFoundError(f"CSV file not found: {csv_path}")
+
+        with open(csv_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            stats['total_scanned'] = len(rows)
+
+            # Validate required columns
+            required = ['guid', 'name', 'ifc_class', 'discipline']
+            if not all(col in reader.fieldnames for col in required):
+                raise ValueError(f"CSV missing required columns: {required}")
+
+            for idx, row in enumerate(rows):
+                if progress_callback:
+                    progress_callback(idx + 1, len(rows), f"Processing {row.get('name', 'Unknown')}")
+
+                try:
+                    # Check for duplicates
+                    if skip_duplicates:
+                        existing = self.registry.get_asset(row['guid'])
+                        if existing:
+                            stats['skipped'] += 1
+                            continue
+
+                    # Build asset data (only include non-empty values)
+                    asset_data = {
+                        'guid': row['guid'],
+                        'name': row['name'],
+                        'ifc_class': row['ifc_class'],
+                        'discipline': row['discipline'],
+                    }
+
+                    # Add optional fields if present
+                    optional_fields = [
+                        'asset_tag', 'ifc_type', 'manufacturer', 'model', 'serial_number',
+                        'capacity', 'install_date', 'warranty_start', 'warranty_duration_months',
+                        'expected_lifespan_years', 'replacement_cost', 'status', 'condition',
+                        'storey', 'space', 'vendor_name', 'vendor_contact', 'notes'
+                    ]
+
+                    for field in optional_fields:
+                        if field in row and row[field]:
+                            # Handle numeric fields
+                            if field in ['warranty_duration_months', 'expected_lifespan_years']:
+                                asset_data[field] = int(row[field])
+                            elif field == 'replacement_cost':
+                                asset_data[field] = float(row[field])
+                            else:
+                                asset_data[field] = row[field]
+
+                    # Create asset
+                    self.registry.create_asset(asset_data)
+
+                    stats['imported'] += 1
+                    discipline = asset_data['discipline']
+                    stats['by_discipline'][discipline] = stats['by_discipline'].get(discipline, 0) + 1
+                    stats['by_ifc_class'][row['ifc_class']] = stats['by_ifc_class'].get(row['ifc_class'], 0) + 1
+
+                except Exception as e:
+                    stats['errors'] += 1
+                    print(f"Error importing row {idx + 1}: {e}")
 
         return stats

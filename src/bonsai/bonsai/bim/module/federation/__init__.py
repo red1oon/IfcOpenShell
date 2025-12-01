@@ -42,6 +42,7 @@ from pathlib import Path
 from . import ui, prop, operator, discipline_legend, cache_monitor
 from .loading.unified_progressive_loader import GlassOutlineLoader
 from .clash import gizmo
+from .tandem import ui as tandem_ui, operator as tandem_operator
 
 # Expose classes so main __init__.py can find them
 classes = (
@@ -155,6 +156,36 @@ classes = (
     ui.BIM_PT_boq_export,
     ui.BIM_PT_structural_works,
     ui.BIM_PT_nlp_query,
+
+    # Digital Twin (Tandem) - 6D/7D BIM Operators
+    tandem_operator.BIM_OT_import_assets_from_ifc,
+    tandem_operator.BIM_OT_import_assets_from_federation,
+    tandem_operator.BIM_OT_import_assets_from_csv,
+    tandem_operator.BIM_OT_refresh_asset_list,
+    tandem_operator.BIM_OT_view_asset_details,
+    tandem_operator.BIM_OT_highlight_asset_in_3d,
+    tandem_operator.BIM_OT_update_asset_status,
+    tandem_operator.BIM_OT_visualize_assets_by_condition,
+    tandem_operator.BIM_OT_export_asset_report,
+    tandem_operator.BIM_OT_generate_pm_schedule,
+    tandem_operator.BIM_OT_create_work_order,
+    tandem_operator.BIM_OT_refresh_work_order_list,
+    tandem_operator.BIM_OT_complete_work_order,
+    tandem_operator.BIM_OT_view_pm_summary,
+
+    # Digital Twin (Tandem) - 6D/7D BIM UI
+    tandem_ui.BIMTandemAssetItem,
+    tandem_ui.BIMTandemProperties,
+    tandem_ui.BIM_UL_tandem_assets,
+    tandem_ui.BIM_PT_tandem_main,
+    tandem_ui.BIM_PT_tandem_assets,
+    tandem_ui.BIM_PT_tandem_asset_details,
+    tandem_ui.BIM_PT_tandem_statistics,
+    tandem_ui.BIMTandemWorkOrderItem,
+    tandem_ui.BIM_UL_tandem_work_orders,
+    tandem_ui.BIM_PT_tandem_maintenance,
+    tandem_ui.BIM_PT_tandem_work_orders,
+    tandem_ui.BIM_PT_tandem_maintenance_stats,
 )
 
 @persistent
@@ -219,6 +250,19 @@ def register():
         type=prop.BIMStructuralProperties
     )
 
+    # Digital Twin (Tandem) properties
+    bpy.types.Scene.BIMTandemProperties = bpy.props.PointerProperty(
+        type=tandem_ui.BIMTandemProperties
+    )
+    bpy.types.Scene.bim_tandem_assets = bpy.props.CollectionProperty(
+        type=tandem_ui.BIMTandemAssetItem
+    )
+    bpy.types.Scene.bim_tandem_assets_index = bpy.props.IntProperty()
+    bpy.types.Scene.bim_tandem_work_orders = bpy.props.CollectionProperty(
+        type=tandem_ui.BIMTandemWorkOrderItem
+    )
+    bpy.types.Scene.bim_tandem_work_orders_index = bpy.props.IntProperty()
+
     # Register federation analysis properties on BIMClashProperties
     prop.register_federation_properties()
 
@@ -226,7 +270,7 @@ def register():
     if restore_federation_index_on_load not in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.append(restore_federation_index_on_load)
 
-    print("✓ federation module registered (consolidated)")
+    print("✓ federation module registered (consolidated + Digital Twin)")
 
 def unregister():
     """Called when addon is disabled - cleanup"""
@@ -236,6 +280,13 @@ def unregister():
 
     # Unregister federation analysis properties from BIMClashProperties
     prop.unregister_federation_properties()
+
+    # Remove Digital Twin (Tandem) properties
+    del bpy.types.Scene.bim_tandem_work_orders_index
+    del bpy.types.Scene.bim_tandem_work_orders
+    del bpy.types.Scene.bim_tandem_assets_index
+    del bpy.types.Scene.bim_tandem_assets
+    del bpy.types.Scene.BIMTandemProperties
 
     # Remove properties from Scene
     del bpy.types.Scene.BIMFederationProperties

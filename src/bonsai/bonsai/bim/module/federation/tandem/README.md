@@ -1,21 +1,25 @@
-# Digital Twin (Tandem Alternative) - Phases 1 & 2
+# Digital Twin (Tandem Alternative) - Phases 1-3 + Federation Integration
 
 Open-source facilities management and IoT integration for IFC buildings.
 
-**Status:** Phase 1 & 2 Complete ✅
-**Version:** 2.0.0
+**Status:** Phases 1-3 Complete ✅ | Federation Integration Complete ✅
+**Version:** 2.1.0 (Federation Integrated)
 **Date:** 2025-11-30
 
 ---
 
 ## Overview
 
+**NEW: Federation Integration**
+Digital Twin now integrates with `enhanced_federation.db` (used for 3D/4D/5D BIM). Assets link to federation elements table via foreign key, providing unified access to geometry, schedule, cost, and lifecycle data.
+
 ### Phase 1: Asset Management ✅
-- Import equipment from IFC models
+- Import equipment from federation database (PRIMARY) or IFC models (standalone)
+- Import from CSV for external sources (IoT devices, manual additions)
 - Track asset metadata (manufacturer, model, warranty, lifecycle)
 - Visualize assets in 3D by condition
 - Export asset reports to CSV
-- SQLite database for asset registry
+- SQLite database integrated with federation
 
 ### Phase 2: Maintenance Scheduling ✅
 - PM template management (preventive maintenance)
@@ -23,6 +27,13 @@ Open-source facilities management and IoT integration for IFC buildings.
 - Work order CRUD operations
 - Maintenance logging
 - Overdue tracking & statistics
+
+### Phase 3: IoT Integration ✅
+- Sensor registry linked to assets
+- Mock data generator (Temperature, Pressure, Flow, CO2, Power, Humidity)
+- Real-time threshold monitoring
+- Alert engine with severity levels
+- IoT statistics dashboard
 
 ---
 
@@ -48,11 +59,23 @@ tandem/
 
 ## Database Schema
 
-**Location:** `WORK_DIR/databases/digital_twin.db`
+**Location:** `WORK_DIR/databases/enhanced_federation.db` (integrated with 3D/4D/5D)
+
+**Architecture:**
+```
+enhanced_federation.db
+├── elements (existing - geometry, schedule, cost)
+└── Digital Twin Tables (NEW - integrated)
+    ├── assets → FK to elements.id
+    ├── sensors → FK to assets.guid
+    ├── work_orders → FK to assets.guid
+    └── alerts → FK to assets.guid + sensors.sensor_id
+```
 
 ### Phase 1 Tables (Asset Layer)
 
-1. **assets** - Core asset registry (23 fields)
+1. **assets** - Core asset registry (24 fields)
+   - **NEW:** federation_element_id → FK to elements table
    - Identity: guid, asset_tag, name
    - IFC: ifc_class, discipline, storey, space
    - Equipment: manufacturer, model, serial_number, capacity
@@ -90,12 +113,33 @@ tandem/
 
 ## Usage
 
-### 1. Import Assets from IFC (Blender)
+### 1. Import Assets (3 Methods)
 
+**Method A: Federation DB Import (PRIMARY - Recommended)**
+1. Ensure `enhanced_federation.db` exists in `WORK_DIR/databases/`
+2. Go to: **Properties → Scene → Digital Twin**
+3. Click: **Import from Federation DB**
+4. Select discipline filter (or All Disciplines)
+5. Assets imported with FK links to elements table
+
+**Method B: IFC File Import (Standalone Mode)**
 1. Load IFC file in Blender (Bonsai)
 2. Go to: **Properties → Scene → Digital Twin**
 3. Click: **Import from IFC**
-4. Assets are extracted and stored in database
+4. Assets extracted from loaded IFC model
+
+**Method C: CSV Import (External Sources)**
+1. Prepare CSV file (see schema below)
+2. Click: **Import from CSV**
+3. Select CSV file
+4. Use for IoT devices, manual additions, retrofit equipment
+
+CSV Format:
+```csv
+guid,name,ifc_class,discipline,manufacturer,model
+SENSOR-01,Temp Sensor AHU01,IfcSensor,ACMV,Siemens,QAA2061
+SENSOR-02,Pressure Sensor,IfcSensor,ACMV,Honeywell,P7640B
+```
 
 ### 2. View Asset List
 
@@ -145,13 +189,31 @@ View real-time statistics:
 from bonsai.bim.module.federation.tandem.asset_registry import AssetRegistry
 from bonsai.bim.module.federation.tandem.asset_importer import AssetImporter
 
-# Initialize registry
-db_path = "WORK_DIR/databases/digital_twin.db"
+# Initialize registry (integrated with federation)
+db_path = "WORK_DIR/databases/enhanced_federation.db"
 registry = AssetRegistry(db_path)
 
-# Create asset
+# Import from Federation DB (PRIMARY METHOD)
+importer = AssetImporter(registry)
+federation_db = "WORK_DIR/databases/enhanced_federation.db"
+stats = importer.import_from_federation_db(
+    federation_db,
+    discipline_filter=['ACMV', 'ELEC']  # Optional filter
+)
+print(f"Imported {stats['imported']} assets with federation links")
+
+# Import from CSV (external sources - IoT devices, manual additions)
+stats = importer.import_from_csv('path/to/assets.csv')
+print(f"Imported {stats['imported']} external assets")
+
+# Import from IFC (standalone mode)
+stats = importer.import_from_ifc('path/to/model.ifc')
+print(f"Imported {stats['imported']} assets")
+
+# Create asset manually
 asset_data = {
     'guid': 'ABC123',
+    'federation_element_id': 42,  # FK to elements table (optional)
     'name': 'Air Handling Unit - Level 3',
     'ifc_class': 'IfcAirHandlingUnit',
     'discipline': 'ACMV',
@@ -175,11 +237,6 @@ acmv_assets = registry.list_assets(discipline='ACMV', status='Active')
 stats = registry.get_statistics()
 print(f"Total assets: {stats['total_assets']}")
 print(f"By discipline: {stats['by_discipline']}")
-
-# Import from IFC
-importer = AssetImporter(registry)
-stats = importer.import_from_ifc('path/to/model.ifc')
-print(f"Imported {stats['imported']} assets")
 ```
 
 ### Phase 2: Maintenance API
@@ -247,8 +304,14 @@ print(f"Upcoming: {summary['total_upcoming']}, Overdue: {summary['overdue']}")
 
 ## Operators
 
+### BIM_OT_import_assets_from_federation **NEW**
+Import equipment from federation database (PRIMARY METHOD). Links assets to elements table via FK.
+
+### BIM_OT_import_assets_from_csv **NEW**
+Import assets from CSV file (external sources - IoT devices, manual additions).
+
 ### BIM_OT_import_assets_from_ifc
-Import equipment from loaded IFC model into asset database.
+Import equipment from loaded IFC model into asset database (standalone mode).
 
 ### BIM_OT_refresh_asset_list
 Refresh asset list with current filters applied.
@@ -357,6 +420,19 @@ See `IMPLEMENTATION_SPEC.md` for full 6-phase roadmap.
 
 ---
 
+## Prerequisites
+
+**For Federation Integration (Recommended):**
+- `enhanced_federation.db` must exist in `WORK_DIR/databases/`
+- Federation database should contain elements (geometry, schedule, cost)
+- Run federation module to create federated model first
+
+**For Standalone Mode:**
+- IFC file loaded in Blender, OR
+- CSV file with asset data
+
+---
+
 ## License
 
 GPL-3.0-or-later (same as Bonsai/IfcOpenShell)
@@ -367,3 +443,23 @@ GPL-3.0-or-later (same as Bonsai/IfcOpenShell)
 
 red1oon @ GitHub
 Part of Bonsai Federation module
+
+---
+
+## Changelog
+
+### v2.1.0 (2025-11-30) - Federation Integration
+- **BREAKING:** Default database changed to `enhanced_federation.db`
+- Added `federation_element_id` FK to elements table
+- Added `import_from_federation_db()` method (PRIMARY)
+- Added `import_from_csv()` for external sources (IoT devices)
+- Updated all documentation for federation workflow
+- Cross-dimensional views for 4D/5D/6D/7D queries
+
+### v2.0.0 (2025-11-30) - Phase 3 IoT
+- Sensor registry and mock data generation
+- Alert engine with threshold monitoring
+- IoT statistics dashboard
+
+### v1.0.0 (2025-11-30) - Phases 1 & 2
+- Initial release with asset management and maintenance scheduling

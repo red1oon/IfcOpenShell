@@ -2,27 +2,71 @@
 
 **Complete database design for Asset Management, Maintenance, and IoT Integration**
 
-Version: 1.0
-Database: SQLite (dev), PostgreSQL (production)
-Time-Series: InfluxDB / TimescaleDB
+Version: 2.1 (Federation Integrated)
+Database: enhanced_federation.db (SQLite/PostgreSQL)
+Time-Series: InfluxDB / TimescaleDB (optional for Phase 5)
 
 ---
+
+## Federation Integration Architecture
+
+**Key Change:** Digital Twin tables now reside in `enhanced_federation.db` alongside 3D/4D/5D BIM data.
+
+```
+enhanced_federation.db
+│
+├── [EXISTING] elements - IFC geometry, 4D schedule, 5D cost
+│   ├── id (PK)
+│   ├── GlobalId
+│   ├── ifc_class
+│   ├── schedule_start_date (4D)
+│   ├── cost_total (5D)
+│   └── ...
+│
+└── [NEW] Digital Twin Tables (6D/7D)
+    │
+    ├── ASSET LAYER (6D)
+    │   ├── assets → FK to elements.id ⭐
+    │   ├── asset_properties
+    │   ├── asset_documents
+    │   └── asset_history
+    │
+    ├── MAINTENANCE LAYER (6D)
+    │   ├── pm_templates
+    │   ├── work_orders → FK to assets.guid
+    │   ├── maintenance_log
+    │   ├── technicians
+    │   └── pm_schedule_state
+    │
+    └── IoT LAYER (7D)
+        ├── sensors → FK to assets.guid
+        ├── sensor_readings (time-series)
+        ├── alert_rules
+        └── alerts → FK to sensors.sensor_id + assets.guid
+```
 
 ## Schema Overview
 
 ```
+┌─────────────────────────┐
+│  FEDERATION (3D/4D/5D)  │
+│  - elements (EXISTING)  │──┐
+└─────────────────────────┘  │
+                             │ FK: federation_element_id
+┌─────────────────┐          │
+│  ASSET LAYER    │          │
+│  - assets       │◄─────────┘
+│  - properties   │
+│  - documents    │
+│  - history      │
+└─────────────────┘
+        │
+        │ FK: asset_guid
+        │
 ┌─────────────────┐
-│  ASSET LAYER    │
-│  - assets       │──┐
-│  - properties   │  │
-│  - documents    │  │
-│  - history      │  │
-└─────────────────┘  │
-                     │
-┌─────────────────┐  │
-│ MAINTENANCE     │  │
-│  - pm_templates │  │
-│  - work_orders  │◄─┤
+│ MAINTENANCE     │
+│  - pm_templates │
+│  - work_orders  │◄─┐
 │  - maint_log    │  │
 │  - technicians  │  │
 └─────────────────┘  │
@@ -41,16 +85,17 @@ Time-Series: InfluxDB / TimescaleDB
 ## ASSET LAYER
 
 ### Table: `assets`
-**Purpose:** Core asset registry
+**Purpose:** Core asset registry with federation integration
 
 ```sql
 CREATE TABLE assets (
     -- Identity
     guid TEXT PRIMARY KEY,              -- IFC GUID (from IFC model)
+    federation_element_id INTEGER,      -- ⭐ NEW: FK to elements table
     asset_tag TEXT UNIQUE,              -- Facility barcode/QR code
     name TEXT NOT NULL,                 -- Human-readable name
 
-    -- IFC Properties
+    -- IFC Properties (denormalized from elements for performance)
     ifc_class TEXT NOT NULL,            -- IfcAirTerminal, IfcChiller, etc.
     ifc_type TEXT,                      -- Type name
     discipline TEXT,                    -- ACMV, ELEC, FP, STR, ARC
@@ -82,9 +127,14 @@ CREATE TABLE assets (
     -- Metadata
     notes TEXT,                         -- Free-form notes
     created_date TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_date TEXT DEFAULT CURRENT_TIMESTAMP
+    updated_date TEXT DEFAULT CURRENT_TIMESTAMP,
+
+    -- ⭐ NEW: Foreign key to federation elements table
+    FOREIGN KEY (federation_element_id) REFERENCES elements(id) ON DELETE CASCADE
 );
 
+CREATE INDEX idx_assets_guid ON assets(guid);
+CREATE INDEX idx_assets_federation_element ON assets(federation_element_id);  -- ⭐ NEW
 CREATE INDEX idx_assets_ifc_class ON assets(ifc_class);
 CREATE INDEX idx_assets_discipline ON assets(discipline);
 CREATE INDEX idx_assets_storey ON assets(storey);
