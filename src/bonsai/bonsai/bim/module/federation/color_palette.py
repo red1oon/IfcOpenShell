@@ -212,7 +212,9 @@ class BIM_OT_apply_palette_color(Operator):
         if self.apply_to_selected and context.selected_objects:
             objects_to_color = context.selected_objects
         else:
-            objects_to_color = context.scene.objects
+            # Use bpy.data.objects to include all objects (even in hidden collections)
+            import bpy
+            objects_to_color = bpy.data.objects
 
         colored_count = 0
 
