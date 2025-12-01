@@ -149,10 +149,26 @@ class BIMFederationColorProperties(PropertyGroup):
         default='ALL'
     )
 
-    filter_ifc_type: StringProperty(
+    def get_ifc_types(self, context):
+        """Get unique IFC types from loaded objects"""
+        types = set()
+        for obj in context.scene.objects:
+            if obj.type == 'MESH':
+                ifc_class = obj.get('ifc_class', '')
+                if ifc_class:
+                    types.add(ifc_class)
+
+        items = [('ALL', 'All Types', 'Show all IFC types')]
+        for ifc_type in sorted(types):
+            items.append((ifc_type, ifc_type, f'Filter {ifc_type} elements'))
+
+        return items if len(items) > 1 else [('ALL', 'All Types', 'No IFC types found')]
+
+    filter_ifc_type: EnumProperty(
         name="Filter IFC Type",
-        description="Filter by IFC class (e.g., IfcWall, IfcDoor)",
-        default=""
+        description="Filter by IFC class",
+        items=get_ifc_types,
+        default=0
     )
 
     auto_apply: BoolProperty(
@@ -202,9 +218,9 @@ class BIM_OT_apply_palette_color(Operator):
                     continue
 
             # Check IFC type filter
-            if props.filter_ifc_type:
+            if props.filter_ifc_type != 'ALL':
                 obj_ifc_class = obj.get('ifc_class', '')
-                if props.filter_ifc_type.lower() not in obj_ifc_class.lower():
+                if obj_ifc_class != props.filter_ifc_type:
                     continue
 
             # Store previous color
@@ -387,7 +403,25 @@ class BIM_PT_federation_color_palette(Panel):
         row.prop(props, "filter_discipline", text="")
 
         row = filter_box.row()
-        row.prop(props, "filter_ifc_type", text="IFC Type", icon='OBJECT_DATA')
+        row.prop(props, "filter_ifc_type", text="", icon='OBJECT_DATA')
+
+        # Show filtered object count
+        filtered_count = 0
+        for obj in context.scene.objects:
+            if obj.type != 'MESH':
+                continue
+            if props.filter_discipline != 'ALL':
+                if obj.get('discipline', '') != props.filter_discipline:
+                    continue
+            if props.filter_ifc_type != 'ALL':
+                if obj.get('ifc_class', '') != props.filter_ifc_type:
+                    continue
+            filtered_count += 1
+
+        if filtered_count > 0:
+            info_row = filter_box.row()
+            info_row.scale_y = 0.7
+            info_row.label(text=f"📊 {filtered_count:,} objects match filter", icon='INFO')
 
         # Options
         row = filter_box.row()
