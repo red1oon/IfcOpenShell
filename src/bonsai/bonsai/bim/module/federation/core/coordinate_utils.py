@@ -64,7 +64,8 @@ class CoordinateSystem:
         cursor = conn.cursor()
 
         try:
-            cursor.execute("SELECT offset_x, offset_y, offset_z FROM global_offset WHERE id = 1")
+            # Query without id column (table doesn't have it)
+            cursor.execute("SELECT offset_x, offset_y, offset_z FROM global_offset LIMIT 1")
             row = cursor.fetchone()
 
             if not row:
