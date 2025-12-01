@@ -84,9 +84,14 @@ def main():
         );
     """)
 
-    # Copy remaining schema from source
+    # Copy remaining schema from source (everything except geometry tables)
     for table_name in ['elements_meta', 'element_transforms', 'spatial_structure',
-                       'element_properties', 'global_offset', 'extraction_metadata', 'schema_version']:
+                       'element_properties', 'material_assignments', 'global_offset',
+                       'clash_status', 'clash_groups', 'clash_group_members', 'clash_history',
+                       'design_effort_estimates', 'discipline_rates',
+                       'resolution_options', 'resolution_history',
+                       'extraction_metadata', 'schema_version', 'simple_qto',
+                       'construction_schedule']:
         src_cursor.execute(f"SELECT sql FROM sqlite_master WHERE type='table' AND name='{table_name}'")
         row = src_cursor.fetchone()
         if row and row[0]:
@@ -107,7 +112,12 @@ def main():
         'elements_meta', 'element_transforms',
         'spatial_structure', 'element_properties', 'global_offset',
         'material_assignments', 'clash_status', 'clash_groups',
-        'clash_group_members', 'extraction_metadata', 'schema_version'
+        'clash_group_members', 'clash_history',
+        'design_effort_estimates', 'discipline_rates',
+        'resolution_options', 'resolution_history',
+        'extraction_metadata', 'schema_version',
+        'simple_qto',  # 5D QTO table
+        'construction_schedule'  # 4D schedule
     ]
 
     print("\n📋 Copying non-geometry tables...")

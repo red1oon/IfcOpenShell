@@ -42,7 +42,7 @@ from pathlib import Path
 from . import ui, prop, operator, discipline_legend, cache_monitor
 from .loading.unified_progressive_loader import GlassOutlineLoader
 from .clash import gizmo
-from .tandem import ui as tandem_ui, operator as tandem_operator
+from .tandem import ui as tandem_ui, operator as tandem_operator, sensor_overlay
 
 # Expose classes so main __init__.py can find them
 classes = (
@@ -172,6 +172,16 @@ classes = (
     tandem_operator.BIM_OT_refresh_work_order_list,
     tandem_operator.BIM_OT_complete_work_order,
     tandem_operator.BIM_OT_view_pm_summary,
+    # IoT Command Center (Phase 3)
+    tandem_operator.BIM_OT_iot_generate_mock_data,
+    tandem_operator.BIM_OT_iot_export_analytics,
+    tandem_operator.BIM_OT_iot_switch_to_command_center,
+    sensor_overlay.BIM_OT_iot_enable_sensor_overlay,
+    sensor_overlay.BIM_OT_iot_disable_sensor_overlay,
+    # Sensor Actions
+    tandem_operator.BIM_OT_view_sensor_history,
+    tandem_operator.BIM_OT_create_sensor_alert_rule,
+    tandem_operator.BIM_OT_create_sensor_work_order,
 
     # Digital Twin (Tandem) - 6D/7D BIM UI
     tandem_ui.BIMTandemAssetItem,
@@ -186,6 +196,9 @@ classes = (
     tandem_ui.BIM_PT_tandem_maintenance,
     tandem_ui.BIM_PT_tandem_work_orders,
     tandem_ui.BIM_PT_tandem_maintenance_stats,
+    # IoT Command Center UI (Phase 3)
+    tandem_ui.BIM_PT_tandem_iot_command_center,
+    tandem_ui.BIM_PT_tandem_iot_sensors,
 )
 
 @persistent

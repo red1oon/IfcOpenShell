@@ -142,11 +142,14 @@ get_model_offset = get_model_offset_centralized
 def ifc_to_blender_coords(ifc_coords: tuple) -> Vector:
     """Convert IFC world coordinates to Blender scene coordinates"""
     offset = get_model_offset()
-    return Vector((
+    logger.debug(f"CLASH GIZMO offset: {offset}, IFC coords: {ifc_coords}")
+    result = Vector((
         ifc_coords[0] - offset.x,
         ifc_coords[1] - offset.y,
         ifc_coords[2] - offset.z
     ))
+    logger.debug(f"  → Blender coords: {result}")
+    return result
 
 
 # ============================================================================
@@ -646,10 +649,9 @@ class ClashMarkerGizmoGroup(GizmoGroup):
                     logger.warning(f"Skipping clash {i}: bbox not found in DB")
                     continue
 
-                # Convert to Blender coords
-                blender_a = ifc_to_blender_coords(center_a)
-                blender_b = ifc_to_blender_coords(center_b)
-                midpoint = (blender_a + blender_b) / 2
+                # Database coords are already in viewport space (offset-relative)
+                # NO conversion needed - db stores same coordinate system as viewport
+                midpoint = (center_a + center_b) / 2
 
                 # Get clash status from database
                 clash_id = db.get_clash_id(candidate.guid_a, candidate.guid_b)

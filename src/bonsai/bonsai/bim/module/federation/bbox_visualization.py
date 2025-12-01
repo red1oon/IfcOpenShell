@@ -229,12 +229,9 @@ def create_discipline_batches(discipline_bboxes: Dict[str, List[Tuple]], offset:
         # Collect all vertices for this discipline
         all_vertices = []
         for bbox, guid in bbox_list:
-            # Apply offset to convert IFC → Blender coords
-            offset_bbox = (
-                bbox[0] - offset.x, bbox[1] - offset.y, bbox[2] - offset.z,
-                bbox[3] - offset.x, bbox[4] - offset.y, bbox[5] - offset.z
-            )
-            edges = create_bbox_edges(offset_bbox)
+            # Database coords are already viewport-relative (offset applied during federation)
+            # NO coordinate conversion needed - use directly
+            edges = create_bbox_edges(bbox)
             all_vertices.extend(edges)
 
         if all_vertices:

@@ -220,6 +220,11 @@ class BIM_PT_federation(Panel):
         row.scale_y = 1.3
         row.operator("bim.load_full_federation_viewport", icon="MESH_DATA", text="Full Load")
 
+        # GI version postponed
+        # row = col.row(align=True)
+        # row.scale_y = 1.3
+        # row.operator("bim.load_full_federation_viewport_gi", icon="LIGHTPROBE_VOLUME", text="Full Load (*GI)")
+
         # Row 3: Unload preview button (BBox only - Stage 1)
         row = col.row(align=True)
         row.operator("bim.unload_federation_viewport", icon="PANEL_CLOSE", text="Unload Preview")

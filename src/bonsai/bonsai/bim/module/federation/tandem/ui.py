@@ -142,11 +142,8 @@ class BIM_PT_tandem_main(Panel):
         props = context.scene.BIMTandemProperties
         fed_props = context.scene.BIMFederationProperties
 
-        # Auto-use Federation database if available
-        if fed_props.federation_database_path and not props.database_path:
-            props.database_path = fed_props.federation_database_path
-
         # Database status (read-only, shows Federation DB)
+        # Note: Don't write to props in draw() - Blender doesn't allow it
         box = layout.box()
         if fed_props.federation_database_path:
             box.label(text="Using Federation Database:", icon='FILE')
@@ -524,6 +521,291 @@ class BIM_PT_tandem_maintenance_stats(Panel):
             layout.label(text=f"Error loading stats: {e}", icon='ERROR')
 
 
+# =========================================================================
+# IOT COMMAND CENTER (Phase 3) 🚀
+# =========================================================================
+
+class BIM_PT_tandem_iot_command_center(Panel):
+    """IoT Command Center - Mission Control for Buildings"""
+    bl_label = "IoT Command Center"
+    bl_idname = "BIM_PT_tandem_iot_command_center"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "scene"
+    bl_parent_id = "BIM_PT_tandem_main"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+
+        # Header with workspace switcher
+        box = layout.box()
+        row = box.row()
+        row.label(text="🚀 Real-Time Building Operations", icon='LIGHT_SUN')
+
+        # Full-screen workspace button
+        box.separator()
+        row = box.row()
+        row.scale_y = 1.5
+        row.operator("bim.iot_switch_to_command_center", text="⚡ Open Full Command Center", icon='WORKSPACE')
+
+        # Mission Control features description
+        info_col = box.column(align=True)
+        info_col.scale_y = 0.7
+        info_col.label(text="💡 NASA Mission Control style interface")
+        info_col.label(text="   Animated sensors | Live analytics | AI predictions")
+
+        box.separator()
+
+        # Sensor Overlay Controls
+        vis_box = layout.box()
+        vis_box.label(text="Sensor Visualization:", icon='OUTLINER_OB_LIGHTPROBE')
+
+        # Check overlay status
+        from .sensor_overlay import get_sensor_overlay
+        overlay = get_sensor_overlay()
+
+        row = vis_box.row(align=True)
+        row.scale_y = 1.5
+
+        if overlay.enabled:
+            # Enabled - show disable button
+            row.operator("bim.iot_disable_sensor_overlay", text="Hide Sensors", icon='HIDE_ON')
+            row.label(text=f"({len(overlay.sensors)} active)", icon='CHECKMARK')
+        else:
+            # Disabled - show enable button
+            row.operator("bim.iot_enable_sensor_overlay", text="Show Sensors", icon='HIDE_OFF')
+
+        # Info text
+        info_col = vis_box.column(align=True)
+        info_col.scale_y = 0.6
+        if overlay.enabled:
+            info_col.label(text=f"✅ Showing {len(overlay.sensors)} animated sensors in viewport")
+            info_col.label(text="   🔵 Pulsing spheres = Temperature")
+            info_col.label(text="   🟦 Rotating cubes = Pressure")
+            info_col.label(text="   🔴 Blinking red = Alerts")
+        else:
+            info_col.label(text="Enable to see animated sensor markers in 3D")
+
+        # Building Health Dashboard (placeholder for Phase 3B)
+        health_box = layout.box()
+        health_box.label(text="Building Health Score:", icon='HEART')
+
+        # Placeholder stats (will be dynamic in Phase 3B)
+        row = health_box.row()
+        row.scale_y = 1.3
+        row.label(text="Overall: 87/100 ↗️", icon='FUND')
+
+        col = health_box.column(align=True)
+        col.scale_y = 0.8
+        col.label(text="🟢 ACMV:     92 (↗️ +3)")
+        col.label(text="🟡 Electrical: 78 (→)")
+        col.label(text="🟢 Fire:      95 (↗️ +2)")
+        col.label(text="🟠 Plumbing:  64 (↘️ -8) ⚠️")
+
+        # Analytics Panel (placeholder)
+        analytics_box = layout.box()
+        analytics_box.label(text="Intelligence Layer:", icon='SHADERFX')
+
+        col = analytics_box.column(align=True)
+        col.scale_y = 0.7
+        col.label(text="🔮 2 issues predicted in 14 days")
+        col.label(text="💡 Savings: $245/mo available")
+        col.label(text="🌡️ Comfort: 89% satisfied")
+
+        # Quick Actions
+        actions_box = layout.box()
+        actions_box.label(text="Quick Actions:", icon='SETTINGS')
+
+        row = actions_box.row(align=True)
+        row.operator("bim.iot_generate_mock_data", text="Generate Demo Data", icon='FILE_REFRESH')
+
+        row = actions_box.row(align=True)
+        row.operator("bim.iot_export_analytics", text="Export Analytics", icon='EXPORT')
+
+
+class BIM_PT_tandem_iot_sensors(Panel):
+    """IoT Sensors panel - list of active sensors"""
+    bl_label = "Active Sensors"
+    bl_idname = "BIM_PT_tandem_iot_sensors"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "scene"
+    bl_parent_id = "BIM_PT_tandem_iot_command_center"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+
+        try:
+            from .operator import get_tandem_db_path
+            from .sensor_registry import SensorRegistry
+
+            db_path = get_tandem_db_path(context)
+            registry = SensorRegistry(db_path)
+
+            # Get sensor counts
+            sensors = registry.list_sensors(active_only=True)
+
+            # Count by type
+            by_type = {}
+            for sensor in sensors:
+                sensor_type = sensor.get('sensor_type', 'Unknown')
+                by_type[sensor_type] = by_type.get(sensor_type, 0) + 1
+
+            # Display stats
+            box = layout.box()
+            box.label(text=f"Total Active: {len(sensors)}", icon='LIGHT')
+
+            # By type breakdown
+            if by_type:
+                type_box = layout.box()
+                type_box.label(text="By Type:", icon='FILTER')
+
+                for sensor_type, count in sorted(by_type.items()):
+                    row = type_box.row()
+
+                    # Type icons
+                    icon = 'LIGHT'
+                    if sensor_type == 'Temperature':
+                        icon = 'LIGHT_SUN'
+                    elif sensor_type == 'Pressure':
+                        icon = 'PROP_CON'
+                    elif sensor_type == 'Flow':
+                        icon = 'FORCE_WIND'
+                    elif sensor_type == 'CO2':
+                        icon = 'MATFLUID'
+                    elif sensor_type == 'Power':
+                        icon = 'LIGHT_SPOT'
+
+                    row.label(text=f"{sensor_type}: {count}", icon=icon)
+
+        except Exception as e:
+            layout.label(text=f"Error loading sensors: {e}", icon='ERROR')
+
+
+# =========================================================================
+# SENSOR PROPERTIES PANEL (Shows when sensor selected)
+# =========================================================================
+
+class BIM_PT_sensor_properties(Panel):
+    """Sensor Properties - Shows when IoT sensor Empty selected"""
+    bl_label = "IoT Sensor Properties"
+    bl_idname = "BIM_PT_sensor_properties"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "object"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return obj and obj.get("is_iot_sensor", False)
+
+    def draw(self, context):
+        layout = self.layout
+        obj = context.active_object
+
+        # Header
+        box = layout.box()
+        sensor_type = obj.get("sensor_type", "Unknown")
+
+        # Icon based on type
+        icon = 'LIGHT'
+        if sensor_type == 'Temperature':
+            icon = 'LIGHT_SUN'
+        elif sensor_type == 'Pressure':
+            icon = 'PROP_CON'
+        elif sensor_type == 'Flow':
+            icon = 'FORCE_WIND'
+        elif sensor_type == 'Power':
+            icon = 'LIGHT_SPOT'
+
+        row = box.row()
+        row.label(text=f"{sensor_type} Sensor", icon=icon)
+
+        # Sensor details
+        col = box.column(align=True)
+        col.scale_y = 0.8
+        col.label(text=f"ID: {obj.get('sensor_id', 'unknown')}")
+
+        # Current value (large display)
+        value_box = layout.box()
+        row = value_box.row()
+        row.scale_y = 2.0
+        current = obj.get("current_value", 0)
+
+        # Unit based on type
+        unit = ""
+        if sensor_type == 'Temperature':
+            unit = "°C"
+        elif sensor_type == 'Pressure':
+            unit = "bar"
+        elif sensor_type == 'Flow':
+            unit = "m³/h"
+        elif sensor_type == 'Power':
+            unit = "kW"
+
+        row.label(text=f"{current:.2f} {unit}", icon='INFO')
+
+        # Thresholds
+        if "threshold_min" in obj:
+            thresh_box = layout.box()
+            thresh_box.label(text="Thresholds:", icon='PREVIEW_RANGE')
+
+            col = thresh_box.column(align=True)
+            col.scale_y = 0.7
+            col.label(text=f"Min: {obj.get('threshold_min', 0):.1f} {unit}")
+            col.label(text=f"Max: {obj.get('threshold_max', 100):.1f} {unit}")
+
+            # Status indicator
+            thresh_min = obj.get('threshold_min', 0)
+            thresh_max = obj.get('threshold_max', 100)
+
+            if current < thresh_min:
+                status_box = thresh_box.box()
+                status_box.alert = True
+                status_box.label(text="⚠️ BELOW MINIMUM", icon='ERROR')
+            elif current > thresh_max:
+                status_box = thresh_box.box()
+                status_box.alert = True
+                status_box.label(text="⚠️ ABOVE MAXIMUM", icon='ERROR')
+            else:
+                status_box = thresh_box.box()
+                status_box.label(text="✅ Normal", icon='CHECKMARK')
+
+        # Asset info
+        asset_box = layout.box()
+        asset_box.label(text="Associated Asset:", icon='OBJECT_DATA')
+        col = asset_box.column(align=True)
+        col.scale_y = 0.7
+        col.label(text=obj.get("asset_name", "Unknown"))
+
+        # Location
+        loc_col = asset_box.column(align=True)
+        loc_col.scale_y = 0.6
+        loc = obj.location
+        loc_col.label(text=f"Location: ({loc.x:.2f}, {loc.y:.2f}, {loc.z:.2f})")
+
+        # Actions
+        actions_box = layout.box()
+        actions_box.label(text="Actions:", icon='SETTINGS')
+
+        row = actions_box.row(align=True)
+        row.operator("bim.view_sensor_history", text="View History", icon='GRAPH')
+
+        row = actions_box.row(align=True)
+        row.operator("bim.create_sensor_alert_rule", text="Create Alert", icon='ERROR')
+
+        row = actions_box.row(align=True)
+        row.operator("bim.create_sensor_work_order", text="Create Work Order", icon='TOOL_SETTINGS')
+
+        # Frame Selected hint
+        hint_box = layout.box()
+        hint_box.scale_y = 0.6
+        hint_box.label(text="💡 Press Numpad '.' to zoom to sensor", icon='INFO')
+
+
 # Registration
 classes = (
     # Asset classes
@@ -540,6 +822,11 @@ classes = (
     BIM_PT_tandem_maintenance,
     BIM_PT_tandem_work_orders,
     BIM_PT_tandem_maintenance_stats,
+    # IoT Command Center (Phase 3)
+    BIM_PT_tandem_iot_command_center,
+    BIM_PT_tandem_iot_sensors,
+    # Sensor Properties (interactive)
+    BIM_PT_sensor_properties,
 )
 
 

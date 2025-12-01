@@ -797,6 +797,244 @@ class BIM_OT_view_pm_summary(Operator):
             return {'CANCELLED'}
 
 
+# =========================================================================
+# IOT COMMAND CENTER OPERATORS (Phase 3)
+# =========================================================================
+
+class BIM_OT_iot_generate_mock_data(Operator):
+    """Generate mock sensor data for demo scenarios"""
+    bl_idname = "bim.iot_generate_mock_data"
+    bl_label = "Generate Mock IoT Data"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    scenario: EnumProperty(
+        name="Scenario",
+        items=[
+            ('normal', 'Normal Operation', 'Typical Tuesday'),
+            ('heatwave', 'Heatwave Stress', 'Outdoor 38°C, chillers struggling'),
+            ('degradation', 'Equipment Degradation', 'AHU bearing wearing'),
+            ('optimization', 'Energy Waste', 'Chiller inefficiency'),
+        ],
+        default='normal'
+    )
+
+    hours: bpy.props.IntProperty(name="Hours of History", default=24, min=1, max=168)
+
+    def execute(self, context):
+        try:
+            from .mock_data_generator import MockDataGenerator
+            from .sensor_registry import SensorRegistry
+
+            db_path = get_tandem_db_path(context)
+            registry = SensorRegistry(db_path)
+            generator = MockDataGenerator(registry)
+
+            # Set anomaly probability based on scenario
+            anomaly_prob = {
+                'normal': 0.02,
+                'heatwave': 0.15,
+                'degradation': 0.25,
+                'optimization': 0.10,
+            }[self.scenario]
+
+            print(f"\nGenerating mock data - Scenario: {self.scenario}")
+            stats = generator.generate_batch(
+                hours=self.hours,
+                interval_minutes=5,
+                anomaly_probability=anomaly_prob
+            )
+
+            message = f"Generated {stats.get('total_readings', 0)} sensor readings"
+            self.report({'INFO'}, message)
+
+            print(f"\n{message}")
+            print(f"  Sensors processed: {stats.get('sensors_processed', 0)}")
+            print(f"  Time range: {self.hours} hours")
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Mock data generation failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {'CANCELLED'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+
+class BIM_OT_view_sensor_history(Operator):
+    """View sensor reading history graph"""
+    bl_idname = "bim.view_sensor_history"
+    bl_label = "View Sensor History"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        obj = context.active_object
+        if not obj or not obj.get("is_iot_sensor"):
+            self.report({'ERROR'}, "No sensor selected")
+            return {'CANCELLED'}
+
+        sensor_id = obj.get("sensor_id")
+        self.report({'INFO'}, f"Opening history for {sensor_id} (feature coming soon)")
+
+        # TODO: Implement graph view
+        # - Query sensor_readings table
+        # - Display in Graph Editor
+        # - Or create matplotlib plot
+
+        return {'FINISHED'}
+
+
+class BIM_OT_create_sensor_alert_rule(Operator):
+    """Create alert rule for this sensor"""
+    bl_idname = "bim.create_sensor_alert_rule"
+    bl_label = "Create Alert Rule"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        obj = context.active_object
+        if not obj or not obj.get("is_iot_sensor"):
+            self.report({'ERROR'}, "No sensor selected")
+            return {'CANCELLED'}
+
+        sensor_id = obj.get("sensor_id")
+        self.report({'INFO'}, f"Creating alert rule for {sensor_id} (feature coming soon)")
+
+        # TODO: Implement alert rule creation
+        # - Show dialog with threshold inputs
+        # - Create entry in alert_rules table
+        # - Start monitoring
+
+        return {'FINISHED'}
+
+
+class BIM_OT_create_sensor_work_order(Operator):
+    """Create work order for sensor's asset"""
+    bl_idname = "bim.create_sensor_work_order"
+    bl_label = "Create Work Order"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        obj = context.active_object
+        if not obj or not obj.get("is_iot_sensor"):
+            self.report({'ERROR'}, "No sensor selected")
+            return {'CANCELLED'}
+
+        sensor_id = obj.get("sensor_id")
+        asset_name = obj.get("asset_name", "Unknown")
+
+        self.report({'INFO'}, f"Creating work order for {asset_name} (feature coming soon)")
+
+        # TODO: Implement work order creation
+        # - Get asset_guid from sensor
+        # - Create work_order entry
+        # - Auto-fill description with sensor alert
+
+        return {'FINISHED'}
+
+
+class BIM_OT_iot_switch_to_command_center(Operator):
+    """Switch to IoT Command Center workspace (full-screen layout)"""
+    bl_idname = "bim.iot_switch_to_command_center"
+    bl_label = "Open Command Center"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        # Check if Mission Control workspace exists
+        if "Mission Control" in bpy.data.workspaces:
+            context.window.workspace = bpy.data.workspaces["Mission Control"]
+            self.report({'INFO'}, "Switched to Mission Control workspace")
+            return {'FINISHED'}
+        elif "IoT Command Center" in bpy.data.workspaces:
+            context.window.workspace = bpy.data.workspaces["IoT Command Center"]
+            self.report({'INFO'}, "Switched to IoT Command Center workspace")
+            return {'FINISHED'}
+        else:
+            self.report({'WARNING'}, "Workspace not found - run create_mission_control_layout.py first")
+            return {'CANCELLED'}
+
+
+class BIM_OT_iot_export_analytics(Operator):
+    """Export IoT analytics to JSON/CSV"""
+    bl_idname = "bim.iot_export_analytics"
+    bl_label = "Export IoT Analytics"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    filepath: StringProperty(subtype='FILE_PATH')
+
+    def execute(self, context):
+        try:
+            import json
+            from pathlib import Path
+            from datetime import datetime
+
+            from .sensor_registry import SensorRegistry
+            from .alert_engine import AlertEngine
+
+            db_path = get_tandem_db_path(context)
+            registry = SensorRegistry(db_path)
+            alert_engine = AlertEngine(db_path)
+
+            # Gather analytics data
+            sensors = registry.list_sensors(active_only=True)
+            alerts = alert_engine.get_active_alerts()
+
+            analytics = {
+                'export_timestamp': datetime.now().isoformat(),
+                'building': 'Terminal 1',
+                'total_sensors': len(sensors),
+                'active_alerts': len(alerts),
+                'sensors_by_type': {},
+                'health_scores': {
+                    'overall': 87,
+                    'ACMV': 92,
+                    'Electrical': 78,
+                    'Fire': 95,
+                    'Plumbing': 64,
+                },
+                'alerts': [
+                    {
+                        'sensor_id': alert.get('sensor_id'),
+                        'severity': alert.get('severity'),
+                        'message': alert.get('message'),
+                        'timestamp': alert.get('timestamp'),
+                    }
+                    for alert in alerts
+                ],
+            }
+
+            # Count sensors by type
+            for sensor in sensors:
+                sensor_type = sensor.get('sensor_type', 'Unknown')
+                analytics['sensors_by_type'][sensor_type] = analytics['sensors_by_type'].get(sensor_type, 0) + 1
+
+            # Default filename
+            if not self.filepath:
+                work_dir = Path.home() / 'Projects' / 'IfcOpenShell' / 'WORK_DIR'
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                self.filepath = str(work_dir / f'IoT_Analytics_{timestamp}.json')
+
+            # Write JSON
+            with open(self.filepath, 'w') as f:
+                json.dump(analytics, f, indent=2)
+
+            self.report({'INFO'}, f"Analytics exported to {self.filepath}")
+            print(f"✅ Analytics exported: {self.filepath}")
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Export failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {'CANCELLED'}
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+
 # Registration
 classes = (
     # Asset operators
@@ -815,6 +1053,14 @@ classes = (
     BIM_OT_refresh_work_order_list,
     BIM_OT_complete_work_order,
     BIM_OT_view_pm_summary,
+    # IoT Command Center (Phase 3)
+    BIM_OT_iot_generate_mock_data,
+    BIM_OT_iot_export_analytics,
+    BIM_OT_iot_switch_to_command_center,
+    # Sensor Actions
+    BIM_OT_view_sensor_history,
+    BIM_OT_create_sensor_alert_rule,
+    BIM_OT_create_sensor_work_order,
 )
 
 
