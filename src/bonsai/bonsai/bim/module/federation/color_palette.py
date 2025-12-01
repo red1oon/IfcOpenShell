@@ -324,6 +324,35 @@ class BIM_OT_apply_color_to_selected(Operator):
         return {'FINISHED'}
 
 
+class BIM_OT_strip_door_materials(Operator):
+    """Remove materials from doors to enable object color display"""
+    bl_idname = "bim.strip_door_materials"
+    bl_label = "Strip Door Materials"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        import bpy
+
+        door_count = 0
+        materials_removed = 0
+
+        for obj in bpy.data.objects:
+            if obj.type != 'MESH':
+                continue
+
+            ifc_class = obj.get('ifc_class', '')
+            if ifc_class == 'IfcDoor':
+                door_count += 1
+                mat_count = len(obj.material_slots)
+                materials_removed += mat_count
+
+                # Clear all material slots
+                obj.data.materials.clear()
+
+        self.report({'INFO'}, f"Stripped {materials_removed} materials from {door_count} doors")
+        return {'FINISHED'}
+
+
 class BIM_OT_get_type_from_selection(Operator):
     """Get IFC type from selected object"""
     bl_idname = "bim.get_type_from_selection"
@@ -588,6 +617,10 @@ class BIM_PT_federation_color_palette(Panel):
         row = action_box.row(align=True)
         row.operator("bim.reset_federation_colors", text="Reset All", icon='FILE_REFRESH')
 
+        # Utility: Strip materials from doors
+        row = action_box.row(align=True)
+        row.operator("bim.strip_door_materials", text="Strip Door Materials", icon='MATERIAL')
+
         row = action_box.row(align=True)
         row.operator("bim.save_color_scheme", text="Save Scheme", icon='FILE_TICK')
         row.operator("bim.load_color_scheme", text="Load Scheme", icon='FILE_FOLDER')
@@ -608,6 +641,7 @@ classes = (
     BIMFederationColorProperties,
     BIM_OT_apply_palette_color,
     BIM_OT_apply_color_to_selected,
+    BIM_OT_strip_door_materials,
     BIM_OT_get_type_from_selection,
     BIM_OT_refresh_ifc_types,
     BIM_OT_reset_colors,

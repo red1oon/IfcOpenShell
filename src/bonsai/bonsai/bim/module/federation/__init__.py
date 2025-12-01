@@ -162,6 +162,7 @@ classes = (
     color_palette.BIMFederationColorProperties,
     color_palette.BIM_OT_apply_palette_color,
     color_palette.BIM_OT_apply_color_to_selected,
+    color_palette.BIM_OT_strip_door_materials,
     color_palette.BIM_OT_get_type_from_selection,
     color_palette.BIM_OT_refresh_ifc_types,
     color_palette.BIM_OT_reset_colors,
