@@ -46,15 +46,6 @@ from .tandem import ui as tandem_ui, operator as tandem_operator, sensor_overlay
 
 # Expose classes so main __init__.py can find them
 classes = (
-    # Color Palette (first in UI)
-    color_palette.ColorHistoryItem,
-    color_palette.BIMFederationColorProperties,
-    color_palette.BIM_OT_apply_palette_color,
-    color_palette.BIM_OT_reset_colors,
-    color_palette.BIM_OT_save_color_scheme,
-    color_palette.BIM_OT_load_color_scheme,
-    color_palette.BIM_PT_federation_color_palette,
-
     # Core Federation Properties & Operators
     prop.FederatedFile,
     prop.DisciplineClashCandidate,
@@ -165,6 +156,15 @@ classes = (
     ui.BIM_PT_boq_export,
     ui.BIM_PT_structural_works,
     ui.BIM_PT_nlp_query,
+
+    # Color Palette UI
+    color_palette.ColorHistoryItem,
+    color_palette.BIMFederationColorProperties,
+    color_palette.BIM_OT_apply_palette_color,
+    color_palette.BIM_OT_reset_colors,
+    color_palette.BIM_OT_save_color_scheme,
+    color_palette.BIM_OT_load_color_scheme,
+    color_palette.BIM_PT_federation_color_palette,
 
     # Digital Twin (Tandem) - 6D/7D BIM Operators
     tandem_operator.BIM_OT_import_assets_from_ifc,
