@@ -508,19 +508,249 @@ See **ROADMAP.md** for detailed phase breakdown.
 - Generate work orders automatically
 - Track completion rate
 
-### Phase 3: IoT Integration (Mock Data) (2-3 weeks)
-**Goal:** Sensor registry and simulated data
+### Phase 3: IoT Command Center - Mission Control Interface (3-4 weeks) 🚀
+**Goal:** Transform Blender into professional Building Operations Command Center with multi-panel display, live sensor visualization, and AI-powered analytics
+
+**Revolutionary Concept:**
+Go beyond traditional BMS systems - create a NASA Mission Control / NOC-style interface that makes $50K/year systems look primitive.
+
+**Core Architecture:**
+
+#### 3.1 Multi-Panel Grid System
+**Modular command center with customizable layouts:**
+
+```python
+PRESET_LAYOUTS = {
+    'default': '2x4 grid (8 panels)',
+    'focus_mode': 'Large camera + data cluster',
+    'analyst_mode': '3x3 grid (9 panels)',
+    'control_room': '2x3 + status bar',
+    'war_room': 'Ultra-wide (12+ panels)',
+}
+```
+
+**Panel Types (8 specialized widgets):**
+1. **Live Feed Panel** - Multi-camera CCTV with thermal overlays, motion tracking, AR annotations
+2. **Sensor Grid Panel** - Dense real-time data matrix, heatmaps, analog gauges
+3. **Analytics Panel** - Professional charts (Bloomberg Terminal style), scrolling time-series
+4. **Building Health Panel** - Executive dashboard, radial activity rings, cost impact
+5. **Alerts & Predictions Panel** - Priority-sorted warnings, ML failure predictions, countdown timers
+6. **System Correlations Panel** - Force-directed network graph showing sensor relationships
+7. **3D Viewport Panel** - Integrated spatial view with sensor overlay
+8. **Operations Console Panel** - Control interface with quick actions, emergency buttons
+
+#### 3.2 Advanced Visual Effects System
+
+**Not just static dots - ANIMATED intelligent overlays:**
+
+```python
+SENSOR_VISUAL_TYPES = {
+    'Temperature': {
+        'shape': 'pulsing_sphere',           # Gentle breathing animation
+        'particle_effect': 'heat_ripples',    # Rising heat waves
+        'color_gradient': 'blue→red',         # Heat spectrum
+        'glow': True,                         # Bloom effect
+    },
+    'Pressure': {
+        'shape': 'rotating_cube',
+        'particle_effect': 'pressure_lines',  # Radiating waves
+    },
+    'Flow': {
+        'shape': 'animated_arrow',            # Shows direction
+        'particle_effect': 'flowing_particles',
+        'trail': True,                        # Motion trail
+    },
+    'CO2/Air Quality': {
+        'shape': 'cloud_particles',           # Diffusion cloud
+        'transparency': 0.3,
+    },
+    'Power': {
+        'shape': 'electric_arc',              # Lightning style
+        'particle_effect': 'electric_sparks',
+    },
+    'Alert/Fault': {
+        'shape': 'warning_icon',
+        'animation': 'urgent_blink',          # Fast pulse
+        'sound': True,                        # Audio alert
+    }
+}
+```
+
+#### 3.3 Intelligent Analytics Layer 🧠
+
+**AI-powered insights that PREDICT issues (exceeds Tandem/Forge):**
+
+```python
+INTELLIGENCE_OVERLAY = {
+    # Anomaly Detection
+    'anomaly': {
+        'visual': 'purple_halo',
+        'info': '⚠️ Temperature 3σ above normal',
+        'ml_confidence': 0.87,
+    },
+
+    # Failure Prediction (NEXT-GEN!)
+    'prediction': {
+        'visual': 'orange_cone',
+        'info': '🔮 AHU failure in 14 days (78% confidence)',
+        'cost_if_ignored': '$42,000',
+        'recommended_actions': [...],
+    },
+
+    # Energy Optimization
+    'optimization': {
+        'visual': 'green_opportunity_marker',
+        'info': '💡 Save $45/month: Reduce chiller setpoint 1°C',
+        'payback': 'Immediate',
+        'carbon_reduction': '2.1 tons CO2/year',
+    },
+
+    # Comfort Zone Analysis
+    'comfort': {
+        'visual': 'blue_zone_overlay',
+        'affected_occupants': 24,
+        'productivity_impact': '-8%',
+    },
+
+    # System Correlations
+    'correlation': {
+        'visual': 'connecting_lines',
+        'animation': 'data_flow',
+        'correlation_strength': 0.92,
+    }
+}
+```
+
+#### 3.4 Live Camera Feed System (Revolutionary UX!)
+
+**When user clicks sensor → Outliner transforms into IoT Command Center:**
+
+```
+┌─────────────────────────────────┐
+│ IoT Command Center              │
+├─────────────────────────────────┤
+│ ╔═══════════════════════════╗  │
+│ ║ LIVE FEED - AHU-04        ║  │
+│ ║ [Progressive GIF/Video]   ║  │
+│ ║ • Thermal overlay         ║  │
+│ ║ • Vibration effect        ║  │
+│ ║ • AR annotations          ║  │
+│ ╚═══════════════════════════╝  │
+│                                 │
+│ 📊 SENSOR CLUSTER (auto-grouped)│
+│ ├─ Temperature: 24.3°C ↗️ [▔▔▔] │
+│ ├─ Pressure: 4.2 bar → [▔▔▔▔]  │
+│ ├─ Vibration: 0.3 mm/s ⚠️ [▔▔] │
+│ └─ Power: 18.4 kW → [▔▔▔▔▔]   │
+│                                 │
+│ 🧠 AI INSIGHTS                  │
+│ ├─ 🔮 Bearing failure 14 days   │
+│ ├─ 💰 $8.2K to fix | $42K delay │
+│ └─ 📋 Schedule PM this week     │
+│                                 │
+│ ⚡ QUICK ACTIONS                │
+│ [Create WO] [Alert] [Export]   │
+└─────────────────────────────────┘
+```
+
+**Smart Features:**
+- **Progressive GIF library** - Contextual footage based on sensor state (normal/warning/critical)
+- **AR overlays** - Crosshairs, value displays, thermal gradients, anomaly boxes
+- **Smart clustering** - Auto-discover related sensors (same equipment, correlated, environmental)
+- **Time-lapse mode** - Show equipment deterioration over time
+- **Quad-split** - Monitor 4 cameras simultaneously
+
+#### 3.5 Real-Time Building Health Score 🏥
+
+**Viewport HUD overlay:**
+
+```
+┌─────────────────────────────────────┐
+│ Building Health: 87/100 ↗️          │
+├─────────────────────────────────────┤
+│ 🟢 ACMV:      92  (↗️ +3)           │
+│ 🟡 Electrical: 78  (→)              │
+│ 🟢 Fire:      95  (↗️ +2)           │
+│ 🟠 Plumbing:  64  (↘️ -8) ⚠️        │
+├─────────────────────────────────────┤
+│ 🔮 Predictions: 2 issues in 14 days │
+│ 💡 Savings: $245/mo available       │
+│ 🌡️ Comfort: 89% satisfied           │
+└─────────────────────────────────────┘
+```
+
+#### 3.6 Mock Data - Realistic Scenarios
+
+**Intelligent demo scenarios that tell stories:**
+
+```python
+SCENARIOS = {
+    'normal_operation': 'Typical Tuesday',
+    'heatwave_stress': 'Outdoor 38°C, chillers struggling',
+    'equipment_degradation': 'AHU-04 bearing wearing (predict failure)',
+    'energy_optimization': 'Chiller inefficiency ($284/mo waste)',
+    'comfort_analysis': 'Zone 2-3 too hot (24 occupants affected)',
+}
+```
 
 **Deliverables:**
-- Sensor database tables
-- Mock data generator (temperature, pressure)
-- Alert engine (threshold monitoring)
-- Sensor heatmap visualization in Blender
+
+**Phase 3A: Visual Layer (Week 1)**
+- GPU-based sensor overlay with animated effects
+- Multi-panel grid system (8 configurable panels)
+- Progressive GIF camera feed simulation
+- Thermal/AR overlays on video feeds
+- Sensor clustering algorithm
+
+**Phase 3B: Intelligence Layer (Week 2)**
+- Anomaly detection (statistical, 3-sigma)
+- Pattern recognition across sensor networks
+- Building health scoring algorithm
+- System correlation analysis
+- Cost impact calculations
+
+**Phase 3C: Mock Intelligence (Week 2-3)**
+- Pre-scripted demo scenarios
+- Realistic sensor data generator
+- Contextual camera footage library
+- ML failure prediction (basic)
+- Energy optimization engine
+
+**Phase 3D: Professional Polish (Week 3-4)**
+- Customizable panel layouts (drag-to-rearrange)
+- Export/recording capabilities
+- Operator shift logs
+- Voice commands ("Show me all ACMV alerts")
+- Emergency control interface
 
 **Success Metrics:**
-- Link 342 mock sensors to IFC elements
-- Generate alerts when thresholds exceeded
-- Visualize temperature gradient in 3D
+- ✅ 8-panel command center operational
+- ✅ Live sensor visualization (289 ACMV sensors)
+- ✅ Failure prediction working (14-day forecast)
+- ✅ Cost impact shown ($245/mo optimization opportunities)
+- ✅ Demo scenarios impressive enough to win contracts
+- ✅ User reaction: "This makes Tandem look like Excel!"
+
+**Competitive Advantages vs. Industry:**
+
+| Feature | Traditional BMS | Tandem | **Our System** |
+|---------|----------------|---------|----------------|
+| Multi-panel layout | ❌ | ❌ | ✅ 8+ customizable |
+| Live cameras | Separate system | ❌ | ✅ Integrated |
+| Failure predictions | ❌ | ❌ | ✅ ML-powered |
+| Cost impact shown | ❌ | ❌ | ✅ Real-time |
+| 3D integration | ❌ | Limited | ✅ Full viewport |
+| Customization | Fixed | Fixed | ✅ Drag-to-arrange |
+| Offline capable | ✅ | ❌ | ✅ |
+| Price | $$$$ | $720/year | ✅ **FREE!** |
+
+**Technology Stack:**
+- GPU shaders (OpenGL/Blender GPU module)
+- Force-directed graph (NetworkX)
+- Time-series analysis (NumPy/SciPy)
+- ML predictions (scikit-learn - basic anomaly detection)
+- Video processing (OpenCV for overlays)
+- Real-time charting (custom GPU rendering)
 
 ### Phase 4: Web Dashboard (3-4 weeks)
 **Goal:** Standalone web interface
