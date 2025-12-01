@@ -157,7 +157,9 @@ class BIMFederationColorProperties(PropertyGroup):
     )
 
     def get_ifc_types_static(self, context):
-        """Get IFC types from cache"""
+        """Get IFC types from cache with friendly names"""
+        from ..ifc_label_mapper import get_friendly_label
+
         cached = self.cached_ifc_types
         if not cached or cached == "ALL":
             return [('ALL', 'All Types', 'Click Refresh to scan types')]
@@ -165,7 +167,10 @@ class BIMFederationColorProperties(PropertyGroup):
         items = [('ALL', 'All Types', 'Show all IFC types')]
         for ifc_type in cached.split(','):
             if ifc_type and ifc_type != 'ALL':
-                items.append((ifc_type, ifc_type, f'Filter {ifc_type} elements'))
+                # Show friendly name with IFC class
+                friendly = get_friendly_label(ifc_type)
+                display_name = f"{friendly} ({ifc_type})" if friendly != ifc_type else ifc_type
+                items.append((ifc_type, display_name, f'Filter {friendly} elements'))
         return items
 
     filter_ifc_type: EnumProperty(
@@ -245,6 +250,42 @@ class BIM_OT_apply_palette_color(Operator):
                         space.shading.color_type = 'OBJECT'
 
         self.report({'INFO'}, f"Applied color to {colored_count} objects")
+        return {'FINISHED'}
+
+
+class BIM_OT_get_type_from_selection(Operator):
+    """Get IFC type from selected object"""
+    bl_idname = "bim.get_type_from_selection"
+    bl_label = "Get from Selected"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        props = context.scene.BIMFederationColorProperties
+
+        # Get selected object
+        if not context.selected_objects:
+            self.report({'WARNING'}, "No object selected")
+            return {'CANCELLED'}
+
+        obj = context.active_object
+        if not obj or obj.type != 'MESH':
+            self.report({'WARNING'}, "Selected object is not a mesh")
+            return {'CANCELLED'}
+
+        # Get IFC type
+        ifc_class = obj.get('ifc_class', '')
+        discipline = obj.get('discipline', '')
+
+        if not ifc_class:
+            self.report({'WARNING'}, "Selected object has no IFC type")
+            return {'CANCELLED'}
+
+        # Set filters
+        if discipline:
+            props.filter_discipline = discipline
+        props.filter_ifc_type = ifc_class
+
+        self.report({'INFO'}, f"Set filter to {discipline}:{ifc_class}")
         return {'FINISHED'}
 
 
@@ -436,9 +477,10 @@ class BIM_PT_federation_color_palette(Panel):
         row = filter_box.row()
         row.prop(props, "filter_ifc_type", text="", icon='OBJECT_DATA')
 
-        # Refresh button
-        row = filter_box.row()
-        row.operator("bim.refresh_ifc_types", text="Refresh Types", icon='FILE_REFRESH')
+        # Quick access buttons
+        row = filter_box.row(align=True)
+        row.operator("bim.get_type_from_selection", text="Get from Selected", icon='EYEDROPPER')
+        row.operator("bim.refresh_ifc_types", text="Refresh", icon='FILE_REFRESH')
 
         # Options
         row = filter_box.row()
@@ -477,6 +519,7 @@ classes = (
     ColorHistoryItem,
     BIMFederationColorProperties,
     BIM_OT_apply_palette_color,
+    BIM_OT_get_type_from_selection,
     BIM_OT_refresh_ifc_types,
     BIM_OT_reset_colors,
     BIM_OT_save_color_scheme,
