@@ -280,6 +280,18 @@ class BIM_OT_get_type_from_selection(Operator):
             self.report({'WARNING'}, "Selected object has no IFC type")
             return {'CANCELLED'}
 
+        # Add this type to cache if not present
+        cached = props.cached_ifc_types
+        if cached == "ALL" or not cached:
+            # Cache is empty, populate with this type
+            props.cached_ifc_types = ifc_class
+        else:
+            # Check if type is in cache
+            types = set(cached.split(','))
+            if ifc_class not in types:
+                types.add(ifc_class)
+                props.cached_ifc_types = ','.join(sorted(types))
+
         # Set filters
         if discipline:
             props.filter_discipline = discipline
