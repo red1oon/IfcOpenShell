@@ -274,11 +274,6 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
             obj['ifc_class'] = ifc_class
             obj['discipline'] = discipline
 
-            # Apply transform if available (for GI databases with local-space geometry)
-            if element.get('transform'):
-                cx, cy, cz = element['transform']
-                obj.location = (cx, cy, cz)
-
             disc_coll.objects.link(obj)
             obj_count += 1
 
