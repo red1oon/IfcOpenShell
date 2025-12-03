@@ -40,6 +40,7 @@ import bpy
 from bpy.app.handlers import persistent
 from pathlib import Path
 from . import ui, prop, operator, discipline_legend, cache_monitor, color_palette, crud_operators
+from . import ui_federation_tab  # New unified Federation tab (experimental sandbox)
 from .loading.unified_progressive_loader import GlassOutlineLoader
 from .clash import gizmo
 from .tandem import ui as tandem_ui, operator as tandem_operator, sensor_overlay
@@ -219,6 +220,18 @@ classes = (
     # IoT Command Center UI (Phase 3)
     tandem_ui.BIM_PT_tandem_iot_command_center,
     tandem_ui.BIM_PT_tandem_iot_sensors,
+
+    # NEW UNIFIED FEDERATION TAB (Experimental Sandbox)
+    # This creates a separate top-level tab to test the new paradigm
+    # without disturbing existing panels. Can be reverted if needed.
+    ui_federation_tab.BIM_PT_tab_federation_new,
+    ui_federation_tab.BIM_PT_federation_new_management,
+    ui_federation_tab.BIM_PT_federation_new_additions,
+    ui_federation_tab.BIM_PT_federation_new_clash,
+    ui_federation_tab.BIM_PT_federation_new_mep,
+    ui_federation_tab.BIM_PT_federation_new_4d5d,
+    ui_federation_tab.BIM_PT_federation_new_nlp,
+    ui_federation_tab.BIM_PT_federation_new_digital_twin,
 )
 
 @persistent
