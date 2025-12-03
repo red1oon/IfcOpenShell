@@ -31,7 +31,7 @@ class BIM_PT_federation_setup(Panel):
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
-    bl_parent_id = "BIM_PT_tab_project_info"
+    bl_parent_id = "BIM_PT_tabs"
     bl_order = 1
 
     # No poll needed - always show in Project Overview
@@ -46,7 +46,7 @@ class BIM_PT_federation_setup(Panel):
 
         row = box.row(align=True)
         row.operator("bim.add_federated_file", icon="ADD", text="Add IFC Files")
-        row.operator("bim.select_federated_folder", icon="FILEBROWSER", text="Scan Folder")
+        row.operator("bim.select_federated_folder", icon="FILE_FOLDER", text="Scan Folder")
 
         if props.federated_files:
             box.template_list(
@@ -62,12 +62,12 @@ class BIM_PT_federation_setup(Panel):
         # Database Creation section
         layout.separator()
         box = layout.box()
-        box.label(text="Database Creation", icon="DATABASE")
+        box.label(text="Database Creation", icon="FILE_FOLDER")
 
         row = box.row(align=True)
         row.scale_y = 1.3
-        row.operator("bim.extract_full_database", icon="SEQUENCE", text="Extract Full")
-        row.operator("bim.extract_sample_database", icon="EXPERIMENTAL", text="Extract Sample")
+        row.operator("bim.extract_full_database", icon="TIME", text="Extract Full")
+        row.operator("bim.extract_sample_database", icon="QUESTION", text="Extract Sample")
 
 
 # =============================================================================
@@ -81,7 +81,7 @@ class BIM_PT_visualization_control(Panel):
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
-    bl_parent_id = "BIM_PT_tab_project_info"
+    bl_parent_id = "BIM_PT_tabs"
     bl_order = 2
 
     # No poll needed - always show in Project Overview
@@ -112,7 +112,7 @@ class BIM_PT_visualization_control(Panel):
         # Model Management (CRUD)
         layout.separator()
         box = layout.box()
-        box.label(text="Model Management", icon="EDITMODE_HLT")
+        box.label(text="Model Management", icon="OBJECT_DATA")
 
         obj = context.active_object
         if obj and 'ifc_guid' in obj:
@@ -120,7 +120,7 @@ class BIM_PT_visualization_control(Panel):
             col.label(text=f"Selected: {obj.name}", icon="OBJECT_DATA")
             row = col.row(align=True)
             row.operator("bim.update_federation_element", icon="FILE_REFRESH", text="Update")
-            row.operator("bim.remove_from_federation", icon="TRASH", text="Remove")
+            row.operator("bim.remove_from_federation", icon="CANCEL", text="Remove")
         else:
             row = box.row()
             row.scale_y = 1.5
@@ -138,7 +138,7 @@ class BIM_PT_mep_coordination(Panel):
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
-    bl_parent_id = "BIM_PT_tab_project_info"
+    bl_parent_id = "BIM_PT_tabs"
     bl_options = {"DEFAULT_CLOSED"}
     bl_order = 3
 
@@ -165,7 +165,7 @@ class BIM_PT_clash_detection(Panel):
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
-    bl_parent_id = "BIM_PT_tab_project_info"
+    bl_parent_id = "BIM_PT_tabs"
     bl_options = {"DEFAULT_CLOSED"}
     bl_order = 4
 
@@ -177,12 +177,12 @@ class BIM_PT_clash_detection(Panel):
 
         # Quick Clash
         box = layout.box()
-        box.label(text="Quick Clash by Discipline", icon="COMMUNITY")
+        box.label(text="Quick Clash by Discipline", icon="GROUP")
         row = box.row()
         row.prop(props, "clash_preset", text="")
         row = box.row()
         row.scale_y = 1.3
-        row.operator("bim.clash_by_discipline", icon="CHECKMARK", text="Detect Clashes")
+        row.operator("bim.clash_by_discipline", icon="ADD", text="Detect Clashes")
 
         # Clash Visualization
         if props.discipline_clashes:
@@ -190,8 +190,8 @@ class BIM_PT_clash_detection(Panel):
             box = layout.box()
             box.label(text="Visualization", icon="HIDE_OFF")
             row = box.row(align=True)
-            row.operator("bim.enable_clash_gpu_visualization", text="GPU Overlay", icon="RESTRICT_VIEW_OFF")
-            row.operator("bim.enable_clash_gizmo_visualization", text="Gizmos", icon="PIVOT_INDIVIDUAL")
+            row.operator("bim.enable_clash_gpu_visualization", text="GPU Overlay", icon="HIDE_OFF")
+            row.operator("bim.enable_clash_gizmo_visualization", text="Gizmos", icon="OBJECT_DATA")
             row = box.row()
             row.operator("bim.clear_discipline_clash_visualization", text="Clear All", icon="X")
 
@@ -203,13 +203,13 @@ class BIM_PT_clash_detection(Panel):
         row.scale_y = 1.3
         row.operator("bim.analyze_clash_groups", text="Analyze Groups", icon="AUTO")
         row = box.row()
-        row.operator("bim.suggest_resolutions", text="Suggest Resolutions", icon="OUTLINER_DATA_LIGHTPROBE")
+        row.operator("bim.suggest_resolutions", text="Suggest Resolutions", icon="QUESTION")
 
         # BCF Export
         layout.separator()
         row = layout.row()
         row.scale_y = 1.2
-        row.operator("bim.export_bcf", icon="EXPORT", text="Export BCF Report")
+        row.operator("bim.export_bcf", icon="FILE_TICK", text="Export BCF Report")
 
 
 # =============================================================================
@@ -223,7 +223,7 @@ class BIM_PT_structural_works(Panel):
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
-    bl_parent_id = "BIM_PT_tab_project_info"
+    bl_parent_id = "BIM_PT_tabs"
     bl_options = {"DEFAULT_CLOSED"}
     bl_order = 5
 
@@ -234,11 +234,11 @@ class BIM_PT_structural_works(Panel):
 
         row = layout.row()
         row.scale_y = 1.5
-        row.operator("bim.generate_rebar_structural", text="Generate Rebar", icon="MOD_BUILD")
+        row.operator("bim.generate_rebar_structural", text="Generate Rebar", icon="ADD")
 
         layout.separator()
         row = layout.row()
-        row.operator("bim.export_structural_boq", text="Export Structural BOQ", icon="DOCUMENTS")
+        row.operator("bim.export_structural_boq", text="Export Structural BOQ", icon="FILE")
 
 
 # =============================================================================
@@ -252,7 +252,7 @@ class BIM_PT_4d_scheduling(Panel):
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
-    bl_parent_id = "BIM_PT_tab_project_info"
+    bl_parent_id = "BIM_PT_tabs"
     bl_options = {"DEFAULT_CLOSED"}
     bl_order = 6
 
@@ -267,13 +267,13 @@ class BIM_PT_4d_scheduling(Panel):
 
         layout.separator()
         row = layout.row(align=True)
-        row.operator("bim.export_mpp_schedule", text="Export XML", icon="EXPORT")
-        row.operator("bim.export_schedule_excel", text="Export Excel", icon="DOCUMENTS")
+        row.operator("bim.export_mpp_schedule", text="Export XML", icon="FILE_TICK")
+        row.operator("bim.export_schedule_excel", text="Export Excel", icon="FILE")
 
         layout.separator()
         row = layout.row()
         row.scale_y = 1.3
-        row.operator("bim.animate_4d_construction", text="4D Animation", icon="SEQUENCE")
+        row.operator("bim.animate_4d_construction", text="4D Animation", icon="TIME")
 
 
 # =============================================================================
@@ -287,7 +287,7 @@ class BIM_PT_5d_cost_management(Panel):
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
-    bl_parent_id = "BIM_PT_tab_project_info"
+    bl_parent_id = "BIM_PT_tabs"
     bl_options = {"DEFAULT_CLOSED"}
     bl_order = 7
 
@@ -298,10 +298,10 @@ class BIM_PT_5d_cost_management(Panel):
 
         row = layout.row()
         row.scale_y = 1.5
-        row.operator("bim.export_comprehensive_boq", text="Generate BOQ", icon="SPREADSHEET")
+        row.operator("bim.export_comprehensive_boq", text="Generate BOQ", icon="FILE")
 
         row = layout.row()
-        row.operator("bim.open_boq_report", text="Export Cost Reports", icon="EXPORT")
+        row.operator("bim.open_boq_report", text="Export Cost Reports", icon="FILE_TICK")
 
 
 # =============================================================================
@@ -315,7 +315,7 @@ class BIM_PT_digital_twin(Panel):
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
-    bl_parent_id = "BIM_PT_tab_project_info"
+    bl_parent_id = "BIM_PT_tabs"
     bl_options = {"DEFAULT_CLOSED"}
     bl_order = 8
 
@@ -325,8 +325,8 @@ class BIM_PT_digital_twin(Panel):
         layout = self.layout
 
         col = layout.column(align=True)
-        col.operator("bim.import_assets_from_federation", text="Asset Management", icon="ASSET_MANAGER")
-        col.operator("bim.iot_enable_sensor_overlay", text="IoT Sensors", icon="OUTLINER_OB_LIGHT")
+        col.operator("bim.import_assets_from_federation", text="Asset Management", icon="FILE_FOLDER")
+        col.operator("bim.iot_enable_sensor_overlay", text="IoT Sensors", icon="OBJECT_DATA")
         col.operator("bim.generate_pm_schedule", text="Maintenance Planning", icon="TIME")
 
 
@@ -341,7 +341,7 @@ class BIM_PT_nlp_query(Panel):
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
-    bl_parent_id = "BIM_PT_tab_project_info"
+    bl_parent_id = "BIM_PT_tabs"
     bl_options = {"DEFAULT_CLOSED"}
     bl_order = 9
 
@@ -370,7 +370,7 @@ class BIM_PT_visualization_settings(Panel):
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
-    bl_parent_id = "BIM_PT_tab_project_info"
+    bl_parent_id = "BIM_PT_tabs"
     bl_options = {"DEFAULT_CLOSED"}
     bl_order = 10
 
