@@ -365,10 +365,10 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
         all_coords = []
         for bboxes_list in discipline_bboxes.values():
             for bbox, _ in bboxes_list:
-                # Apply offset
+                # Use database coords directly (no offset)
                 all_coords.extend([
-                    (bbox[0] - offset.x, bbox[1] - offset.y, bbox[2] - offset.z),
-                    (bbox[3] - offset.x, bbox[4] - offset.y, bbox[5] - offset.z)
+                    (bbox[0], bbox[1], bbox[2]),
+                    (bbox[3], bbox[4], bbox[5])
                 ])
 
         if all_coords:

@@ -432,29 +432,12 @@ def visualize_routing_scenario(
     Returns:
         Dictionary of created Blender objects
     """
-    # Use cached offset from routing operator
+    # NO OFFSET STRATEGY: Use GPS coordinates directly
+    # Database stores GPS coords (USE_WORLD_COORDS=True)
+    # Buildings and gizmos also use GPS coords
+    # Result: Everything aligns in same GPS coordinate space
     import bpy
-    cached = bpy.context.scene.get("MEP_cached_offset")
-    if cached:
-        offset_x, offset_y, offset_z = cached
-        print(f"📍 Using cached offset: ({offset_x:.1f}, {offset_y:.1f}, {offset_z:.1f})")
-    else:
-        offset_x = offset_y = offset_z = 0.0
-        print(f"⚠️  No cached offset found")    
-    # Apply offset to all coordinates (currently zero)
-    start = (start[0] - offset_x, start[1] - offset_y, start[2] - offset_z)
-    end = (end[0] - offset_x, end[1] - offset_y, end[2] - offset_z)
-    
-    # Apply offset to obstacles
-    offset_obstacles = []
-    for bbox in obstacles:
-        offset_bbox = (
-            bbox[0] - offset_x, bbox[1] - offset_y, bbox[2] - offset_z,
-            bbox[3] - offset_x, bbox[4] - offset_y, bbox[5] - offset_z
-        )
-        offset_obstacles.append(offset_bbox)
-    
-    obstacles = offset_obstacles
+    print(f"📍 NO OFFSET: Using GPS coordinates directly from database")
     
     # Rest of function continues as before...
     created_objects = {}
@@ -507,12 +490,7 @@ def visualize_routing_scenario(
     
     # Waypoint path visualization (NEW!)
     if waypoints and len(waypoints) > 1:
-        # Apply offset to waypoints
-        offset_waypoints = []
-        for wp in waypoints:
-            offset_wp = (wp[0] - offset_x, wp[1] - offset_y, wp[2] - offset_z)
-            offset_waypoints.append(offset_wp)
-
+        # NO OFFSET: Use GPS coordinates directly
         # Create curve object for the path
         import bpy
         curve_data = bpy.data.curves.new(name="MEP Debug Path", type='CURVE')
@@ -521,9 +499,9 @@ def visualize_routing_scenario(
 
         # Create polyline from waypoints
         polyline = curve_data.splines.new('POLY')
-        polyline.points.add(len(offset_waypoints) - 1)  # -1 because spline has 1 point by default
+        polyline.points.add(len(waypoints) - 1)  # -1 because spline has 1 point by default
 
-        for i, point in enumerate(offset_waypoints):
+        for i, point in enumerate(waypoints):
             x, y, z = point
             polyline.points[i].co = (x, y, z, 1.0)  # homogeneous coordinates
 

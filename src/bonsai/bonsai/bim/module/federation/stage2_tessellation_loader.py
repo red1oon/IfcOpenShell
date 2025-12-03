@@ -592,13 +592,10 @@ def load_tessellated_shapes_instanced(db_path: str,
 
         # Set location (apply viewport offset)
         # Database stores GPS-aligned centers in meters (USE_WORLD_COORDS=True)
-        # Global offset is in meters (for viewport centering)
+        # Use database coords directly (no offset)
         # Blender obj.location expects meters
         center_m = Vector((center_x, center_y, center_z))
-        if offset:
-            instance.location = center_m - offset
-        else:
-            instance.location = center_m
+        instance.location = center_m
 
         # No scale/rotation needed - geometry is exact!
 

@@ -167,23 +167,21 @@ def draw_clash_overlays():
 
 
 def load_clash_markers(clash_candidates: list):
-    """Load clash positions from database, apply coordinate offset, cache for drawing"""
+    """Load clash positions from database - NO OFFSET STRATEGY"""
     global _clash_markers
 
     _clash_markers = []
 
     for clash in clash_candidates:
-        # Get clash midpoint from database (IFC world coordinates)
-        # Assuming clash object has center_a and center_b with (x, y, z) tuples
-        ifc_center_a = Vector(clash.get('center_a', (0, 0, 0)))
-        ifc_center_b = Vector(clash.get('center_b', (0, 0, 0)))
+        # Get clash midpoint from database (GPS world coordinates)
+        # Database stores GPS coords (USE_WORLD_COORDS=True)
+        center_a = Vector(clash.get('center_a', (0, 0, 0)))
+        center_b = Vector(clash.get('center_b', (0, 0, 0)))
 
-        # Convert to Blender coordinates (apply offset)
-        blender_a = ifc_to_blender_coords(ifc_center_a)
-        blender_b = ifc_to_blender_coords(ifc_center_b)
-
-        # Midpoint in Blender space
-        midpoint = (blender_a + blender_b) / 2
+        # NO OFFSET: Use GPS coordinates directly to match buildings
+        # Buildings and gizmos also use GPS coords
+        # Result: Everything aligns in same GPS coordinate space
+        midpoint = (center_a + center_b) / 2
 
         _clash_markers.append({
             'position': midpoint,

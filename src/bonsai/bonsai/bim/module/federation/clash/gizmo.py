@@ -649,8 +649,10 @@ class ClashMarkerGizmoGroup(GizmoGroup):
                     logger.warning(f"Skipping clash {i}: bbox not found in DB")
                     continue
 
-                # Database coords are already in viewport space (offset-relative)
-                # NO conversion needed - db stores same coordinate system as viewport
+                # NO OFFSET STRATEGY: Use database GPS coordinates directly
+                # Database stores world coords (USE_WORLD_COORDS=True)
+                # Buildings also use GPS coords directly (no offset subtraction)
+                # Result: Everything aligns in same GPS coordinate space
                 midpoint = (center_a + center_b) / 2
 
                 # Get clash status from database

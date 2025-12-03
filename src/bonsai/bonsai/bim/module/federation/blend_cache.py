@@ -54,13 +54,14 @@ def cache_exists_in_db_folder(db_path: str) -> bool:
     return False
 
 
-def get_cache_path(db_path: str, mode: str = "full") -> str:
+def get_cache_path(db_path: str, mode: str = "full", auto_increment: bool = False) -> str:
     """
     Get .blend cache path for a database.
 
     Args:
         db_path: Path to database
         mode: Cache type - "solid" or "full" (default: "full")
+        auto_increment: If True, auto-increment filename if exists (e.g., _1, _2, _3)
 
     Returns:
         Path to .blend cache file in same folder as database
@@ -68,11 +69,25 @@ def get_cache_path(db_path: str, mode: str = "full") -> str:
     Example:
         /path/to/model.db, mode="full" → /path/to/model_full.blend
         /path/to/model.db, mode="solid" → /path/to/model_solid.blend
+        /path/to/model.db, mode="full", auto_increment=True → /path/to/model_full_1.blend (if model_full.blend exists)
     """
     db_dir = os.path.dirname(db_path)
     db_name = os.path.splitext(os.path.basename(db_path))[0]
+
+    # Base filename without increment
     cache_filename = f"{db_name}_{mode}.blend"
     cache_path = os.path.join(db_dir, cache_filename)
+
+    # Auto-increment if requested and file exists
+    if auto_increment and os.path.exists(cache_path):
+        counter = 1
+        while True:
+            cache_filename = f"{db_name}_{mode}_{counter}.blend"
+            cache_path = os.path.join(db_dir, cache_filename)
+            if not os.path.exists(cache_path):
+                break
+            counter += 1
+
     return cache_path
 
 
@@ -387,7 +402,7 @@ def load_from_cache(context, db_path: str):
     return obj_count
 
 
-def start_background_baking(db_path: str, mode: str = "full") -> str:
+def start_background_baking(db_path: str, mode: str = "full", cache_path: str = None) -> str:
     """
     Start background cache baking in a separate Blender process (non-blocking).
 
@@ -397,6 +412,7 @@ def start_background_baking(db_path: str, mode: str = "full") -> str:
     Args:
         db_path: Path to federation database
         mode: Cache type - "solid" or "full" (default: "full")
+        cache_path: Optional explicit cache path (if None, auto-generated)
 
     Returns:
         Path to cache file being created
@@ -406,7 +422,11 @@ def start_background_baking(db_path: str, mode: str = "full") -> str:
         # User's viewport stays responsive!
         # Check for completion: os.path.exists(f"{cache_path}.complete")
     """
-    cache_path = get_cache_path(db_path, mode=mode)
+    if cache_path is None:
+        cache_path = get_cache_path(db_path, mode=mode)
+    else:
+        # Ensure it's a string, not Path
+        cache_path = str(cache_path)
 
     # Get path to background baking script
     script_path = os.path.join(os.path.dirname(__file__), "bake_cache_background.py")

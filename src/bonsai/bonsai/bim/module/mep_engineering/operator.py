@@ -191,19 +191,10 @@ class RouteMEPConduit(Operator):
         # CALL TOOL LAYER - Main refactoring change here!
         # Run pathfinding
         try:
-            # Get coordinate offset from federation index (uses database global_offset table)
-            # No need to search for IFC objects in scene!
-            if hasattr(index, 'coords') and index.coords:
-                offset = index.coords.get_offset()
-                offset_x, offset_y, offset_z = offset
-                print(f"📍 Using database offset: ({offset_x:.1f}, {offset_y:.1f}, {offset_z:.1f})")
-            else:
-                # Fallback: no offset (database coordinates = viewport coordinates)
-                offset_x, offset_y, offset_z = 0.0, 0.0, 0.0
-                print(f"📍 No coordinate system available, using zero offset")
-
-            # Store in scene for reuse
-            context.scene["MEP_cached_offset"] = (offset_x, offset_y, offset_z)
+            # NO OFFSET STRATEGY: Use GPS coordinates directly
+            # Database stores GPS coords, buildings use GPS coords
+            # Result: Everything aligns in same coordinate space
+            print(f"📍 NO OFFSET: Using GPS coordinates directly from database")
             
             router = tool.ConduitRouter(federation_index=index)            
             waypoints = router.route(

@@ -1219,18 +1219,13 @@ class LoadSolidFederationViewport(bpy.types.Operator):
             self.report({'ERROR'}, "No federation database selected")
             return {'CANCELLED'}
 
-        # Check if blend cache already exists - inform user instead of re-baking
+        # Get cache path with auto-increment (creates _1, _2, etc. if exists)
         from . import blend_cache
         from pathlib import Path
         db_path = bpy.path.abspath(props.federation_database_path)
-        cache_path = Path(blend_cache.get_cache_path(db_path, mode="solid"))
+        cache_path = Path(blend_cache.get_cache_path(db_path, mode="solid", auto_increment=True))
 
-        if cache_path.exists():
-            self.report({'INFO'}, "Cache already exists. Delete .blend file to bake again, or File → Open to use it.")
-            print(f"\n💡 Solid cache already exists: {cache_path.name}")
-            print(f"   To re-bake: Delete the .blend file")
-            print(f"   To use: File → Open → {cache_path.name}")
-            return {'CANCELLED'}
+        print(f"\n🔄 Cache will be saved to: {cache_path.name}")
 
         # Start logging
         from . import logging_utils
@@ -1243,13 +1238,13 @@ class LoadSolidFederationViewport(bpy.types.Operator):
         print("   Open .blend when ready (~40s)\n")
 
         try:
-            # Start background baking process
-            cache_path = blend_cache.start_background_baking(db_path, mode="solid")
+            # Start background baking process with auto-incremented path
+            result_cache_path = blend_cache.start_background_baking(db_path, mode="solid", cache_path=str(cache_path))
 
             # Start modal monitor to track progress
             bpy.ops.bim.monitor_cache_baking(
                 'INVOKE_DEFAULT',
-                cache_path=cache_path,
+                cache_path=str(result_cache_path),
                 db_path=db_path,
                 mode="solid"
             )
@@ -1378,18 +1373,13 @@ class LoadFullFederationViewport(bpy.types.Operator):
             self.report({'ERROR'}, "No federation database selected")
             return {'CANCELLED'}
 
-        # Check if blend cache already exists - inform user instead of re-baking
+        # Get cache path with auto-increment (creates _1, _2, etc. if exists)
         from . import blend_cache
         from pathlib import Path
         db_path = bpy.path.abspath(props.federation_database_path)
-        cache_path = Path(blend_cache.get_cache_path(db_path, mode="full"))
+        cache_path = Path(blend_cache.get_cache_path(db_path, mode="full", auto_increment=True))
 
-        if cache_path.exists():
-            self.report({'INFO'}, "Cache already exists. Delete .blend file to bake again, or File → Open to use it.")
-            print(f"\n💡 Full cache already exists: {cache_path.name}")
-            print(f"   To re-bake: Delete the .blend file")
-            print(f"   To use: File → Open → {cache_path.name}")
-            return {'CANCELLED'}
+        print(f"\n🔄 Cache will be saved to: {cache_path.name}")
 
         # Start logging
         from . import logging_utils
@@ -1402,13 +1392,13 @@ class LoadFullFederationViewport(bpy.types.Operator):
         print("   Open .blend when ready (~70s)\n")
 
         try:
-            # Start background baking process
-            cache_path = blend_cache.start_background_baking(db_path, mode="full")
+            # Start background baking process with auto-incremented path
+            result_cache_path = blend_cache.start_background_baking(db_path, mode="full", cache_path=str(cache_path))
 
             # Start modal monitor (non-blocking)
             bpy.ops.bim.monitor_cache_baking(
                 'INVOKE_DEFAULT',
-                cache_path=cache_path,
+                cache_path=str(result_cache_path),
                 db_path=db_path,
                 mode="full"
             )

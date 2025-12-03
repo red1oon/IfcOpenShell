@@ -104,11 +104,11 @@ def find_or_create_element_from_database(
                 # Create object
                 obj = bpy.data.objects.new(guid, mesh)
 
-                # Position object: bbox_center - offset
-                # CRITICAL: Use get_model_offset() to match gizmo coordinate conversion
-                # This ensures clash objects appear at same location as gizmo markers
-                offset = get_model_offset()
-                obj.location = bbox_center_gps - offset
+                # NO OFFSET STRATEGY: Use GPS coordinates directly
+                # Database stores GPS coords (USE_WORLD_COORDS=True)
+                # Buildings and gizmos also use GPS coords
+                # Result: Everything aligns in same GPS coordinate space
+                obj.location = bbox_center_gps
 
                 # Store metadata
                 obj["federation_guid"] = guid
@@ -177,17 +177,14 @@ def create_procedural_shape_from_bbox(
     depth = max_y - min_y
     height = max_z - min_z
 
-    # Calculate center in IFC world coordinates
-    ifc_center_x = (min_x + max_x) / 2.0
-    ifc_center_y = (min_y + max_y) / 2.0
-    ifc_center_z = (min_z + max_z) / 2.0
-
-    # CRITICAL: Apply coordinate offset to convert IFC coords to Blender coords
-    # This matches the gizmo coordinate conversion pattern
-    offset = get_model_offset()
-    center_x = ifc_center_x - offset.x
-    center_y = ifc_center_y - offset.y
-    center_z = ifc_center_z - offset.z
+    # Calculate center in GPS world coordinates
+    # NO OFFSET STRATEGY: Use GPS coordinates directly
+    # Database stores GPS coords (USE_WORLD_COORDS=True)
+    # Buildings and gizmos also use GPS coords
+    # Result: Everything aligns in same GPS coordinate space
+    center_x = (min_x + max_x) / 2.0
+    center_y = (min_y + max_y) / 2.0
+    center_z = (min_z + max_z) / 2.0
 
     # CRITICAL: Validate bbox dimensions to prevent degenerate geometry
     min_dim = 0.01  # 1cm minimum
@@ -353,9 +350,6 @@ def batch_load_clash_elements(
         cursor.execute(query, guids_to_load)
         metadata_rows = cursor.fetchall()
 
-        # Cache offset (calculate once, reuse for all elements)
-        offset = get_model_offset()
-
         # Step 3: Load geometry for elements that have it
         guids_with_meta = [row[0] for row in metadata_rows]
 
@@ -397,7 +391,8 @@ def batch_load_clash_elements(
                     mesh.update()
 
                     obj = bpy.data.objects.new(guid, mesh)
-                    obj.location = bbox_center_gps - offset
+                    # NO OFFSET STRATEGY: Use GPS coordinates directly
+                    obj.location = bbox_center_gps
 
                     obj["federation_guid"] = guid
                     obj["federation_ifc_class"] = ifc_class
