@@ -178,8 +178,16 @@ class BIM_PT_clash_detection(Panel):
         # Quick Clash
         box = layout.box()
         box.label(text="Quick Clash by Discipline", icon="GROUP")
+
+        # Tolerance setting
+        row = box.row()
+        row.prop(props, "discipline_tolerance", text="Tolerance")
+
+        # Preset selection
         row = box.row()
         row.prop(props, "clash_preset", text="")
+
+        # Detect button
         row = box.row()
         row.scale_y = 1.3
         row.operator("bim.clash_by_discipline", icon="ADD", text="Detect Clashes")
@@ -393,12 +401,80 @@ class BIM_PT_nlp_query(Panel):
         layout = self.layout
         props = context.scene.BIMFederationProperties
 
-        row = layout.row()
-        row.prop(props, "nlp_query_text", text="", icon="VIEWZOOM")
+        # Query input box
+        box = layout.box()
+        box.label(text="Enter Query:", icon="VIEWZOOM")
+        row = box.row()
+        row.prop(props, "nlp_query_text", text="")
 
-        row = layout.row()
+        # Execute buttons
+        row = box.row(align=True)
         row.scale_y = 1.3
         row.operator("bim.execute_nlp_query", text="Search", icon="PLAY")
+        row.operator("bim.clear_nlp_results", text="Clear", icon="X")
+
+        # Suggested queries
+        layout.separator()
+        suggest_box = layout.box()
+        suggest_box.label(text="Common Queries:", icon="LIGHT")
+
+        # Create two columns
+        col_split = suggest_box.split(factor=0.5)
+
+        # Column 1
+        col1 = col_split.column()
+        col1.scale_y = 0.9
+
+        queries_col1 = [
+            "How many beams?",
+            "How many doors?",
+            "Find lights from Linergy",
+            "Total building cost",
+            "Floor area",
+        ]
+
+        for query in queries_col1:
+            op = col1.operator("bim.set_nlp_query", text=query, icon="RIGHTARROW_THIN")
+            op.query_text = query
+
+        # Column 2
+        col2 = col_split.column()
+        col2.scale_y = 0.9
+
+        queries_col2 = [
+            "How much concrete?",
+            "Cost of ACMV work",
+            "Which disciplines exist?",
+            "Search for AHU",
+            "Show ACMV elements",
+        ]
+
+        for query in queries_col2:
+            op = col2.operator("bim.set_nlp_query", text=query, icon="RIGHTARROW_THIN")
+            op.query_text = query
+
+        # Results display (if available)
+        if hasattr(props, "nlp_results_count") and props.nlp_results_count > 0:
+            layout.separator()
+            results_box = layout.box()
+            results_box.label(text=f"Results ({props.nlp_results_count} rows):", icon="INFO")
+
+            if hasattr(props, "nlp_results_text"):
+                results_col = results_box.column(align=True)
+                results_col.scale_y = 0.7
+
+                # Display first 15 lines of results
+                lines = props.nlp_results_text.split('\n')[:15]
+                for line in lines:
+                    results_col.label(text=line)
+
+                if len(props.nlp_results_text.split('\n')) > 15:
+                    results_col.label(text="... (view full results in exported CSV)")
+
+            # Export button
+            row = results_box.row()
+            row.scale_y = 1.2
+            row.operator("bim.export_nlp_results", text="Export to CSV", icon="FILE_TICK")
 
 
 # =============================================================================
