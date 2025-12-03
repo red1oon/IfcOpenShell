@@ -185,7 +185,7 @@ class BIM_PT_clash_detection(Panel):
         row.operator("bim.clash_by_discipline", icon="ADD", text="Detect Clashes")
 
         # Clash Visualization
-        if props.discipline_clashes:
+        if props.discipline_clash_loaded and props.discipline_clash_candidates:
             layout.separator()
             box = layout.box()
             box.label(text="Visualization", icon="HIDE_OFF")

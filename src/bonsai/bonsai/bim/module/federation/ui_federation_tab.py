@@ -228,16 +228,16 @@ class BIM_PT_federation_new_clash(Panel):
         row.operator("bim.clash_by_discipline", icon="CHECKMARK", text="Detect Clashes")
 
         # Clash results summary
-        if props.discipline_clashes:
+        if props.discipline_clash_loaded and props.discipline_clash_candidates:
             layout.separator()
             results_box = layout.box()
-            results_box.label(text=f"Found {len(props.discipline_clashes)} clash pairs", icon="ERROR")
+            results_box.label(text=f"Found {len(props.discipline_clash_candidates)} clash pairs", icon="ERROR")
 
             results_box.template_list(
                 "BIM_UL_discipline_clashes",
                 "",
                 props,
-                "discipline_clashes",
+                "discipline_clash_candidates",
                 props,
                 "active_discipline_clash_index",
                 rows=4,
