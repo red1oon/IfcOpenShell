@@ -40,7 +40,8 @@ import bpy
 from bpy.app.handlers import persistent
 from pathlib import Path
 from . import ui, prop, operator, discipline_legend, cache_monitor, color_palette, crud_operators
-from . import ui_federation_tab  # New unified Federation tab (experimental sandbox)
+# from . import ui_federation_tab  # Old experimental sandbox - replaced by ui_federation_project
+from . import ui_federation_project  # Clean enterprise layout under Project Overview
 from .loading.unified_progressive_loader import GlassOutlineLoader
 from .clash import gizmo
 from .tandem import ui as tandem_ui, operator as tandem_operator, sensor_overlay
@@ -149,21 +150,25 @@ classes = (
     crud_operators.BIM_OT_remove_from_federation,
     crud_operators.BIM_OT_query_federation_additions,
 
-    # UI Panels and Lists
-    ui.BIM_PT_federation,
-    ui.BIM_PT_federation_additions,
+    # UI Lists (needed for display)
     ui.BIM_UL_federated_files,
     ui.BIM_UL_discipline_clashes,
     ui.BIM_UL_clash_groups,
     ui.BIM_UL_resolution_options,
-    ui.BIM_PT_federation_clash_detection,
-    ui.BIM_PT_federation_lod_visualization,
-    ui.BIM_PT_clash_adjustment,
-    ui.BIM_PT_tab_4d_5d,
-    ui.BIM_PT_4d_schedule_export,
-    ui.BIM_PT_boq_export,
-    ui.BIM_PT_structural_works,
-    ui.BIM_PT_nlp_query,
+
+    # OLD UI PANELS - Commented out for clean POC
+    # ui.BIM_PT_tab_federation,
+    # ui.BIM_PT_tab_clash_detection,
+    # ui.BIM_PT_federation,
+    # ui.BIM_PT_federation_additions,
+    # ui.BIM_PT_federation_clash_detection,
+    # ui.BIM_PT_federation_lod_visualization,
+    # ui.BIM_PT_clash_adjustment,
+    # ui.BIM_PT_tab_4d_5d,
+    # ui.BIM_PT_4d_schedule_export,
+    # ui.BIM_PT_boq_export,
+    # ui.BIM_PT_structural_works,
+    # ui.BIM_PT_nlp_query,
 
     # Color Palette UI (standalone panel)
     color_palette.ColorHistoryItem,
@@ -221,17 +226,17 @@ classes = (
     tandem_ui.BIM_PT_tandem_iot_command_center,
     tandem_ui.BIM_PT_tandem_iot_sensors,
 
-    # NEW UNIFIED FEDERATION TAB (Experimental Sandbox)
-    # This creates a separate top-level tab to test the new paradigm
-    # without disturbing existing panels. Can be reverted if needed.
-    ui_federation_tab.BIM_PT_tab_federation_new,
-    ui_federation_tab.BIM_PT_federation_new_management,
-    ui_federation_tab.BIM_PT_federation_new_additions,
-    ui_federation_tab.BIM_PT_federation_new_clash,
-    ui_federation_tab.BIM_PT_federation_new_mep,
-    ui_federation_tab.BIM_PT_federation_new_4d5d,
-    ui_federation_tab.BIM_PT_federation_new_nlp,
-    ui_federation_tab.BIM_PT_federation_new_digital_twin,
+    # FEDERATION PROJECT OVERVIEW UI (Clean enterprise layout)
+    ui_federation_project.BIM_PT_federation_setup,
+    ui_federation_project.BIM_PT_visualization_control,
+    ui_federation_project.BIM_PT_mep_coordination,
+    ui_federation_project.BIM_PT_clash_detection,
+    ui_federation_project.BIM_PT_structural_works,
+    ui_federation_project.BIM_PT_4d_scheduling,
+    ui_federation_project.BIM_PT_5d_cost_management,
+    ui_federation_project.BIM_PT_digital_twin,
+    ui_federation_project.BIM_PT_nlp_query,
+    ui_federation_project.BIM_PT_visualization_settings,
 )
 
 @persistent
@@ -295,6 +300,13 @@ def register():
     bpy.types.Scene.BIMStructuralProperties = bpy.props.PointerProperty(
         type=prop.BIMStructuralProperties
     )
+
+    # Hide old Project panels for clean POC
+    from .hide_old_panels import hide_old_project_panels
+    try:
+        hide_old_project_panels()
+    except:
+        pass  # Ignore if panels don't exist yet
 
     # Color Palette properties
     bpy.types.Scene.BIMFederationColorProperties = bpy.props.PointerProperty(

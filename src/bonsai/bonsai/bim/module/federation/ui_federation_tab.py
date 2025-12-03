@@ -11,28 +11,23 @@
 """
 Qualified Path: src/bonsai/bonsai/bim/module/federation/ui_federation_tab.py
 
-New Top-Level FEDERATION Tab (Experimental Sandbox)
-----------------------------------------------------
+Federation Management UI - Clean POC Sandbox
+--------------------------------------------
 
-This is a **separate sandbox** to test the unified Federation paradigm without
-disturbing existing panels. Users can try both approaches:
+Organized under Project Overview for enterprise BIM coordination.
+All federation features in one clean, logical hierarchy without clutter.
 
-- **Old way:** Scattered panels in Scene properties
-- **New way:** Unified FEDERATION top-level tab
-
-Once the dust settles and the paradigm is proven, we can:
-1. Migrate all federation features to this tab
-2. Deprecate old scattered panels
-3. Or revert if the experiment doesn't work out
-
-**Design Philosophy:**
-All multi-discipline coordination happens in ONE place. The federation database
-is the source of truth, and all tools (Additions, Clash, MEP, 4D/5D, Digital Twin)
-operate on this shared foundation.
-
-**Strategic Goal:**
-Position Bonsai as "The ONLY platform where federation is editable, discipline
-tools are integrated, and everything runs on open standards."
+Layout:
+1. Federation Setup (IFC sources, database creation)
+2. Visualization Control (preview, load, CRUD)
+3. MEP Coordination
+4. Clash Detection (with resolution management)
+5. Structural Works (rebar, concrete)
+6. 4D Scheduling
+7. 5D Cost Management
+8. 6D/7D Digital Twin
+9. Natural Language Query
+10. Visualization Settings
 """
 
 import bpy
@@ -44,38 +39,30 @@ import bonsai.tool as tool
 
 
 # =============================================================================
-# ROOT TAB - Creates top-level "Federation" context
+# FEDERATION PANELS - Under Project Overview
 # =============================================================================
 
-class BIM_PT_tab_federation_new(Panel):
-    """Root Federation tab - new unified paradigm (experimental)"""
-    bl_label = "Federation"
-    bl_idname = "BIM_PT_tab_federation_new"
-    bl_space_type = "PROPERTIES"
-    bl_region_type = "WINDOW"
-    bl_context = "scene"  # Start with scene context (safer)
-    bl_options = {"HIDE_HEADER"}
-    bl_order = 0  # Appear at top
-
-    def draw(self, context):
-        layout = self.layout
-        layout.label(text="Multi-Discipline Coordination Workspace", icon='COMMUNITY')
+# Note: All panels now parent to BIM_PT_tab_project_info for clean organization
 
 
 # =============================================================================
-# SUB-PANELS - Organized by workflow
+# 1. FEDERATION SETUP
 # =============================================================================
 
-class BIM_PT_federation_new_management(Panel):
-    """Federation setup and file management"""
-    bl_label = "Management"
-    bl_idname = "BIM_PT_federation_new_management"
+class BIM_PT_federation_setup(Panel):
+    """Federation Setup - IFC sources and database creation"""
+    bl_label = "1. Federation Setup"
+    bl_idname = "BIM_PT_federation_setup"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
-    bl_parent_id = "BIM_PT_tab_federation_new"
+    bl_parent_id = "BIM_PT_tab_project_info"
     bl_options = {"DEFAULT_CLOSED"}
     bl_order = 1
+
+    @classmethod
+    def poll(cls, context):
+        return tool.Blender.is_tab(context, "PROJECT")
 
     def draw(self, context):
         layout = self.layout

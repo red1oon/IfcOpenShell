@@ -30,6 +30,42 @@ if TYPE_CHECKING:
 from .ifc_label_mapper import get_friendly_label, get_discipline_label
 
 
+# =============================================================================
+# PARENT TAB PANELS (for old scattered UI - kept for compatibility)
+# =============================================================================
+
+class BIM_PT_tab_federation(Panel):
+    """Old Federation parent tab (compatibility)"""
+    bl_label = "Federation (Old)"
+    bl_idname = "BIM_PT_tab_federation"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "scene"
+    bl_options = {"HIDE_HEADER"}
+    bl_order = 99  # Push to bottom
+
+    def draw(self, context):
+        pass
+
+
+class BIM_PT_tab_clash_detection(Panel):
+    """Clash Detection parent tab"""
+    bl_label = "Clash Detection (Old)"
+    bl_idname = "BIM_PT_tab_clash_detection"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "scene"
+    bl_options = {"HIDE_HEADER"}
+    bl_order = 98  # Push to bottom
+
+    def draw(self, context):
+        pass
+
+
+# =============================================================================
+# FEDERATED FILES UI
+# =============================================================================
+
 class BIM_UL_federated_files(UIList):
     """UI List for displaying federated files"""
 
