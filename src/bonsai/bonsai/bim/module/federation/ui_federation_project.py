@@ -34,9 +34,7 @@ class BIM_PT_federation_setup(Panel):
     bl_parent_id = "BIM_PT_tab_project_info"
     bl_order = 1
 
-    @classmethod
-    def poll(cls, context):
-        return tool.Blender.is_tab(context, "PROJECT")
+    # No poll needed - always show in Project Overview
 
     def draw(self, context):
         layout = self.layout
@@ -86,9 +84,7 @@ class BIM_PT_visualization_control(Panel):
     bl_parent_id = "BIM_PT_tab_project_info"
     bl_order = 2
 
-    @classmethod
-    def poll(cls, context):
-        return tool.Blender.is_tab(context, "PROJECT")
+    # No poll needed - always show in Project Overview
 
     def draw(self, context):
         layout = self.layout
@@ -146,9 +142,7 @@ class BIM_PT_mep_coordination(Panel):
     bl_options = {"DEFAULT_CLOSED"}
     bl_order = 3
 
-    @classmethod
-    def poll(cls, context):
-        return tool.Blender.is_tab(context, "PROJECT")
+    # No poll needed - always show in Project Overview
 
     def draw(self, context):
         layout = self.layout
@@ -175,9 +169,7 @@ class BIM_PT_clash_detection(Panel):
     bl_options = {"DEFAULT_CLOSED"}
     bl_order = 4
 
-    @classmethod
-    def poll(cls, context):
-        return tool.Blender.is_tab(context, "PROJECT")
+    # No poll needed - always show in Project Overview
 
     def draw(self, context):
         layout = self.layout
@@ -235,9 +227,7 @@ class BIM_PT_structural_works(Panel):
     bl_options = {"DEFAULT_CLOSED"}
     bl_order = 5
 
-    @classmethod
-    def poll(cls, context):
-        return tool.Blender.is_tab(context, "PROJECT")
+    # No poll needed - always show in Project Overview
 
     def draw(self, context):
         layout = self.layout
@@ -266,9 +256,7 @@ class BIM_PT_4d_scheduling(Panel):
     bl_options = {"DEFAULT_CLOSED"}
     bl_order = 6
 
-    @classmethod
-    def poll(cls, context):
-        return tool.Blender.is_tab(context, "PROJECT")
+    # No poll needed - always show in Project Overview
 
     def draw(self, context):
         layout = self.layout
@@ -303,9 +291,7 @@ class BIM_PT_5d_cost_management(Panel):
     bl_options = {"DEFAULT_CLOSED"}
     bl_order = 7
 
-    @classmethod
-    def poll(cls, context):
-        return tool.Blender.is_tab(context, "PROJECT")
+    # No poll needed - always show in Project Overview
 
     def draw(self, context):
         layout = self.layout
@@ -333,9 +319,7 @@ class BIM_PT_digital_twin(Panel):
     bl_options = {"DEFAULT_CLOSED"}
     bl_order = 8
 
-    @classmethod
-    def poll(cls, context):
-        return tool.Blender.is_tab(context, "PROJECT")
+    # No poll needed - always show in Project Overview
 
     def draw(self, context):
         layout = self.layout
@@ -361,9 +345,7 @@ class BIM_PT_nlp_query(Panel):
     bl_options = {"DEFAULT_CLOSED"}
     bl_order = 9
 
-    @classmethod
-    def poll(cls, context):
-        return tool.Blender.is_tab(context, "PROJECT")
+    # No poll needed - always show in Project Overview
 
     def draw(self, context):
         layout = self.layout
@@ -392,9 +374,7 @@ class BIM_PT_visualization_settings(Panel):
     bl_options = {"DEFAULT_CLOSED"}
     bl_order = 10
 
-    @classmethod
-    def poll(cls, context):
-        return tool.Blender.is_tab(context, "PROJECT")
+    # No poll needed - always show in Project Overview
 
     def draw(self, context):
         layout = self.layout
