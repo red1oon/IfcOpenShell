@@ -44,6 +44,10 @@ class BIM_PT_tab_federation(Panel):
     bl_options = {"HIDE_HEADER"}
     bl_order = 99  # Push to bottom
 
+    @classmethod
+    def poll(cls, context):
+        return False  # DISABLED - Moved to Project Overview
+
     def draw(self, context):
         pass
 
@@ -57,6 +61,10 @@ class BIM_PT_tab_clash_detection(Panel):
     bl_context = "scene"
     bl_options = {"HIDE_HEADER"}
     bl_order = 98  # Push to bottom
+
+    @classmethod
+    def poll(cls, context):
+        return False  # DISABLED - Moved to Project Overview
 
     def draw(self, context):
         pass
@@ -112,6 +120,10 @@ class BIM_PT_federation(Panel):
     bl_options = {"DEFAULT_CLOSED"}
     # Nest under Federation tab
     bl_parent_id = "BIM_PT_tab_federation"
+
+    @classmethod
+    def poll(cls, context):
+        return False  # DISABLED - Moved to Project Overview
 
     def draw(self, context):
         layout = self.layout
@@ -328,6 +340,10 @@ class BIM_PT_federation_additions(Panel):
     bl_options = {"DEFAULT_CLOSED"}
     bl_parent_id = "BIM_PT_tab_federation"
 
+    @classmethod
+    def poll(cls, context):
+        return False  # DISABLED - Moved to Project Overview
+
     def draw(self, context):
         layout = self.layout
         props = context.scene.BIMFederationProperties
@@ -409,6 +425,10 @@ class BIM_PT_federation_clash_detection(Panel):
     bl_context = "scene"
     bl_parent_id = "BIM_PT_tab_clash_detection"
     bl_options = {"DEFAULT_CLOSED"}
+
+    @classmethod
+    def poll(cls, context):
+        return False  # DISABLED - Moved to Project Overview
 
     def draw(self, context):
         assert self.layout
@@ -570,6 +590,10 @@ class BIM_PT_federation_lod_visualization(Panel):
     bl_context = "scene"
     bl_parent_id = "BIM_PT_tab_clash_detection"
     bl_options = {"DEFAULT_CLOSED"}
+
+    @classmethod
+    def poll(cls, context):
+        return False  # DISABLED - Moved to Project Overview
 
     def draw(self, context):
         assert self.layout
@@ -755,6 +779,10 @@ class BIM_PT_clash_adjustment(Panel):
     bl_context = "scene"
     bl_parent_id = "BIM_PT_tab_clash_detection"
     bl_options = {"DEFAULT_CLOSED"}
+
+    @classmethod
+    def poll(cls, context):
+        return False  # DISABLED - Moved to Project Overview
 
     def draw(self, context):
         assert self.layout
@@ -1088,6 +1116,10 @@ class BIM_PT_tab_4d_5d(Panel):
     bl_context = "scene"
     bl_order = 4
 
+    @classmethod
+    def poll(cls, context):
+        return False  # DISABLED - Moved to Project Overview
+
     def draw(self, context):
         pass
 
@@ -1102,6 +1134,10 @@ class BIM_PT_4d_schedule_export(Panel):
     bl_context = "scene"
     bl_parent_id = "BIM_PT_tab_4d_5d"
     bl_options = {"DEFAULT_CLOSED"}
+
+    @classmethod
+    def poll(cls, context):
+        return False  # DISABLED - Moved to Project Overview
 
     def draw(self, context):
         assert self.layout
@@ -1313,6 +1349,10 @@ class BIM_PT_boq_export(Panel):
     bl_parent_id = "BIM_PT_tab_4d_5d"
     bl_options = {"DEFAULT_CLOSED"}
 
+    @classmethod
+    def poll(cls, context):
+        return False  # DISABLED - Moved to Project Overview
+
     def draw(self, context):
         assert self.layout
         layout = self.layout
@@ -1436,6 +1476,10 @@ class BIM_PT_structural_works(Panel):
     bl_context = "scene"
     bl_parent_id = "BIM_PT_tab_federation"
     bl_options = {"DEFAULT_CLOSED"}
+
+    @classmethod
+    def poll(cls, context):
+        return False  # DISABLED - Moved to Project Overview
 
     def draw(self, context):
         layout = self.layout
@@ -1567,6 +1611,10 @@ class BIM_PT_nlp_query(Panel):
     bl_context = "scene"
     bl_parent_id = "BIM_PT_tab_federation"
     bl_options = {"DEFAULT_CLOSED"}
+
+    @classmethod
+    def poll(cls, context):
+        return False  # DISABLED - Moved to Project Overview
 
     def draw(self, context):
         layout = self.layout

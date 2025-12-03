@@ -156,19 +156,19 @@ classes = (
     ui.BIM_UL_clash_groups,
     ui.BIM_UL_resolution_options,
 
-    # OLD UI PANELS - Commented out for clean POC
-    # ui.BIM_PT_tab_federation,
-    # ui.BIM_PT_tab_clash_detection,
-    # ui.BIM_PT_federation,
-    # ui.BIM_PT_federation_additions,
-    # ui.BIM_PT_federation_clash_detection,
-    # ui.BIM_PT_federation_lod_visualization,
-    # ui.BIM_PT_clash_adjustment,
-    # ui.BIM_PT_tab_4d_5d,
-    # ui.BIM_PT_4d_schedule_export,
-    # ui.BIM_PT_boq_export,
-    # ui.BIM_PT_structural_works,
-    # ui.BIM_PT_nlp_query,
+    # OLD UI PANELS - Registered but disabled via poll() returning False
+    ui.BIM_PT_tab_federation,
+    ui.BIM_PT_tab_clash_detection,
+    ui.BIM_PT_federation,
+    ui.BIM_PT_federation_additions,
+    ui.BIM_PT_federation_clash_detection,
+    ui.BIM_PT_federation_lod_visualization,
+    ui.BIM_PT_clash_adjustment,
+    ui.BIM_PT_tab_4d_5d,
+    ui.BIM_PT_4d_schedule_export,
+    ui.BIM_PT_boq_export,
+    ui.BIM_PT_structural_works,
+    ui.BIM_PT_nlp_query,
 
     # Color Palette UI (standalone panel)
     color_palette.ColorHistoryItem,
@@ -353,6 +353,7 @@ def unregister():
 
     # Remove properties from Scene
     del bpy.types.Scene.BIMFederationProperties
-    del bpy.types.Scene.BIMStructuralProperties
+    if hasattr(bpy.types.Scene, 'BIMStructuralProperties'):
+        del bpy.types.Scene.BIMStructuralProperties
     if hasattr(bpy.types.Scene, 'BIMFederationColorProperties'):
         del bpy.types.Scene.BIMFederationColorProperties
