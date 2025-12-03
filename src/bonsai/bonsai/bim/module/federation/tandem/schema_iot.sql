@@ -1,7 +1,18 @@
 -- Digital Twin - IoT Layer Database Schema
 -- Phase 3: IoT Integration with Mock Data
--- Version: 1.0
-
+-- Version: 1.1
+--
+-- VIRTUAL SENSOR PATTERN:
+-- Sensors without IFC geometry can be visualized using virtual assets.
+-- The sensor overlay queries 3D positions from element_transforms via asset_guid.
+--
+-- To add a virtual sensor:
+-- 1. Insert virtual asset in element_transforms (guid, center_x/y/z, transform_source='virtual_sensor')
+-- 2. Insert virtual asset in elements_meta (guid, element_name, ifc_class='IfcSensor', discipline)
+-- 3. Insert sensor with asset_guid pointing to virtual asset
+--
+-- See: tandem/add_virtual_sensors.py for example implementation
+--
 -- =============================================================================
 -- IoT LAYER
 -- =============================================================================
