@@ -184,6 +184,48 @@ class BIM_PT_clash_detection(Panel):
         row.scale_y = 1.3
         row.operator("bim.clash_by_discipline", icon="ADD", text="Detect Clashes")
 
+        # Clash Results List
+        if props.discipline_clash_loaded and props.discipline_clash_candidates:
+            layout.separator()
+            result_box = layout.box()
+            result_box.label(text=f"{len(props.discipline_clash_candidates)} Clash Candidates Found", icon="ERROR")
+
+            # Filter hint
+            filter_row = result_box.row()
+            filter_row.scale_y = 0.8
+            filter_row.label(text="💡 Use filter box (🔍) to search: 'wall', 'door', 'ifcwall*', etc.", icon="INFO")
+
+            # Header row
+            header = result_box.row(align=True)
+            header.label(text="☐")
+            header.label(text="Element A")
+            header.label(text="Element B")
+            header.label(text="Type")
+
+            # Clash list
+            result_box.template_list(
+                "BIM_UL_discipline_clashes",
+                "",
+                props,
+                "discipline_clash_candidates",
+                props,
+                "active_discipline_clash_index",
+            )
+
+            # Count selected clashes
+            selected_count = sum(1 for c in props.discipline_clash_candidates if c.selected)
+
+            # Selection helpers
+            if selected_count > 0:
+                sel_row = result_box.row(align=True)
+                sel_row.label(text=f"{selected_count} selected")
+                sel_row.operator("bim.deselect_all_clashes", text="Uncheck All", icon="PANEL_CLOSE")
+
+            # Action buttons
+            row = result_box.row(align=True)
+            row.operator("bim.select_discipline_clash", text="View Clash", icon="ZOOM_IN")
+            row.operator("bim.clear_discipline_clash_visualization", text="Clear All", icon="PANEL_CLOSE")
+
         # Clash Visualization
         if props.discipline_clash_loaded and props.discipline_clash_candidates:
             layout.separator()

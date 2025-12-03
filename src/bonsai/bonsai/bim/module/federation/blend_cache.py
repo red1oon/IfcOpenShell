@@ -168,17 +168,34 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # Get all unique geometries with their associated elements (for discipline grouping)
-    # Also fetch transforms for GI databases (geometry at origin, needs transform)
-    cursor.execute("""
-        SELECT DISTINCT eg.geometry_hash, eg.vertices, eg.faces,
-               em.guid, em.ifc_class, em.discipline,
-               et.center_x, et.center_y, et.center_z
-        FROM element_geometry eg
-        JOIN elements_meta em ON eg.guid = em.guid
-        LEFT JOIN element_transforms et ON eg.guid = et.guid
-        WHERE eg.geometry_hash IS NOT NULL
-    """)
+    # Check which schema this database uses (GI or legacy)
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='base_geometries'")
+    is_gi_schema = cursor.fetchone() is not None
+
+    if is_gi_schema:
+        # New GI schema: base_geometries + element_instances
+        print("  Detected GI schema (base_geometries + element_instances)")
+        cursor.execute("""
+            SELECT bg.geometry_hash, bg.vertices, bg.faces,
+                   ei.guid, em.ifc_class, em.discipline,
+                   et.center_x, et.center_y, et.center_z
+            FROM base_geometries bg
+            JOIN element_instances ei ON bg.geometry_hash = ei.geometry_hash
+            JOIN elements_meta em ON ei.guid = em.guid
+            LEFT JOIN element_transforms et ON ei.guid = et.guid
+        """)
+    else:
+        # Legacy schema: element_geometry
+        print("  Detected legacy schema (element_geometry)")
+        cursor.execute("""
+            SELECT DISTINCT eg.geometry_hash, eg.vertices, eg.faces,
+                   em.guid, em.ifc_class, em.discipline,
+                   et.center_x, et.center_y, et.center_z
+            FROM element_geometry eg
+            JOIN elements_meta em ON eg.guid = em.guid
+            LEFT JOIN element_transforms et ON eg.guid = et.guid
+            WHERE eg.geometry_hash IS NOT NULL
+        """)
 
     geom_data = cursor.fetchall()
     total = len(geom_data)
