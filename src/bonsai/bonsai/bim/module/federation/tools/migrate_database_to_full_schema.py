@@ -269,6 +269,7 @@ class DatabaseMigrator:
         self.cursor.executescript("""
             CREATE TABLE IF NOT EXISTS assets (
                 guid TEXT PRIMARY KEY,
+                federation_element_id INTEGER,
                 asset_tag TEXT UNIQUE,
                 name TEXT NOT NULL,
                 ifc_class TEXT NOT NULL,
@@ -292,9 +293,12 @@ class DatabaseMigrator:
                 vendor_contract_number TEXT,
                 notes TEXT,
                 created_date TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_date TEXT DEFAULT CURRENT_TIMESTAMP
+                updated_date TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (federation_element_id) REFERENCES elements_meta(id) ON DELETE SET NULL
             );
 
+            CREATE INDEX IF NOT EXISTS idx_assets_guid ON assets(guid);
+            CREATE INDEX IF NOT EXISTS idx_assets_federation_element ON assets(federation_element_id);
             CREATE INDEX IF NOT EXISTS idx_assets_ifc_class ON assets(ifc_class);
             CREATE INDEX IF NOT EXISTS idx_assets_discipline ON assets(discipline);
             CREATE INDEX IF NOT EXISTS idx_assets_storey ON assets(storey);
@@ -598,6 +602,33 @@ class DatabaseMigrator:
 
         print("  ✓ Default discipline rates")
 
+    def fix_existing_asset_tables(self):
+        """Fix existing assets table to add missing federation_element_id column
+
+        Note: SQLite doesn't support adding foreign key constraints via ALTER TABLE,
+        so we add the column without the constraint. The constraint only exists
+        for newly created tables.
+        """
+        print("\n🔧 Checking assets table for missing columns...")
+
+        # Check if assets table exists
+        self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='assets'")
+        if not self.cursor.fetchone():
+            print("  ℹ️  assets table doesn't exist yet (will be created)")
+            return
+
+        # Check if federation_element_id column exists
+        self.cursor.execute("PRAGMA table_info(assets)")
+        columns = {row[1] for row in self.cursor.fetchall()}
+
+        if 'federation_element_id' not in columns:
+            print("  ⚠️  Adding missing federation_element_id column...")
+            self.cursor.execute("ALTER TABLE assets ADD COLUMN federation_element_id INTEGER")
+            self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_assets_federation_element ON assets(federation_element_id)")
+            print("  ✓ federation_element_id column added (FK constraint not added to existing tables)")
+        else:
+            print("  ✓ federation_element_id column exists")
+
     def add_schema_version(self):
         """Add schema version tracking"""
         # Update existing schema_version table (version, applied_date, description)
@@ -632,6 +663,7 @@ class DatabaseMigrator:
             self.create_clash_tables()
             self.create_resolution_tables()
             self.create_schedule_tables()
+            self.fix_existing_asset_tables()
             self.create_asset_tables()
             self.create_maintenance_tables()
             self.create_iot_tables()
