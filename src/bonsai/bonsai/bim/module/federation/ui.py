@@ -278,6 +278,89 @@ class BIM_PT_federation(Panel):
 # You should have received a copy of the GNU General Public License
 # along with Bonsai.  If not, see <http://www.gnu.org/licenses/>.
 
+# === Federation Additions Panel (CRUD for manual elements) ===
+
+
+class BIM_PT_federation_additions(Panel):
+    """Panel for adding/editing elements in federation database"""
+
+    bl_label = "Federation Additions"
+    bl_idname = "BIM_PT_federation_additions"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "scene"
+    bl_options = {"DEFAULT_CLOSED"}
+    bl_parent_id = "BIM_PT_tab_federation"
+
+    def draw(self, context):
+        layout = self.layout
+        props = context.scene.BIMFederationProperties
+        obj = context.active_object
+
+        # Info box
+        box = layout.box()
+        box.label(text="Add Custom Elements to Federation", icon="ADD")
+        col = box.column(align=True)
+        col.scale_y = 0.8
+        col.label(text="Add site equipment, coordination geometry,")
+        col.label(text="or temporary structures to federated model.")
+
+        layout.separator()
+
+        # Object status
+        if obj:
+            status_box = layout.box()
+            status_box.label(text=f"Selected: {obj.name}", icon="OBJECT_DATA")
+
+            if 'ifc_guid' in obj:
+                # Object is tracked in federation
+                col = status_box.column(align=True)
+                col.label(text=f"GUID: {obj['ifc_guid'][:16]}...", icon="CHECKMARK")
+                if 'ifc_class' in obj:
+                    col.label(text=f"Class: {obj['ifc_class']}")
+                if 'discipline' in obj:
+                    col.label(text=f"Discipline: {obj['discipline']}")
+
+                # Update/Remove buttons
+                row = status_box.row(align=True)
+                row.scale_y = 1.2
+                row.operator("bim.update_federation_element", icon="FILE_REFRESH")
+                row.operator("bim.remove_from_federation", icon="TRASH")
+            else:
+                # Object not in federation
+                col = status_box.column(align=True)
+                col.label(text="Not in federation", icon="INFO")
+
+                # Add button
+                row = status_box.row()
+                row.scale_y = 1.5
+                row.operator("bim.add_to_federation", icon="ADD")
+        else:
+            info_box = layout.box()
+            info_box.label(text="No object selected", icon="INFO")
+
+        layout.separator()
+
+        # Query additions
+        query_box = layout.box()
+        query_box.label(text="View Additions", icon="VIEWZOOM")
+        row = query_box.row()
+        row.scale_y = 1.2
+        row.operator("bim.query_federation_additions", icon="DOCUMENTS")
+
+        # Usage help (collapsible)
+        layout.separator()
+        help_box = layout.box()
+        help_box.label(text="Quick Start:", icon="QUESTION")
+        col = help_box.column(align=True)
+        col.scale_y = 0.7
+        col.label(text="1. Create object in Blender (Shift+A)")
+        col.label(text="2. Position it in scene (using GPS coords)")
+        col.label(text="3. Select object, click 'Add to Federation'")
+        col.label(text="4. Choose IFC class and discipline")
+        col.label(text="5. Object persists across sessions")
+
+
 # === Federation Analysis UI Panels (merged from federation_analysis module) ===
 # Panels for discipline-based clash detection and LOD visualization
 

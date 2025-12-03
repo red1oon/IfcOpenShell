@@ -39,7 +39,7 @@ merging, solving spatial hierarchy mismatch problems through coordinate-based qu
 import bpy
 from bpy.app.handlers import persistent
 from pathlib import Path
-from . import ui, prop, operator, discipline_legend, cache_monitor, color_palette
+from . import ui, prop, operator, discipline_legend, cache_monitor, color_palette, crud_operators
 from .loading.unified_progressive_loader import GlassOutlineLoader
 from .clash import gizmo
 from .tandem import ui as tandem_ui, operator as tandem_operator, sensor_overlay
@@ -142,8 +142,15 @@ classes = (
     operator.BIM_OT_clear_nlp_results,
     operator.BIM_OT_export_nlp_results,
 
+    # Federation CRUD (manual additions)
+    crud_operators.BIM_OT_add_to_federation,
+    crud_operators.BIM_OT_update_federation_element,
+    crud_operators.BIM_OT_remove_from_federation,
+    crud_operators.BIM_OT_query_federation_additions,
+
     # UI Panels and Lists
     ui.BIM_PT_federation,
+    ui.BIM_PT_federation_additions,
     ui.BIM_UL_federated_files,
     ui.BIM_UL_discipline_clashes,
     ui.BIM_UL_clash_groups,
