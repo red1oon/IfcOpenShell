@@ -145,13 +145,7 @@ class BIM_PT_mep_coordination(Panel):
     # No poll needed - always show in Project Overview
 
     def draw(self, context):
-        layout = self.layout
-
-        col = layout.column(align=True)
-        col.operator("bim.route_conduit", text="Conduit Routing", icon="CURVE_PATH")
-        col.operator("bim.route_cable_tray", text="Cable Tray Design", icon="CURVE_PATH")
-        col.operator("bim.route_hvac", text="HVAC Ducting", icon="CURVE_PATH")
-        col.operator("bim.route_pipe", text="Pipe Routing", icon="CURVE_PATH")
+        pass  # Children panels provide content
 
 
 # =============================================================================
@@ -252,8 +246,17 @@ class BIM_PT_clash_detection(Panel):
         row = box.row()
         row.scale_y = 1.3
         row.operator("bim.analyze_clash_groups", text="Analyze Groups", icon="AUTO")
-        row = box.row()
-        row.operator("bim.suggest_resolutions", text="Suggest Resolutions", icon="QUESTION")
+
+        # Group selector and preview
+        clash_props = context.scene.BIMClashProperties
+        if hasattr(clash_props, "clash_groups_analyzed") and clash_props.clash_groups_analyzed:
+            row = box.row()
+            row.prop(clash_props, "selected_clash_group", text="Group")
+
+            row = box.row()
+            row.scale_y = 1.3
+            row.enabled = bool(clash_props.selected_clash_group and clash_props.selected_clash_group != "NONE")
+            row.operator("bim.preview_clash_group", text="Preview Group", icon="HIDE_OFF")
 
         # BCF Export
         layout.separator()
@@ -372,12 +375,7 @@ class BIM_PT_digital_twin(Panel):
     # No poll needed - always show in Project Overview
 
     def draw(self, context):
-        layout = self.layout
-
-        col = layout.column(align=True)
-        col.operator("bim.import_assets_from_federation", text="Asset Management", icon="FILE_FOLDER")
-        col.operator("bim.iot_enable_sensor_overlay", text="IoT Sensors", icon="OBJECT_DATA")
-        col.operator("bim.generate_pm_schedule", text="Maintenance Planning", icon="TIME")
+        pass  # Children panels provide content
 
 
 # =============================================================================
@@ -495,20 +493,7 @@ class BIM_PT_visualization_settings(Panel):
     # No poll needed - always show in Project Overview
 
     def draw(self, context):
-        layout = self.layout
-
-        col = layout.column(align=True)
-        col.label(text="Discipline Colors", icon="COLOR")
-        col.operator("bim.apply_palette_color", text="Apply Colors")
-
-        col.separator()
-        col.label(text="Material Overrides", icon="MATERIAL")
-        col.operator("bim.strip_materials_from_type", text="Strip Materials")
-
-        col.separator()
-        row = col.row(align=True)
-        row.operator("bim.save_color_scheme", text="Save Scheme", icon="FILE_TICK")
-        row.operator("bim.load_color_scheme", text="Load Scheme", icon="FILE_FOLDER")
+        pass  # Children panels provide content
 
 
 # =============================================================================

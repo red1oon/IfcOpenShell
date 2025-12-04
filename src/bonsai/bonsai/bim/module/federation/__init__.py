@@ -156,6 +156,20 @@ classes = (
     ui.BIM_UL_clash_groups,
     ui.BIM_UL_resolution_options,
 
+    # ═══════════════════════════════════════════════════════════════
+    # CRITICAL: Register NUMBERED PANELS 1-10 (parents) BEFORE their children
+    # ═══════════════════════════════════════════════════════════════
+    ui_federation_project.BIM_PT_federation_setup,
+    ui_federation_project.BIM_PT_visualization_control,
+    ui_federation_project.BIM_PT_mep_coordination,           # #3 - parent for MEP
+    ui_federation_project.BIM_PT_clash_detection,
+    ui_federation_project.BIM_PT_structural_works,
+    ui_federation_project.BIM_PT_4d_scheduling,
+    ui_federation_project.BIM_PT_5d_cost_management,
+    ui_federation_project.BIM_PT_digital_twin,               # #8 - parent for Tandem
+    ui_federation_project.BIM_PT_nlp_query,
+    ui_federation_project.BIM_PT_visualization_settings,     # #10 - parent for Color
+
     # OLD UI PANELS - Commented out for clean POC
     # ui.BIM_PT_tab_federation,
     # ui.BIM_PT_tab_clash_detection,
@@ -170,7 +184,11 @@ classes = (
     # ui.BIM_PT_structural_works,
     # ui.BIM_PT_nlp_query,
 
-    # Color Palette UI (standalone panel)
+    # ═══════════════════════════════════════════════════════════════
+    # CHILD PANELS (after their parents exist)
+    # ═══════════════════════════════════════════════════════════════
+
+    # Color Palette UI (child of #10)
     color_palette.ColorHistoryItem,
     color_palette.BIMFederationColorProperties,
     color_palette.BIM_OT_apply_palette_color,
@@ -225,18 +243,6 @@ classes = (
     # IoT Command Center UI (Phase 3)
     tandem_ui.BIM_PT_tandem_iot_command_center,
     tandem_ui.BIM_PT_tandem_iot_sensors,
-
-    # FEDERATION PROJECT OVERVIEW UI (Clean enterprise layout)
-    ui_federation_project.BIM_PT_federation_setup,
-    ui_federation_project.BIM_PT_visualization_control,
-    ui_federation_project.BIM_PT_mep_coordination,
-    ui_federation_project.BIM_PT_clash_detection,
-    ui_federation_project.BIM_PT_structural_works,
-    ui_federation_project.BIM_PT_4d_scheduling,
-    ui_federation_project.BIM_PT_5d_cost_management,
-    ui_federation_project.BIM_PT_digital_twin,
-    ui_federation_project.BIM_PT_nlp_query,
-    ui_federation_project.BIM_PT_visualization_settings,
 )
 
 @persistent

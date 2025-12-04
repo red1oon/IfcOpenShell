@@ -568,13 +568,14 @@ class BIM_OT_load_color_scheme(Operator):
 
 
 class BIM_PT_federation_color_palette(Panel):
-    """Color palette panel - standalone outside Federation"""
+    """Color palette panel - nested under Visualization Settings"""
     bl_label = "🎨 BIM Color Palette"
     bl_idname = "BIM_PT_federation_color_palette"
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "scene"
-    bl_order = 100  # After other panels
+    bl_parent_id = "BIM_PT_visualization_settings"
+    bl_options = {'DEFAULT_CLOSED'}
 
     def draw(self, context):
         layout = self.layout

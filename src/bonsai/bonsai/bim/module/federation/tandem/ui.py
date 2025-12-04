@@ -130,7 +130,7 @@ class BIM_PT_tandem_main(Panel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "scene"
-    bl_order = 5  # After 4D/5D tab (which is order 4)
+    bl_parent_id = "BIM_PT_digital_twin"
     bl_options = {'DEFAULT_CLOSED'}
 
     @classmethod

@@ -8,29 +8,15 @@ import os
 import bonsai.tool as tool
 from bpy.types import Panel
 
-class BIM_PT_tab_mep_engineering(Panel):
-    """MEP Engineering Tab - Parent container for all MEP panels"""
-    bl_label = "MEP Engineering"
-    bl_idname = "BIM_PT_tab_mep_engineering"
-    bl_space_type = "PROPERTIES"
-    bl_region_type = "WINDOW"
-    bl_context = "scene"
-    bl_parent_id = "BIM_PT_tabs"
-    bl_order = -7
-    bl_options = {'DEFAULT_CLOSED'}
-
-    def draw(self, context):
-        pass
-
-
 class BIM_PT_mep_engineering(Panel):
     """MEP Engineering panel in Blender UI"""
-    bl_label = "Conduit Testing"
+    bl_label = "MEP Engineering"
     bl_idname = "BIM_PT_mep_engineering"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
-    bl_parent_id = "BIM_PT_tab_mep_engineering"
+    bl_parent_id = "BIM_PT_mep_coordination"
+    bl_options = {'DEFAULT_CLOSED'}
     
     def draw(self, context):
         """Draw the panel UI"""

@@ -22,7 +22,6 @@ classes = (
     operator.VisualizeRoutingObstacles,
     operator.ClearRoutingDebug,
     operator.AutoPickRoutingEndpoints,
-    ui.BIM_PT_tab_mep_engineering,
     ui.BIM_PT_mep_engineering,
 )
 
