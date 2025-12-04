@@ -199,7 +199,7 @@ classes = (
     color_palette.BIM_OT_reset_colors,
     color_palette.BIM_OT_save_color_scheme,
     color_palette.BIM_OT_load_color_scheme,
-    color_palette.BIM_PT_federation_color_palette,
+    # color_palette.BIM_PT_federation_color_palette,  # Removed - content moved to #10 parent
 
     # Digital Twin (Tandem) - 6D/7D BIM Operators
     tandem_operator.BIM_OT_import_assets_from_ifc,
@@ -231,7 +231,7 @@ classes = (
     tandem_ui.BIMTandemAssetItem,
     tandem_ui.BIMTandemProperties,
     tandem_ui.BIM_UL_tandem_assets,
-    tandem_ui.BIM_PT_tandem_main,
+    # tandem_ui.BIM_PT_tandem_main,  # Removed - content moved to #8 parent
     tandem_ui.BIM_PT_tandem_assets,
     tandem_ui.BIM_PT_tandem_asset_details,
     tandem_ui.BIM_PT_tandem_statistics,

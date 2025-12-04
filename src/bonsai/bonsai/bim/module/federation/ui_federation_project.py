@@ -145,7 +145,99 @@ class BIM_PT_mep_coordination(Panel):
     # No poll needed - always show in Project Overview
 
     def draw(self, context):
-        pass  # Children panels provide content
+        layout = self.layout
+
+        # Safety check: MEP properties might not be registered
+        if not hasattr(context.scene, 'BIMmepEngineeringProperties'):
+            layout.label(text="MEP Engineering module not loaded")
+            return
+
+        props = context.scene.BIMmepEngineeringProperties
+        fed_props = context.scene.BIMFederationProperties
+
+        # ================================================================
+        # ROUTING SECTION
+        # ================================================================
+
+        box = layout.box()
+        box.label(text="Conduit Routing", icon='CURVE_PATH')
+
+        # Start Point
+        row = box.row(align=True)
+        row.label(text="Start Point:")
+        row.operator("bim.set_route_start_point", text="Set from Cursor", icon='CURSOR')
+
+        row = box.row()
+        row.prop(props, "route_start_point", text="")
+
+        # End Point
+        row = box.row(align=True)
+        row.label(text="End Point:")
+        row.operator("bim.set_route_end_point", text="Set from Cursor", icon='CURSOR')
+
+        row = box.row()
+        row.prop(props, "route_end_point", text="")
+
+        # Settings
+        box.separator()
+        row = box.row()
+        row.prop(props, "clearance_distance")
+
+        row = box.row()
+        row.prop(props, "conduit_diameter")
+
+        row = box.row()
+        row.prop(props, "target_disciplines")
+
+        # Action buttons section
+        box.separator()
+
+        # Test Routing button (auto-pick from federation DB)
+        row = box.row(align=True)
+        row.enabled = fed_props.index_loaded
+        row.operator("bim.auto_pick_routing_endpoints", text="Test Routing", icon='PLAY')
+
+        # Route Conduit button
+        row = box.row(align=True)
+        row.scale_y = 1.5
+        row.enabled = fed_props.index_loaded
+        row.operator("bim.route_mep_conduit", text="Route Conduit", icon='ANIM')
+
+        # Visualization buttons
+        box.separator()
+        row = box.row(align=True)
+        row.enabled = fed_props.index_loaded
+        row.operator("bim.visualize_routing_obstacles", text="View Conduit", icon='HIDE_OFF')
+        row.operator("bim.clear_routing_debug", text="Clear Conduit", icon='X')
+
+        # ================================================================
+        # FUTURE ROUTING TOOLS (Placeholder for planned enhancements)
+        # ================================================================
+        layout.separator()
+
+        box = layout.box()
+        box.label(text="Duct Routing", icon='STICKY_UVS_LOC')
+        row = box.row()
+        row.enabled = False
+        row.label(text="Coming soon: Automated duct routing")
+
+        layout.separator()
+
+        box = layout.box()
+        box.label(text="MEP Roadmap & Planned Features", icon='LIGHT')
+        col = box.column(align=True)
+        col.label(text="Clash Report Generation (High Priority):", icon='ERROR')
+        col.label(text="  • Multi-discipline clash reports (BCF/HTML/Excel)")
+        col.label(text="  • Per-clash screenshots with annotations")
+        col.label(text="  • Status tracking (New/Approved/Resolved)")
+        col.label(text="  • Discipline assignment & due dates")
+        col.label(text="  • Industry-standard BCF export/import")
+        col.separator()
+        col.label(text="Other Planned Features:")
+        col.label(text="  • Duct sizing calculations")
+        col.label(text="  • Pressure drop analysis")
+        col.label(text="  • Equipment scheduling")
+        col.label(text="  • Load calculations")
 
 
 # =============================================================================
@@ -375,7 +467,39 @@ class BIM_PT_digital_twin(Panel):
     # No poll needed - always show in Project Overview
 
     def draw(self, context):
-        pass  # Children panels provide content
+        layout = self.layout
+        props = context.scene.BIMTandemProperties
+        fed_props = context.scene.BIMFederationProperties
+
+        # Database status (read-only, shows Federation DB)
+        box = layout.box()
+        if fed_props.federation_database_path:
+            box.label(text="Using Federation Database:", icon='FILE')
+            row = box.row()
+            row.scale_y = 0.7
+            row.label(text=f"{fed_props.federation_database_path.split('/')[-1]}")
+        else:
+            box.label(text="⚠ No Federation Database Loaded", icon='ERROR')
+            row = box.row()
+            row.scale_y = 0.7
+            row.label(text="Load database in Federation panel first")
+            return
+
+        # Quick actions
+        box = layout.box()
+        box.label(text="Asset Management:", icon='PROPERTIES')
+
+        row = box.row(align=True)
+        row.operator("bim.import_assets_from_ifc", text="Import from IFC", icon='IMPORT')
+        row.operator("bim.refresh_asset_list", text="Refresh", icon='FILE_REFRESH')
+
+        row = box.row()
+        row.operator("bim.export_asset_report", text="Export Report", icon='EXPORT')
+
+        # Visualization
+        box = layout.box()
+        box.label(text="Visualization:", icon='SHADING_RENDERED')
+        box.operator("bim.visualize_assets_by_condition", text="Color by Condition", icon='SHADING_SOLID')
 
 
 # =============================================================================
@@ -493,7 +617,98 @@ class BIM_PT_visualization_settings(Panel):
     # No poll needed - always show in Project Overview
 
     def draw(self, context):
-        pass  # Children panels provide content
+        layout = self.layout
+        props = context.scene.BIMFederationColorProperties
+
+        # Import CONSTRUCTION_PALETTES from color_palette module
+        from .color_palette import CONSTRUCTION_PALETTES
+
+        # Palette selector
+        box = layout.box()
+        row = box.row()
+        row.label(text="Theme:", icon='COLOR')
+        row.prop(props, "active_palette", text="")
+
+        # Color grid
+        palette = CONSTRUCTION_PALETTES.get(props.active_palette, {})
+        colors = palette.get("colors", [])
+
+        grid_box = layout.box()
+        grid_box.label(text="Quick Colors:", icon='BRUSHES_ALL')
+
+        # Create color swatches (4 columns)
+        col_count = 4
+        for i in range(0, len(colors), col_count):
+            row = grid_box.row(align=True)
+            for j in range(col_count):
+                if i + j < len(colors):
+                    name, color = colors[i + j]
+                    op = row.operator("bim.apply_palette_color", text="", icon='BLANK1')
+                    op.color = color
+                    # Show color as background (hacky but works)
+                    col = row.column()
+                    col.scale_x = 0.3
+                    col.label(text=name[:8])
+
+        # Custom color picker
+        layout.separator()
+        color_box = layout.box()
+        color_box.label(text="Custom Color:", icon='EYEDROPPER')
+        color_box.prop(props, "selected_color", text="")
+
+        row = color_box.row(align=True)
+        op = row.operator("bim.apply_palette_color", text="Apply Custom", icon='CHECKMARK')
+        op.color = props.selected_color
+
+        # Filters
+        layout.separator()
+        filter_box = layout.box()
+        filter_box.label(text="Filters:", icon='FILTER')
+
+        row = filter_box.row()
+        row.prop(props, "filter_discipline", text="")
+
+        row = filter_box.row()
+        row.prop(props, "filter_ifc_type", text="", icon='OBJECT_DATA')
+
+        # Quick access buttons
+        row = filter_box.row(align=True)
+        row.operator("bim.get_type_from_selection", text="Get from Selected", icon='EYEDROPPER')
+        row.operator("bim.refresh_ifc_types", text="Refresh", icon='FILE_REFRESH')
+
+        # Options
+        row = filter_box.row()
+        row.prop(props, "auto_apply", text="Auto Apply")
+        row.prop(props, "show_preview", text="Preview")
+
+        # Actions
+        layout.separator()
+        action_box = layout.box()
+        action_box.label(text="Actions:", icon='TOOL_SETTINGS')
+
+        row = action_box.row(align=True)
+        op = row.operator("bim.apply_color_to_selected", text="Apply to Selected", icon='RESTRICT_SELECT_OFF')
+        op.color = props.selected_color
+
+        row = action_box.row(align=True)
+        row.operator("bim.reset_federation_colors", text="Reset All", icon='FILE_REFRESH')
+
+        # Utilities
+        row = action_box.row(align=True)
+        row.operator("bim.strip_materials_from_type", text="Strip Materials", icon='MATERIAL')
+
+        row = action_box.row(align=True)
+        row.operator("bim.save_color_scheme", text="Save Scheme", icon='FILE_TICK')
+        row.operator("bim.load_color_scheme", text="Load Scheme", icon='FILE_FOLDER')
+
+        # Info
+        info_box = layout.box()
+        info_box.scale_y = 0.8
+        info_text = info_box.column()
+        info_text.label(text="💡 Tips:", icon='INFO')
+        info_text.label(text="  • Use Solid shading mode")
+        info_text.label(text="  • Alt+Z for X-ray view")
+        info_text.label(text="  • Filter by discipline/type")
 
 
 # =============================================================================

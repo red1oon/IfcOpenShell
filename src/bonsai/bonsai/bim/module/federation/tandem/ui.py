@@ -181,7 +181,7 @@ class BIM_PT_tandem_assets(Panel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "scene"
-    bl_parent_id = "BIM_PT_tandem_main"
+    bl_parent_id = "BIM_PT_digital_twin"
     bl_options = {'DEFAULT_CLOSED'}
 
     def draw(self, context):
@@ -246,7 +246,7 @@ class BIM_PT_tandem_asset_details(Panel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "scene"
-    bl_parent_id = "BIM_PT_tandem_main"
+    bl_parent_id = "BIM_PT_digital_twin"
     bl_options = {'DEFAULT_CLOSED'}
 
     @classmethod
@@ -294,7 +294,7 @@ class BIM_PT_tandem_statistics(Panel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "scene"
-    bl_parent_id = "BIM_PT_tandem_main"
+    bl_parent_id = "BIM_PT_digital_twin"
     bl_options = {'DEFAULT_CLOSED'}
 
     def draw(self, context):
@@ -395,7 +395,7 @@ class BIM_PT_tandem_maintenance(Panel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "scene"
-    bl_parent_id = "BIM_PT_tandem_main"
+    bl_parent_id = "BIM_PT_digital_twin"
     bl_options = {'DEFAULT_CLOSED'}
 
     def draw(self, context):
@@ -532,7 +532,7 @@ class BIM_PT_tandem_iot_command_center(Panel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "scene"
-    bl_parent_id = "BIM_PT_tandem_main"
+    bl_parent_id = "BIM_PT_digital_twin"
     bl_options = {'DEFAULT_CLOSED'}
 
     def draw(self, context):
