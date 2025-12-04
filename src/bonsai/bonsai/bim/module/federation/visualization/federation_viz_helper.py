@@ -50,14 +50,16 @@ def find_or_create_element_from_database(
     cursor = conn.cursor()
 
     try:
-        # Query element metadata and bbox
+        # Query element metadata, bbox, and transforms (for GI schema)
         cursor.execute("""
             SELECT
                 m.guid, m.ifc_class, m.discipline,
                 r.minX, r.minY, r.minZ,
-                r.maxX, r.maxY, r.maxZ
+                r.maxX, r.maxY, r.maxZ,
+                et.center_x, et.center_y, et.center_z
             FROM elements_meta m
             JOIN elements_rtree r ON m.id = r.id
+            LEFT JOIN element_transforms et ON m.guid = et.guid
             WHERE m.guid = ?
         """, (guid,))
 
@@ -67,17 +69,19 @@ def find_or_create_element_from_database(
             print(f"⚠ Element {guid} not found in database")
             return None
 
-        guid, ifc_class, discipline, min_x, min_y, min_z, max_x, max_y, max_z = result
+        guid, ifc_class, discipline, min_x, min_y, min_z, max_x, max_y, max_z, center_x, center_y, center_z = result
 
         # Step 3: Try to load tessellated geometry first, fallback to bbox
-        # Load tessellated geometry directly (simplified - no vertex_count needed)
+        # GI schema: geometry stored at origin with element_transforms for positioning
         try:
             from bonsai.bim.module.federation.stage2_tessellation_loader import unpack_vertices, unpack_faces
 
+            # GI schema query
             cursor.execute("""
-                SELECT vertices, faces
-                FROM element_geometry
-                WHERE guid = ?
+                SELECT bg.vertices, bg.faces
+                FROM element_instances ei
+                JOIN base_geometries bg ON ei.geometry_hash = bg.geometry_hash
+                WHERE ei.guid = ?
             """, (guid,))
 
             geom_row = cursor.fetchone()
@@ -85,30 +89,25 @@ def find_or_create_element_from_database(
             if geom_row:
                 verts_blob, faces_blob = geom_row
 
-                # Unpack geometry
+                # Unpack geometry (GI databases store geometry at LOCAL origin)
                 vertices = unpack_vertices(verts_blob)
                 faces = unpack_faces(faces_blob)
 
-                # CRITICAL: Calculate GPS center from BBOX (elements_rtree has correct values)
-                # element_transforms.center is (0,0,0) for all elements - NOT GPS position
-                bbox_center_gps = Vector(((min_x + max_x) / 2.0, (min_y + max_y) / 2.0, (min_z + max_z) / 2.0))
-
-                # Transform mesh vertices from GPS to local (relative to bbox center)
-                vertices_local = [(v[0] - bbox_center_gps.x, v[1] - bbox_center_gps.y, v[2] - bbox_center_gps.z) for v in vertices]
-
-                # Create Blender mesh with LOCAL vertices
+                # Create Blender mesh with LOCAL vertices (AS-IS, like blend_cache does)
                 mesh = bpy.data.meshes.new(guid[:8])
-                mesh.from_pydata(vertices_local, [], faces)
+                mesh.from_pydata(vertices, [], faces)
                 mesh.update()
 
                 # Create object
                 obj = bpy.data.objects.new(guid, mesh)
 
-                # NO OFFSET STRATEGY: Use GPS coordinates directly
-                # Database stores GPS coords (USE_WORLD_COORDS=True)
-                # Buildings and gizmos also use GPS coords
-                # Result: Everything aligns in same GPS coordinate space
-                obj.location = bbox_center_gps
+                # Apply transform from element_transforms (like blend_cache does)
+                if center_x is not None and center_y is not None and center_z is not None:
+                    obj.location = (center_x, center_y, center_z)
+                else:
+                    # Fallback to bbox center if no transform
+                    bbox_center = Vector(((min_x + max_x) / 2.0, (min_y + max_y) / 2.0, (min_z + max_z) / 2.0))
+                    obj.location = bbox_center
 
                 # Store metadata
                 obj["federation_guid"] = guid
@@ -336,29 +335,33 @@ def batch_load_clash_elements(
         # Build placeholders for IN clause
         placeholders = ','.join('?' * len(guids_to_load))
 
-        # OPTIMIZED: Single query for all elements
+        # OPTIMIZED: Single query for all elements (with transforms for GI schema)
         query = f"""
             SELECT
                 m.guid, m.ifc_class, m.discipline,
                 r.minX, r.minY, r.minZ,
-                r.maxX, r.maxY, r.maxZ
+                r.maxX, r.maxY, r.maxZ,
+                et.center_x, et.center_y, et.center_z
             FROM elements_meta m
             JOIN elements_rtree r ON m.id = r.id
+            LEFT JOIN element_transforms et ON m.guid = et.guid
             WHERE m.guid IN ({placeholders})
         """
 
         cursor.execute(query, guids_to_load)
         metadata_rows = cursor.fetchall()
 
-        # Step 3: Load geometry for elements that have it
+        # Step 3: Load geometry for elements (GI schema)
         guids_with_meta = [row[0] for row in metadata_rows]
 
         if guids_with_meta:
             geom_placeholders = ','.join('?' * len(guids_with_meta))
+            # GI schema query
             geom_query = f"""
-                SELECT guid, vertices, faces
-                FROM element_geometry
-                WHERE guid IN ({geom_placeholders})
+                SELECT ei.guid, bg.vertices, bg.faces
+                FROM element_instances ei
+                JOIN base_geometries bg ON ei.geometry_hash = bg.geometry_hash
+                WHERE ei.guid IN ({geom_placeholders})
             """
 
             cursor.execute(geom_query, guids_with_meta)
@@ -373,26 +376,31 @@ def batch_load_clash_elements(
         from bonsai.bim.module.federation.stage2_tessellation_loader import unpack_vertices, unpack_faces
 
         for row in metadata_rows:
-            guid, ifc_class, discipline, min_x, min_y, min_z, max_x, max_y, max_z = row
+            guid, ifc_class, discipline, min_x, min_y, min_z, max_x, max_y, max_z, center_x, center_y, center_z = row
 
             # Try tessellated geometry first
             if guid in geometry_data:
                 try:
                     verts_blob, faces_blob = geometry_data[guid]
 
+                    # GI databases store geometry at LOCAL origin
                     vertices = unpack_vertices(verts_blob)
                     faces = unpack_faces(faces_blob)
 
-                    bbox_center_gps = Vector(((min_x + max_x) / 2.0, (min_y + max_y) / 2.0, (min_z + max_z) / 2.0))
-                    vertices_local = [(v[0] - bbox_center_gps.x, v[1] - bbox_center_gps.y, v[2] - bbox_center_gps.z) for v in vertices]
-
+                    # Create mesh with LOCAL vertices (AS-IS, like blend_cache)
                     mesh = bpy.data.meshes.new(guid[:8])
-                    mesh.from_pydata(vertices_local, [], faces)
+                    mesh.from_pydata(vertices, [], faces)
                     mesh.update()
 
                     obj = bpy.data.objects.new(guid, mesh)
-                    # NO OFFSET STRATEGY: Use GPS coordinates directly
-                    obj.location = bbox_center_gps
+
+                    # Apply transform from element_transforms (like blend_cache)
+                    if center_x is not None and center_y is not None and center_z is not None:
+                        obj.location = (center_x, center_y, center_z)
+                    else:
+                        # Fallback to bbox center
+                        bbox_center = Vector(((min_x + max_x) / 2.0, (min_y + max_y) / 2.0, (min_z + max_z) / 2.0))
+                        obj.location = bbox_center
 
                     obj["federation_guid"] = guid
                     obj["federation_ifc_class"] = ifc_class

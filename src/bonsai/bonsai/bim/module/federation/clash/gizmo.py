@@ -287,7 +287,7 @@ class BIM_MT_clash_gizmo_context_menu(Menu):
         for status, (icon, label) in [
             ('NEW', ('ERROR', '🔴 New')),
             ('ACTIVE', ('FUND', '🟠 Active')),
-            ('REVIEWED', ('SEQUENCE_COLOR_04', '🟡 Reviewed')),
+            ('REVIEWED', ('QUESTION', '🟡 Reviewed')),
             ('RESOLVED', ('CHECKMARK', '✅ Resolved'))
         ]:
             if status != current_status:

@@ -3931,9 +3931,41 @@ class BIM_OT_preview_clash_group(bpy.types.Operator):
                 self.report({'ERROR'}, f"Database not found: {db_path}")
                 return {'CANCELLED'}
 
-            # Query clash group data
+            # Check if current DB has GI geometry tables
             import sqlite3
-            conn = sqlite3.connect(str(db_path))
+            test_conn = sqlite3.connect(str(db_path))
+            test_cursor = test_conn.cursor()
+            test_cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='base_geometries'")
+            has_geometry = test_cursor.fetchone() is not None
+            test_conn.close()
+
+            clash_db_path = db_path
+            fed_db_path = db_path
+
+            if not has_geometry:
+                # Find GI database in same directory
+                found = None
+                for candidate in db_path.parent.glob("*GI.db"):
+                    try:
+                        c = sqlite3.connect(str(candidate))
+                        cur = c.cursor()
+                        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='base_geometries'")
+                        if cur.fetchone():
+                            found = candidate
+                            c.close()
+                            break
+                        c.close()
+                    except:
+                        continue
+                if found:
+                    fed_db_path = found
+                    print(f"  ✓ Clash data: {clash_db_path.name}")
+                    print(f"  ✓ Geometry: {fed_db_path.name}")
+                else:
+                    fed_db_path = db_path  # Use same DB as fallback
+
+            # Query clash group data
+            conn = sqlite3.connect(str(clash_db_path))
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
@@ -4062,7 +4094,7 @@ class BIM_OT_preview_clash_group(bpy.types.Operator):
             for guid in all_guids:
                 obj = find_or_create_element_from_database(
                     guid=guid,
-                    db_path=str(db_path),
+                    db_path=str(fed_db_path),  # Use GI database for geometry
                     collection=collection
                 )
 
