@@ -331,6 +331,24 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
     discipline_legend.enable_legend()
     print(f"✓ Discipline legend enabled for cache")
 
+    # Double the view distance so objects don't disappear at horizon (2x current clip distance)
+    try:
+        for cam in bpy.data.cameras:
+            original_clip = cam.clip_end
+            cam.clip_end = original_clip * 2.0
+
+        for screen in bpy.data.screens:
+            for area in screen.areas:
+                if area.type == 'VIEW_3D':
+                    for space in area.spaces:
+                        if space.type == 'VIEW_3D':
+                            original_clip = space.clip_end
+                            space.clip_end = original_clip * 2.0
+
+        print(f"✓ Doubled view distance for better horizon visibility")
+    except Exception as e:
+        print(f"Warning: Could not adjust view distance: {e}")
+
     # Save .blend
     print(f"Saving cache to {cache_path}...")
     save_start = time.time()
