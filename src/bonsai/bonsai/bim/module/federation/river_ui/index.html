@@ -36,18 +36,13 @@
             <div class="panel map-panel">
                 <div class="panel-header">
                     <h2>River Corridor Map</h2>
-                    <div class="map-controls">
-                        <label style="color: white; margin-right: 12px;">
-                            <input type="checkbox" id="toggleRiver" checked style="margin-right: 4px;">
-                            Show River
-                        </label>
-                        <button id="zoomOut" class="btn-small">−</button>
-                        <button id="zoomIn" class="btn-small">+</button>
-                        <button id="resetView" class="btn-small">Reset View</button>
-                    </div>
+                    <label style="color: white;">
+                        <input type="checkbox" id="toggleRiver" checked style="margin-right: 4px;">
+                        Show River
+                    </label>
                 </div>
                 <div class="panel-content">
-                    <canvas id="riverMap" width="800" height="600"></canvas>
+                    <canvas id="riverMap" width="800" height="650"></canvas>
                 </div>
                 <div class="map-legend">
                     <div class="legend-item">
@@ -171,7 +166,7 @@
 
     <!-- Scripts -->
     <script src="calculations.js"></script>
-    <script src="viewer_real.js"></script>
+    <script src="viewer_static_map.js"></script>
     <script>
         // Initialize dashboard on load
         document.addEventListener('DOMContentLoaded', () => {
