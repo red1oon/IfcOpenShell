@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+
+# DEPRECATED: Use blosm_to_gi_complete.py instead (combines both stages)
+# This script is kept for reference only
 """
 BLOSM to IFC Converter - FIXED VERSION
 Properly exports mesh geometry with coordinate handling

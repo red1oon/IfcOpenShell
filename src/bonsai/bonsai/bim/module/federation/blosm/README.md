@@ -6,7 +6,38 @@ Scripts for converting BLOSM (Blender OpenStreetMap) data to IFC and GI (Geometr
 
 These scripts enable the workflow: **OSM → BLOSM → IFC → GI Database → Bonsai Federation**
 
-## Scripts
+## Recommended Script
+
+### ⭐ `blosm_to_gi_complete.py` (NEW)
+**Purpose**: One-step converter from BLOSM blend to GI database
+
+**Features**:
+- Combines both stages (BLOSM→IFC→GI) in a single script
+- Non-hardcoded: works with any BLOSM blend file
+- Flexible filters: water-only, exclude buildings/roads/terrain
+- Command-line arguments for customization
+- Creates perfect continuous meshes (no segmentation artifacts)
+
+**Usage**:
+```bash
+# Convert everything
+~/blender-4.5.0/blender --background YOUR_BLOSM.blend \
+    --python blosm_to_gi_complete.py -- --output my_database
+
+# Water/rivers only
+~/blender-4.5.0/blender --background YOUR_BLOSM.blend \
+    --python blosm_to_gi_complete.py -- --output river_only --water-only
+
+# Exclude buildings
+~/blender-4.5.0/blender --background YOUR_BLOSM.blend \
+    --python blosm_to_gi_complete.py -- --output no_buildings --no-buildings
+```
+
+**Output**:
+- `{output}.db` - GI database ready for Bonsai Federation
+- `output/{output}.ifc` - Intermediate IFC file
+
+## Legacy Scripts (Deprecated)
 
 ### 1. `diagnose_coords.py`
 **Purpose**: Analyze coordinate ranges and scene bounds before conversion
@@ -44,8 +75,9 @@ CROP_CENTER = (0, 0)  # Adjust to your area of interest
 CROP_RADIUS = 500     # 500m radius = 1km diameter
 ```
 
-### 3. `blosm_to_ifc_fixed_v2.py`
+### 3. `blosm_to_ifc_fixed_v2.py` ⚠️ DEPRECATED
 **Purpose**: Convert full BLOSM scene to IFC (no cropping)
+**Note**: Use `blosm_to_gi_complete.py` instead for direct GI database conversion
 
 **Features**:
 - Exports entire scene
@@ -61,7 +93,8 @@ CROP_RADIUS = 500     # 500m radius = 1km diameter
 
 **Output**: `klang_river_blosm_fixed.ifc`
 
-### 4. `extract_to_gi_db.py`
+### 4. `extract_to_gi_db.py` ⚠️ DEPRECATED
+**Note**: Use `blosm_to_gi_complete.py` instead for direct conversion
 **Purpose**: Extract IFC to GI database for Bonsai federation
 
 **Features**:

@@ -30,6 +30,11 @@ DISCIPLINE_COLORS = {
     'STR': (0.6, 0.4, 0.2, 1.0),         # Brown (concrete)
     'STRUCTURE': (0.6, 0.4, 0.2, 1.0),
     'REB': (0.9, 0.5, 0.2, 1.0),         # Rust/orange (reinforcement)
+    # Coastal Oasis river restoration disciplines
+    'GEO': (0.15, 0.4, 0.65, 0.5),       # Blue water (semi-transparent)
+    'BOOM': (0.95, 0.55, 0.1, 1.0),      # High-viz orange (boom barriers)
+    'FAC': (0.6, 0.6, 0.6, 1.0),         # Concrete gray (facilities)
+    'IOT': (0.2, 0.8, 0.3, 1.0),         # Monitoring green (IoT sensors)
     'DEFAULT': (0.7, 0.7, 0.7, 0.5),     # Light gray
 }
 

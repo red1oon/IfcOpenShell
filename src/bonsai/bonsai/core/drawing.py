@@ -60,10 +60,18 @@ def edit_assigned_product(
 ) -> None:
     element = ifc.get_entity(obj)
     assert element
-    existing_product = drawing.get_assigned_product(element)
-    if existing_product != product:
-        if existing_product:
+
+    # Temporarily accomodate existing bug and check for multiple products.
+    existing_products = drawing.get_assigned_product_workaround(element)
+    if existing_products != [product]:
+
+        if product in existing_products:
+            assert product is not None
+            existing_products.remove(product)
+
+        for existing_product in existing_products:
             ifc.run("drawing.unassign_product", relating_product=existing_product, related_object=element)
+
         if product:
             ifc.run("drawing.assign_product", relating_product=product, related_object=element)
 

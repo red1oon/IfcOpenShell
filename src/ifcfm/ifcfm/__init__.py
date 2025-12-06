@@ -51,7 +51,7 @@ except:
 if TYPE_CHECKING:
     import pandas as pd
 
-__version__ = version = "0.0.0"
+__version__ = version = "0.8.5-alpha251202"
 
 
 ParserPreset = Literal["basic", "cobie24", "cobie24legacy"]

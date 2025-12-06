@@ -18,29 +18,10 @@
 
 import bpy
 from . import ui, prop, operator
-# Note: gizmo, visualization, database moved to federation_analysis module (2025-11-02)
 
 classes = (
     operator.AddClashSet,
     operator.AddClashSource,
-    # NOTE: Federation operators moved to federation_analysis module (2025-11-03):
-    # - BIM_OT_analyze_bbox_candidates
-    # - BIM_OT_clash_by_discipline
-    # - BIM_OT_select_discipline_clash
-    # - BIM_OT_visualize_selected_discipline_clashes
-    # - BIM_OT_deselect_all_clashes
-    # - BIM_OT_clear_discipline_clash_visualization
-    # - BIM_OT_enable_clash_gpu_visualization
-    # - BIM_OT_disable_clash_gpu_visualization
-    # - BIM_OT_enable_clash_gizmo_visualization
-    # - BIM_OT_disable_clash_gizmo_visualization
-    # - BIM_OT_load_clash_geometry
-    # - BIM_OT_enable_bbox_visualization
-    # - BIM_OT_disable_bbox_visualization
-    # - BIM_OT_enable_semantic_proxy_visualization
-    # - BIM_OT_disable_semantic_proxy_visualization
-    # - BIM_OT_enable_full_geometry_visualization
-    # - BIM_OT_disable_full_geometry_visualization
     operator.ExecuteIfcClash,
     operator.ExportClashSets,
     operator.ImportClashSets,
@@ -53,26 +34,17 @@ classes = (
     operator.SelectSmartGroup,
     operator.SelectSmartGroupedClashesPath,
     operator.SmartClashGroup,
-    # NOTE: Clash adjustment operators moved to federation_analysis module (2025-11-07):
-    # - BIM_OT_analyze_clash_groups
-    # - BIM_OT_suggest_resolutions
-    # - BIM_OT_select_resolution_option
     prop.Clash,
     prop.ClashSource,
     prop.ClashSet,
     prop.SmartClashGroup,
-    prop.DisciplineClashCandidate,
-    prop.ClashGroup,
-    prop.ResolutionOption,
     prop.BIMClashProperties,
     ui.BIM_PT_ifcclash,
     ui.BIM_PT_clash_manager,
     ui.BIM_PT_smart_clash_manager,
     ui.BIM_UL_clashes,
     ui.BIM_UL_clash_sets,
-    # ui.BIM_UL_discipline_clashes,  # Moved to federation_analysis module
     ui.BIM_UL_smart_groups,
-    # Note: ClashMarkerGizmo and ClashMarkerGizmoGroup moved to federation_analysis module
 )
 
 

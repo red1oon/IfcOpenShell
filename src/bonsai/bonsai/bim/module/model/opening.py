@@ -48,6 +48,7 @@ from bpy_extras.object_utils import AddObjectHelper, object_data_add
 from gpu_extras.batch import batch_for_shader
 from typing import Union, Optional, Any, cast
 from collections.abc import Sequence
+from bonsai.bim.module.drawing.decoration import DecoratorData
 
 
 class FilledOpeningGenerator:
@@ -415,6 +416,12 @@ class RecalculateFill(bpy.types.Operator, tool.Ifc.Operator):
                             obj=building_obj,
                             representation=representation,
                         )
+
+        # Refresh cut decorator
+        DecoratorData.cut_cache.clear()
+        DecoratorData.fill_cache.clear()
+        DecoratorData.slice_cache.clear()
+
         return {"FINISHED"}
 
 

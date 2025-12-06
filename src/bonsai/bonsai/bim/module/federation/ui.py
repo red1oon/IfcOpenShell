@@ -816,30 +816,9 @@ class BIM_PT_clash_adjustment(Panel):
             result_box.label(text="  (Check Blender console for details)")
 
             # ================================================================
-            # RESOLUTION SUGGESTIONS
-            # ================================================================
-            layout.separator()
-            resolution_box = layout.box()
-            resolution_box.label(text="Step 2: Get Resolution Suggestions", icon="OUTLINER_DATA_LIGHTPROBE")
-
-            # Info about resolutions
-            info_col = resolution_box.column(align=True)
-            info_col.scale_y = 0.7
-            info_col.label(text="💡 Generates resolution options for each group:")
-            info_col.label(text="  • Design effort estimates (hours)")
-            info_col.label(text="  • Cost breakdown by discipline")
-            info_col.label(text="  • Risk assessment")
-
-            # Suggest resolutions button
-            row = resolution_box.row()
-            row.scale_y = 1.5
-            row.operator("bim.suggest_resolutions", text="Generate Resolution Options", icon="OUTLINER_DATA_LIGHTPROBE")
-
-            layout.separator()
-
-            # ================================================================
             # STEP 2: SELECT GROUP & PREVIEW
             # ================================================================
+            layout.separator()
             action_box = layout.box()
             action_box.label(text="Step 2: Select Group & Preview", icon="PLAY")
 

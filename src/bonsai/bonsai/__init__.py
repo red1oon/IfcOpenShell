@@ -44,12 +44,12 @@ from typing import Union, Any
 from collections.abc import Generator
 
 
-last_commit_hash = "8888888"
-last_commit_date = "9999999"
+last_commit_hash = "30e750d77008dcbbcf2f4c06782683f73abbf348"
+last_commit_date = "2025-12-02T11:13:47-06:00"
 
 
 def get_last_commit_hash() -> Union[str, None]:
-    # Using this weird way to write 8888888,
+    # Using this weird way to write 30e750d77008dcbbcf2f4c06782683f73abbf348,
     # so makefile won't accidentally replace it here
     # we'll be able to distinguish commit hash from placeholder value.
     if last_commit_hash == str(8_888888):
@@ -98,7 +98,7 @@ def initialize_bbim_semver():
 def get_debug_info():
     bbim_version = bbim_semver["version"]
 
-    return {
+    debug_info = {
         "os": platform.system(),
         "os_version": platform.version(),
         "python_version": platform.python_version(),
@@ -112,6 +112,36 @@ def get_debug_info():
         "last_actions": last_actions,
         "last_error": last_error,
     }
+
+    # Add .blend file save information
+    try:
+        if bpy.data.is_saved:
+            debug_info["blend_file_path"] = bpy.data.filepath
+            debug_info["blend_file_dirty"] = bpy.data.is_dirty
+        else:
+            debug_info["blend_file_path"] = "Not saved"
+            debug_info["blend_file_dirty"] = "N/A"
+    except AttributeError:
+        # Blender 4.5+ during startup has restricted bpy.data access
+        debug_info["blend_file_path"] = "N/A (startup)"
+        debug_info["blend_file_dirty"] = "N/A"
+
+    # Add IFC file information
+    try:
+        import bonsai.tool as tool
+        bim_props = tool.Blender.get_bim_props()
+        if bim_props.ifc_file:
+            debug_info["ifc_file_path"] = bim_props.ifc_file
+            debug_info["ifc_is_dirty"] = bim_props.is_dirty
+        else:
+            debug_info["ifc_file_path"] = "No IFC loaded"
+            debug_info["ifc_is_dirty"] = "N/A"
+    except (ImportError, NameError, AttributeError):
+        # tool not available during early initialization or error state
+        debug_info["ifc_file_path"] = "N/A (initialization)"
+        debug_info["ifc_is_dirty"] = "N/A"
+
+    return debug_info
 
 
 def format_debug_info(info: dict):

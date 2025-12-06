@@ -635,6 +635,7 @@ class BIM_PT_purge(Panel):
     bl_parent_id = "BIM_PT_tab_quality_control"
 
     def draw(self, context):
+        props = tool.Debug.get_debug_props()
         layout = self.layout
         layout.operator("bim.purge_unused_objects", text="Purge Unused Profiles").object_type = "PROFILE"
         layout.operator("bim.purge_unused_objects", text="Purge Unused Types").object_type = "TYPE"
@@ -655,3 +656,12 @@ class BIM_PT_purge(Panel):
             row.operator("bim.purge_unused_objects", text="Purge Unused").object_type = object_type
             merge_op = row.operator("bim.merge_identical_objects", text="Merge Identical")
             merge_op.object_type = object_type
+
+        layout.operator("bim.purge_unused_representations")
+
+        row = layout.row(align=True)
+        row.prop(props, "ifc_class_purge", text="")
+        row.operator("bim.purge_unused_elements_by_class", text="Purge Orphaned", icon="TRASH")
+        row.operator("bim.print_unused_elements_stats", text="", icon="INFO")
+
+

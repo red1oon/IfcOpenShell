@@ -33,7 +33,12 @@ import json
 from math import cos, tan, pi, radians
 from mathutils import Vector, Matrix, Quaternion
 import mathutils.geometry
-from bpypolyskel import bpypolyskel
+try:
+    from bpypolyskel import bpypolyskel
+    HAS_BPYPOLYSKEL = True
+except ImportError:
+    HAS_BPYPOLYSKEL = False
+    print("Warning: bpypolyskel not available - roof generation features disabled")
 import shapely
 from typing import Literal, Union, Any
 
@@ -124,6 +129,10 @@ def generate_hipped_roof_bmesh(
 
     If roof bmesh needed only to supply into decorator then there is no reason to mutate it.
     """
+    if not HAS_BPYPOLYSKEL:
+        print("Error: bpypolyskel not available - cannot generate hipped roof")
+        return bm
+
     if not mutate_current_bmesh:
         bm = bm.copy()
 
@@ -569,6 +578,8 @@ class AddRoof(bpy.types.Operator, tool.Ifc.Operator):
         element = tool.Ifc.get_entity(obj)
         props = tool.Model.get_roof_props(obj)
         si_conversion = ifcopenshell.util.unit.calculate_unit_scale(tool.Ifc.get())
+
+        tool.Blender.get_addon_preferences().default_parameters.roof.copy_to(props)
 
         # rejecting original roof shape to be safe
         # taking into account only it's bounding box dimensions

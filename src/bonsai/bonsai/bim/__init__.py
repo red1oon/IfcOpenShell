@@ -86,8 +86,7 @@ modules = {
     "web": None,
     "light": None,
     "alignment": None,
-    "federation": None,
-    "mep_engineering": None,
+    "federation": None,  # Multi-model federation & coordination
     # Uncomment this line to enable loading of the demo module. Happy hacking!
     # The name "demo" must correlate to a folder name in `bim/module/`.
     # "demo": None,
@@ -95,7 +94,14 @@ modules = {
 
 
 for name in modules.keys():
-    modules[name] = importlib.import_module(f"bonsai.bim.module.{name}")
+    try:
+        print(f"🔵 BIM: Loading module '{name}'...")
+        modules[name] = importlib.import_module(f".module.{name}", package=__package__)
+        print(f"   ✓ '{name}' loaded successfully")
+    except Exception as e:
+        print(f"   ✗ '{name}' FAILED: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 classes = [
@@ -150,7 +156,11 @@ classes = [
     ui.BIM_UL_clipping_plane,
     ui.BIM_UL_generic,
     ui.DocPreferences,
-    ui.BIM_ADDON_preferences,
+    ui.GizmoPreferencesDoor,  # Register before GizmoPreferences
+    ui.GizmoPreferencesWindow,  # Register before GizmoPreferences
+    ui.GizmoPreferencesStair,  # Register before GizmoPreferences
+    ui.GizmoPreferences,
+    # ui.DefaultParameters and ui.BIM_ADDON_preferences are registered separately after modules (see late_classes below)
     # Tabs panel
     ui.BIM_PT_tabs,
     # Project overview
@@ -196,8 +206,6 @@ classes = [
     ui.BIM_PT_tab_operations,
     # Quality and coordination
     ui.BIM_PT_tab_quality_control,
-    ui.BIM_PT_tab_federation,
-    ui.BIM_PT_tab_mep_engineering,
     ui.BIM_PT_tab_clash_detection,
     ui.BIM_PT_tab_collaboration,
     ui.BIM_PT_tab_sandbox,
@@ -209,7 +217,8 @@ classes = [
 ]
 
 for mod in modules.values():
-    classes.extend(mod.classes)
+    if mod is not None:  # Skip modules that failed to load
+        classes.extend(mod.classes)
 
 addon_keymaps = []
 icons = None
@@ -229,13 +238,43 @@ def on_register(scene):
     is_registering = False
 
 
-def register():
-    for cls in classes:
+# Classes that need to be registered after modules (due to cross-module dependencies)
+late_classes = (
+    ui.DefaultParameters,  # Register before BIM_ADDON_preferences
+    ui.BIM_ADDON_preferences,
+)
+
+
+def register_classes(classes_to_register):
+    for cls in classes_to_register:
+        # Debug: Log federation panel registration
+        if 'federation' in str(cls).lower() and 'BIM_PT' in str(cls):
+            print(f"🔵 REGISTERING FEDERATION PANEL: {cls.__name__}")
+
         # Prevent crashes in Blender 4.4.0, see #6420.
         if issubclass(cls, (ImportHelper, ExportHelper)):
             assert getattr(cls, "bl_description", "") or cls.__doc__, cls
 
-        bpy.utils.register_class(cls)
+        try:
+            bpy.utils.register_class(cls)
+            if 'federation' in str(cls).lower() and 'BIM_PT' in str(cls):
+                print(f"  ✓ SUCCESS: {cls.__name__}")
+        except Exception as e:
+            if 'federation' in str(cls).lower():
+                print(f"  ✗ FAILED: {cls.__name__}: {e}")
+            raise
+
+
+def unregister_classes(classes_to_unregister):
+    for cls in reversed(classes_to_unregister):
+        if getattr(cls, "is_registered", None) is None:
+            bpy.utils.unregister_class(cls)
+        elif cls.is_registered:
+            bpy.utils.unregister_class(cls)
+
+
+def register():
+    register_classes(classes)
 
     bpy.app.handlers.depsgraph_update_post.append(on_register)
     bpy.app.handlers.undo_post.append(handler.undo_post)
@@ -259,6 +298,9 @@ def register():
 
     for mod in modules.values():
         mod.register()
+
+    # Delay registering classes that depend on module classes
+    register_classes(late_classes)
 
     wm = bpy.context.window_manager
     if wm.keyconfigs.addon:
@@ -291,11 +333,7 @@ def unregister():
 
     bpy.utils.previews.remove(icons)
 
-    for cls in reversed(classes):
-        if getattr(cls, "is_registered", None) is None:
-            bpy.utils.unregister_class(cls)
-        elif cls.is_registered:
-            bpy.utils.unregister_class(cls)
+    unregister_classes(classes)
 
     bpy.app.handlers.load_post.remove(handler.load_post)
     bpy.app.handlers.load_post.remove(handler.loadIfcStore)
@@ -309,6 +347,9 @@ def unregister():
     if hasattr(bpy.types, "UI_MT_button_context_menu"):
         bpy.types.UI_MT_button_context_menu.remove(ui.draw_custom_context_menu)
     bpy.types.STATUSBAR_HT_header.remove(ui.draw_statusbar)
+
+    # Unregister late classes before modules
+    unregister_classes(late_classes)
 
     for mod in reversed(list(modules.values())):
         mod.unregister()

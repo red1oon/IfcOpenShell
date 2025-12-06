@@ -35,7 +35,7 @@ from typing_extensions import NotRequired
 from collections.abc import Sequence
 
 
-__version__ = version = "0.0.0"
+__version__ = version = "0.8.5-alpha251202"
 
 
 class ArgumentsDict(TypedDict):

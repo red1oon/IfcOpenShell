@@ -77,6 +77,33 @@ RIVER/
 - **Visualization:** Use `blend_cache.py` to load from database and render in Blender
 - **Example:** Caterpillar 336 Excavator added at (21.96, 6.54, 0.0) with CW discipline
 
+### ⚙️ USDZ MODEL ORIENTATION FIX
+**CRITICAL:** blend_cache.py only applies `obj.location` from element_transforms, NOT rotation_matrix!
+
+**Solution:** Bake rotation into mesh geometry BEFORE adding to library.db
+
+**Example - Concrete Barge (USDZ from Sketchfab):**
+```python
+# Original orientation: lying on side
+# Fix: Rotate in Blender BEFORE library import
+
+import bpy
+import math
+
+obj = bpy.data.objects.get('BARGE-CONCRETE-001')
+obj.rotation_euler[2] = math.radians(90)   # Z-axis: lay flat
+obj.rotation_euler[0] = math.radians(270)  # X-axis: flip right-side up (90 + 180)
+
+# Apply rotation to mesh
+bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+
+# THEN add to library.db with add_model_to_library.py
+```
+
+**Working rotations:**
+- **Barge:** Z90 + X270 = flat and right-side up
+- **Debris:** Y90 + X180 = right-side up
+
 ### 📈 Results
 | Metric | Before Fix | After Fix |
 |--------|-----------|----------|

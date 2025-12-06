@@ -58,11 +58,33 @@ class AssignType(bpy.types.Operator, tool.Ifc.Operator):
         else:
             related_objects = tool.Blender.get_selected_objects()
         prefs = tool.Blender.get_addon_preferences()
+
+        # Get the active drawing's target view
+        active_target_view = None
+        drawing_props = context.scene.DocProperties
+        if drawing_props.active_drawing_id:
+            active_drawing = tool.Ifc.get().by_id(drawing_props.active_drawing_id)
+            if active_drawing:
+                active_target_view = tool.Drawing.get_drawing_target_view(active_drawing)
+
         for obj in related_objects:
             element = tool.Ifc.get_entity(obj)
             if not element or not element.is_a("IfcObject"):
                 continue
             core.assign_type(tool.Ifc, tool.Type, element=element, type=relating_type)
+
+            # Switch to the drawing's target view if available
+            if active_target_view and element.Representation:
+                for rep in element.Representation.Representations:
+                    if rep.ContextOfItems.TargetView == active_target_view:
+                        bonsai.core.geometry.switch_representation(
+                            tool.Ifc,
+                            tool.Geometry,
+                            obj=obj,
+                            representation=rep,
+                        )
+                        break
+
             if prefs.occurrence_name_style == "TYPE":
                 obj.name = tool.Model.generate_occurrence_name(relating_type, element.is_a())
 
@@ -322,6 +344,15 @@ class DuplicateType(bpy.types.Operator, tool.Ifc.Operator):
     bl_label = "Duplicate Type"
     bl_options = {"REGISTER", "UNDO"}
     element: bpy.props.IntProperty()
+    name: bpy.props.StringProperty(name="Name")
+    description: bpy.props.StringProperty(name="Description")
+    assign_selected_objects: bpy.props.BoolProperty(default=False)
+
+    if TYPE_CHECKING:
+        element: int
+        name: str
+        description: str
+        assign_selected_objects: bool
 
     def _execute(self, context):
         element = tool.Ifc.get().by_id(self.element)
@@ -332,8 +363,28 @@ class DuplicateType(bpy.types.Operator, tool.Ifc.Operator):
         if obj.data:
             new_obj.data = obj.data.copy()
         new = bonsai.core.root.copy_class(tool.Ifc, tool.Collector, tool.Geometry, tool.Root, obj=new_obj)
-        new.Name += " Copy"
+
+        # Apply the name and description from the dialog
+        new.Name = self.name
+        if self.description:
+            new.Description = self.description
+
+        # Update the Blender object name to match the IFC element name
+        tool.Root.set_object_name(new_obj, new)
+
         bpy.ops.bim.load_type_thumbnails()
+
+        # Assign selected objects to the new type if requested
+        if self.assign_selected_objects:
+            selected_objects = tool.Blender.get_selected_objects()
+            prefs = tool.Blender.get_addon_preferences()
+            for selected_obj in selected_objects:
+                selected_element = tool.Ifc.get_entity(selected_obj)
+                if selected_element and selected_element.is_a("IfcObject"):
+                    core.assign_type(tool.Ifc, tool.Type, element=selected_element, type=new)
+                    if prefs.occurrence_name_style == "TYPE":
+                        selected_obj.name = tool.Model.generate_occurrence_name(new, selected_element.is_a())
+
         if obj in context.selectable_objects:
             tool.Blender.select_and_activate_single_object(context, new_obj)
         else:
@@ -347,3 +398,21 @@ class DuplicateType(bpy.types.Operator, tool.Ifc.Operator):
             props.ifc_class = new.is_a()
             props.relating_type_id = str(tool.Blender.get_ifc_definition_id(new_obj))
         return {"FINISHED"}
+
+    def invoke(self, context, event):
+        element = tool.Ifc.get().by_id(self.element)
+        self.name = (element.Name or "Unnamed") + " Copy"
+        self.description = element.Description or ""
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        self.layout.prop(self, "name")
+        self.layout.prop(self, "description")
+        selected_objects = tool.Blender.get_selected_objects()
+        ifc_objects = [
+            obj for obj in selected_objects if tool.Ifc.get_entity(obj) and tool.Ifc.get_entity(obj).is_a("IfcObject")
+        ]
+        if ifc_objects:
+            self.layout.prop(
+                self, "assign_selected_objects", text=f"Assign {len(ifc_objects)} Selected Object(s) to New Type"
+            )

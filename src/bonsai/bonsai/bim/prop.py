@@ -483,10 +483,8 @@ def get_tab(
     icon_key = f"{UIData.data['menu_icon_color_mode']}_ifc"
 
     if not hasattr(get_tab, "enum_items"):
-        # Safety check: use fallback icon if icons not loaded yet
-        ifc_icon_id = bonsai.bim.icons[icon_key].icon_id if bonsai.bim.icons else "FILE_3D"
         get_tab.enum_items = [
-            ("PROJECT", "Project Overview", "", ifc_icon_id, 0),
+            ("PROJECT", "Project Overview", "", bonsai.bim.icons[icon_key].icon_id, 0),
             ("OBJECT", "Object Information", "", "FILE_3D", 1),
             ("GEOMETRY", "Geometry and Materials", "", "MATERIAL", 2),
             ("DRAWINGS", "Drawings and Documents", "", "DOCUMENTS", 3),
