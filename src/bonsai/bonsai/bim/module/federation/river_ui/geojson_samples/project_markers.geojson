@@ -1,0 +1,1715 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.30963290377086,
+          2.98697571897355
+        ]
+      },
+      "properties": {
+        "id": 1,
+        "type": "boom_trap",
+        "name": "Boom Station 1",
+        "priority": "HIGH",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Coastal boom #1 - High waste interception zone"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.31414022705624,
+          2.990829371779695
+        ]
+      },
+      "properties": {
+        "id": 2,
+        "type": "boom_trap",
+        "name": "Boom Station 2",
+        "priority": "HIGH",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Coastal boom #2 - High waste interception zone"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.31633233089309,
+          2.986703018660723
+        ]
+      },
+      "properties": {
+        "id": 3,
+        "type": "boom_trap",
+        "name": "Boom Station 3",
+        "priority": "HIGH",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Coastal boom #3 - High waste interception zone"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.3180772743801,
+          2.9810354111075825
+        ]
+      },
+      "properties": {
+        "id": 4,
+        "type": "boom_trap",
+        "name": "Boom Station 4",
+        "priority": "HIGH",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Coastal boom #4 - High waste interception zone"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.3212545110861,
+          2.9790648287626698
+        ]
+      },
+      "properties": {
+        "id": 5,
+        "type": "boom_trap",
+        "name": "Boom Station 5",
+        "priority": "HIGH",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Coastal boom #5 - High waste interception zone"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.32230070379569,
+          2.9849019585336865
+        ]
+      },
+      "properties": {
+        "id": 6,
+        "type": "boom_trap",
+        "name": "Boom Station 6",
+        "priority": "HIGH",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Coastal boom #6 - High waste interception zone"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.32334689650529,
+          2.990739088304703
+        ]
+      },
+      "properties": {
+        "id": 7,
+        "type": "boom_trap",
+        "name": "Boom Station 7",
+        "priority": "LOW",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Boom station #7 - Monitoring point"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.32444363976637,
+          2.9960816401470574
+        ]
+      },
+      "properties": {
+        "id": 8,
+        "type": "boom_trap",
+        "name": "Boom Station 8",
+        "priority": "MEDIUM",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Boom station #8 - Monitoring point"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.32664908332029,
+          2.990576858418432
+        ]
+      },
+      "properties": {
+        "id": 9,
+        "type": "boom_trap",
+        "name": "Boom Station 9",
+        "priority": "LOW",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Boom station #9 - Monitoring point"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.3288545268742,
+          2.985072076689806
+        ]
+      },
+      "properties": {
+        "id": 10,
+        "type": "boom_trap",
+        "name": "Boom Station 10",
+        "priority": "LOW",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Boom station #10 - Monitoring point"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.33085697744053,
+          2.9833969711033475
+        ]
+      },
+      "properties": {
+        "id": 11,
+        "type": "boom_trap",
+        "name": "Boom Station 11",
+        "priority": "MEDIUM",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Boom station #11 - Monitoring point"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.33246813324158,
+          2.989104052681007
+        ]
+      },
+      "properties": {
+        "id": 12,
+        "type": "boom_trap",
+        "name": "Boom Station 12",
+        "priority": "MEDIUM",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Boom station #12 - Monitoring point"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.33407928904262,
+          2.9948111342586663
+        ]
+      },
+      "properties": {
+        "id": 13,
+        "type": "boom_trap",
+        "name": "Boom Station 13",
+        "priority": "LOW",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Boom station #13 - Monitoring point"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.33577395328044,
+          3.000493121281878
+        ]
+      },
+      "properties": {
+        "id": 14,
+        "type": "boom_trap",
+        "name": "Boom Station 14",
+        "priority": "LOW",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Boom station #14 - Monitoring point"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.33757558950312,
+          3.0061429628788128
+        ]
+      },
+      "properties": {
+        "id": 15,
+        "type": "boom_trap",
+        "name": "Boom Station 15",
+        "priority": "MEDIUM",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Boom station #15 - Monitoring point"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.34273532712086,
+          3.0084351691510087
+        ]
+      },
+      "properties": {
+        "id": 16,
+        "type": "boom_trap",
+        "name": "Boom Station 16",
+        "priority": "LOW",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Boom station #16 - Monitoring point"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.34719545389592,
+          3.011772391010971
+        ]
+      },
+      "properties": {
+        "id": 17,
+        "type": "boom_trap",
+        "name": "Boom Station 17",
+        "priority": "MEDIUM",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Mid-river boom #17 - Secondary interception"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.35073567045265,
+          3.0161200575524587
+        ]
+      },
+      "properties": {
+        "id": 18,
+        "type": "boom_trap",
+        "name": "Boom Station 18",
+        "priority": "MEDIUM",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Mid-river boom #18 - Secondary interception"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.35518492456933,
+          3.0131086999502803
+        ]
+      },
+      "properties": {
+        "id": 19,
+        "type": "boom_trap",
+        "name": "Boom Station 19",
+        "priority": "MEDIUM",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Mid-river boom #19 - Secondary interception"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.35945306286612,
+          3.015046408866962
+        ]
+      },
+      "properties": {
+        "id": 20,
+        "type": "boom_trap",
+        "name": "Boom Station 20",
+        "priority": "MEDIUM",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Mid-river boom #20 - Secondary interception"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.36357382908002,
+          3.017089830981637
+        ]
+      },
+      "properties": {
+        "id": 21,
+        "type": "boom_trap",
+        "name": "Boom Station 21",
+        "priority": "MEDIUM",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Mid-river boom #21 - Secondary interception"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.36691585494232,
+          3.012220932603819
+        ]
+      },
+      "properties": {
+        "id": 22,
+        "type": "boom_trap",
+        "name": "Boom Station 22",
+        "priority": "MEDIUM",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Mid-river boom #22 - Secondary interception"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.37125229438053,
+          3.0081759485311528
+        ]
+      },
+      "properties": {
+        "id": 23,
+        "type": "boom_trap",
+        "name": "Boom Station 23",
+        "priority": "MEDIUM",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Mid-river boom #23 - Secondary interception"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.37636986804371,
+          3.0073537923120384
+        ]
+      },
+      "properties": {
+        "id": 24,
+        "type": "boom_trap",
+        "name": "Boom Station 24",
+        "priority": "MEDIUM",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Mid-river boom #24 - Secondary interception"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.37916000367348,
+          3.0026752858186545
+        ]
+      },
+      "properties": {
+        "id": 25,
+        "type": "boom_trap",
+        "name": "Boom Station 25",
+        "priority": "MEDIUM",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Boom station #25 - Monitoring point"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.3846684679868,
+          3.0005985697362294
+        ]
+      },
+      "properties": {
+        "id": 26,
+        "type": "boom_trap",
+        "name": "Boom Station 26",
+        "priority": "MEDIUM",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Boom station #26 - Monitoring point"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.38812171834401,
+          3.004539741347957
+        ]
+      },
+      "properties": {
+        "id": 27,
+        "type": "boom_trap",
+        "name": "Boom Station 27",
+        "priority": "LOW",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Boom station #27 - Monitoring point"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.39181673506428,
+          3.008204062712884
+        ]
+      },
+      "properties": {
+        "id": 28,
+        "type": "boom_trap",
+        "name": "Boom Station 28",
+        "priority": "MEDIUM",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Boom station #28 - Monitoring point"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.39533150464939,
+          3.0034277672956287
+        ]
+      },
+      "properties": {
+        "id": 29,
+        "type": "boom_trap",
+        "name": "Boom Station 29",
+        "priority": "LOW",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Boom station #29 - Monitoring point"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.39977601413896,
+          3.0036215997630924
+        ]
+      },
+      "properties": {
+        "id": 30,
+        "type": "boom_trap",
+        "name": "Boom Station 30",
+        "priority": "LOW",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Boom station #30 - Monitoring point"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.40268581562376,
+          3.008594297462511
+        ]
+      },
+      "properties": {
+        "id": 31,
+        "type": "boom_trap",
+        "name": "Boom Station 31",
+        "priority": "HIGH",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Urban boom #31 - Main pollution source area"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.4084055216849,
+          3.007250653799447
+        ]
+      },
+      "properties": {
+        "id": 32,
+        "type": "boom_trap",
+        "name": "Boom Station 32",
+        "priority": "HIGH",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Urban boom #32 - Main pollution source area"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.4133319587071,
+          3.0042120720979444
+        ]
+      },
+      "properties": {
+        "id": 33,
+        "type": "boom_trap",
+        "name": "Boom Station 33",
+        "priority": "HIGH",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Urban boom #33 - Main pollution source area"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.41655514565456,
+          3.005331753143159
+        ]
+      },
+      "properties": {
+        "id": 34,
+        "type": "boom_trap",
+        "name": "Boom Station 34",
+        "priority": "HIGH",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Urban boom #34 - Main pollution source area"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.4212322091519,
+          3.0031910570536504
+        ]
+      },
+      "properties": {
+        "id": 35,
+        "type": "boom_trap",
+        "name": "Boom Station 35",
+        "priority": "HIGH",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Urban boom #35 - Main pollution source area"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.42632421455986,
+          3.0030416760465126
+        ]
+      },
+      "properties": {
+        "id": 36,
+        "type": "boom_trap",
+        "name": "Boom Station 36",
+        "priority": "HIGH",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Urban boom #36 - Main pollution source area"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.4300452413636,
+          2.9995964571640146
+        ]
+      },
+      "properties": {
+        "id": 37,
+        "type": "boom_trap",
+        "name": "Boom Station 37",
+        "priority": "HIGH",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Urban boom #37 - Main pollution source area"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.4329749619339,
+          2.994440553700095
+        ]
+      },
+      "properties": {
+        "id": 38,
+        "type": "boom_trap",
+        "name": "Boom Station 38",
+        "priority": "HIGH",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Urban boom #38 - Main pollution source area"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.43782045072966,
+          2.9964204863965724
+        ]
+      },
+      "properties": {
+        "id": 39,
+        "type": "boom_trap",
+        "name": "Boom Station 39",
+        "priority": "HIGH",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Urban boom #39 - Main pollution source area"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.44230538535366,
+          3.000300172539526
+        ]
+      },
+      "properties": {
+        "id": 40,
+        "type": "boom_trap",
+        "name": "Boom Station 40",
+        "priority": "HIGH",
+        "color": "#FF6B35",
+        "pulse_rate": 2.0,
+        "description": "Urban boom #40 - Main pollution source area"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.44766492531035,
+          3.001515142747365
+        ]
+      },
+      "properties": {
+        "id": 41,
+        "type": "water_quality",
+        "name": "WQ Sensor 1",
+        "priority": "MEDIUM",
+        "color": "#4ECDC4",
+        "pulse_rate": 3.0,
+        "description": "Water quality monitoring - pH, turbidity, DO, heavy metals"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.4532059836629,
+          2.9998366220006223
+        ]
+      },
+      "properties": {
+        "id": 42,
+        "type": "water_quality",
+        "name": "WQ Sensor 2",
+        "priority": "MEDIUM",
+        "color": "#4ECDC4",
+        "pulse_rate": 3.0,
+        "description": "Water quality monitoring - pH, turbidity, DO, heavy metals"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.45753640199004,
+          2.996000123925511
+        ]
+      },
+      "properties": {
+        "id": 43,
+        "type": "water_quality",
+        "name": "WQ Sensor 3",
+        "priority": "MEDIUM",
+        "color": "#4ECDC4",
+        "pulse_rate": 3.0,
+        "description": "Water quality monitoring - pH, turbidity, DO, heavy metals"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.45873943556084,
+          2.9902791949406087
+        ]
+      },
+      "properties": {
+        "id": 44,
+        "type": "water_quality",
+        "name": "WQ Sensor 4",
+        "priority": "MEDIUM",
+        "color": "#4ECDC4",
+        "pulse_rate": 3.0,
+        "description": "Water quality monitoring - pH, turbidity, DO, heavy metals"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.45955377841703,
+          2.9844052312990907
+        ]
+      },
+      "properties": {
+        "id": 45,
+        "type": "water_quality",
+        "name": "WQ Sensor 5",
+        "priority": "MEDIUM",
+        "color": "#4ECDC4",
+        "pulse_rate": 3.0,
+        "description": "Water quality monitoring - pH, turbidity, DO, heavy metals"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.4603681212732,
+          2.978531267657573
+        ]
+      },
+      "properties": {
+        "id": 46,
+        "type": "water_quality",
+        "name": "WQ Sensor 6",
+        "priority": "MEDIUM",
+        "color": "#4ECDC4",
+        "pulse_rate": 3.0,
+        "description": "Water quality monitoring - pH, turbidity, DO, heavy metals"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.4611824641294,
+          2.9726573040160553
+        ]
+      },
+      "properties": {
+        "id": 47,
+        "type": "water_quality",
+        "name": "WQ Sensor 7",
+        "priority": "MEDIUM",
+        "color": "#4ECDC4",
+        "pulse_rate": 3.0,
+        "description": "Water quality monitoring - pH, turbidity, DO, heavy metals"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.46346605224161,
+          2.9745984143407584
+        ]
+      },
+      "properties": {
+        "id": 48,
+        "type": "water_quality",
+        "name": "WQ Sensor 8",
+        "priority": "MEDIUM",
+        "color": "#4ECDC4",
+        "pulse_rate": 3.0,
+        "description": "Water quality monitoring - pH, turbidity, DO, heavy metals"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.46485871366289,
+          2.9720174823462084
+        ]
+      },
+      "properties": {
+        "id": 49,
+        "type": "water_quality",
+        "name": "WQ Sensor 9",
+        "priority": "MEDIUM",
+        "color": "#4ECDC4",
+        "pulse_rate": 3.0,
+        "description": "Water quality monitoring - pH, turbidity, DO, heavy metals"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.4656134344558,
+          2.9661355609191546
+        ]
+      },
+      "properties": {
+        "id": 50,
+        "type": "water_quality",
+        "name": "WQ Sensor 10",
+        "priority": "MEDIUM",
+        "color": "#4ECDC4",
+        "pulse_rate": 3.0,
+        "description": "Water quality monitoring - pH, turbidity, DO, heavy metals"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.46636815524872,
+          2.960253639492101
+        ]
+      },
+      "properties": {
+        "id": 51,
+        "type": "water_quality",
+        "name": "WQ Sensor 11",
+        "priority": "MEDIUM",
+        "color": "#4ECDC4",
+        "pulse_rate": 3.0,
+        "description": "Water quality monitoring - pH, turbidity, DO, heavy metals"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.46712287604163,
+          2.954371718065047
+        ]
+      },
+      "properties": {
+        "id": 52,
+        "type": "water_quality",
+        "name": "WQ Sensor 12",
+        "priority": "MEDIUM",
+        "color": "#4ECDC4",
+        "pulse_rate": 3.0,
+        "description": "Water quality monitoring - pH, turbidity, DO, heavy metals"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.47008396648963,
+          2.9493150840579307
+        ]
+      },
+      "properties": {
+        "id": 53,
+        "type": "water_quality",
+        "name": "WQ Sensor 13",
+        "priority": "MEDIUM",
+        "color": "#4ECDC4",
+        "pulse_rate": 3.0,
+        "description": "Water quality monitoring - pH, turbidity, DO, heavy metals"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.47551808911754,
+          2.9472805381581724
+        ]
+      },
+      "properties": {
+        "id": 54,
+        "type": "water_quality",
+        "name": "WQ Sensor 14",
+        "priority": "MEDIUM",
+        "color": "#4ECDC4",
+        "pulse_rate": 3.0,
+        "description": "Water quality monitoring - pH, turbidity, DO, heavy metals"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.48134662213316,
+          2.9483736099926108
+        ]
+      },
+      "properties": {
+        "id": 55,
+        "type": "water_quality",
+        "name": "WQ Sensor 15",
+        "priority": "MEDIUM",
+        "color": "#4ECDC4",
+        "pulse_rate": 3.0,
+        "description": "Water quality monitoring - pH, turbidity, DO, heavy metals"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.48650025718975,
+          2.951058826605326
+        ]
+      },
+      "properties": {
+        "id": 56,
+        "type": "biochar_facility",
+        "name": "Biochar Plant 1",
+        "priority": "LOW",
+        "color": "#95E1D3",
+        "pulse_rate": 4.0,
+        "description": "Organic waste to biochar conversion facility"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.48941112362498,
+          2.956053853723389
+        ]
+      },
+      "properties": {
+        "id": 57,
+        "type": "biochar_facility",
+        "name": "Biochar Plant 2",
+        "priority": "LOW",
+        "color": "#95E1D3",
+        "pulse_rate": 4.0,
+        "description": "Organic waste to biochar conversion facility"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.49114644771892,
+          2.9617244139636356
+        ]
+      },
+      "properties": {
+        "id": 58,
+        "type": "biochar_facility",
+        "name": "Biochar Plant 3",
+        "priority": "LOW",
+        "color": "#95E1D3",
+        "pulse_rate": 4.0,
+        "description": "Organic waste to biochar conversion facility"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.49288177181286,
+          2.9673949742038817
+        ]
+      },
+      "properties": {
+        "id": 59,
+        "type": "mrf_site",
+        "name": "MRF Facility 1",
+        "priority": "MEDIUM",
+        "color": "#F38181",
+        "pulse_rate": 4.0,
+        "description": "Material Recovery Facility - plastic sorting"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.4946293432981,
+          2.9730583943186666
+        ]
+      },
+      "properties": {
+        "id": 60,
+        "type": "mrf_site",
+        "name": "MRF Facility 2",
+        "priority": "MEDIUM",
+        "color": "#F38181",
+        "pulse_rate": 4.0,
+        "description": "Material Recovery Facility - plastic sorting"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.49870900501834,
+          2.977362225565091
+        ]
+      },
+      "properties": {
+        "id": 61,
+        "type": "pollutant_sensor",
+        "name": "Pollutant Sensor 1",
+        "priority": "HIGH",
+        "color": "#AA96DA",
+        "pulse_rate": 2.5,
+        "description": "Microplastics, chemical runoff, industrial emissions"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.5018613271051,
+          2.982154859917192
+        ]
+      },
+      "properties": {
+        "id": 62,
+        "type": "pollutant_sensor",
+        "name": "Pollutant Sensor 2",
+        "priority": "HIGH",
+        "color": "#AA96DA",
+        "pulse_rate": 2.5,
+        "description": "Microplastics, chemical runoff, industrial emissions"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.50310635337453,
+          2.9879528347996596
+        ]
+      },
+      "properties": {
+        "id": 63,
+        "type": "pollutant_sensor",
+        "name": "Pollutant Sensor 3",
+        "priority": "MEDIUM",
+        "color": "#AA96DA",
+        "pulse_rate": 2.5,
+        "description": "Microplastics, chemical runoff, industrial emissions"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.50435137964396,
+          2.9937508096821266
+        ]
+      },
+      "properties": {
+        "id": 64,
+        "type": "pollutant_sensor",
+        "name": "Pollutant Sensor 4",
+        "priority": "MEDIUM",
+        "color": "#AA96DA",
+        "pulse_rate": 2.5,
+        "description": "Microplastics, chemical runoff, industrial emissions"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.50559640591338,
+          2.999548784564594
+        ]
+      },
+      "properties": {
+        "id": 65,
+        "type": "pollutant_sensor",
+        "name": "Pollutant Sensor 5",
+        "priority": "MEDIUM",
+        "color": "#AA96DA",
+        "pulse_rate": 2.5,
+        "description": "Microplastics, chemical runoff, industrial emissions"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.50914969714208,
+          3.0042011631560133
+        ]
+      },
+      "properties": {
+        "id": 66,
+        "type": "pollutant_sensor",
+        "name": "Pollutant Sensor 6",
+        "priority": "MEDIUM",
+        "color": "#AA96DA",
+        "pulse_rate": 2.5,
+        "description": "Microplastics, chemical runoff, industrial emissions"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.51225954413684,
+          3.0091413790808326
+        ]
+      },
+      "properties": {
+        "id": 67,
+        "type": "pollutant_sensor",
+        "name": "Pollutant Sensor 7",
+        "priority": "MEDIUM",
+        "color": "#AA96DA",
+        "pulse_rate": 2.5,
+        "description": "Microplastics, chemical runoff, industrial emissions"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.51447255164352,
+          3.0145706965721613
+        ]
+      },
+      "properties": {
+        "id": 68,
+        "type": "pollutant_sensor",
+        "name": "Pollutant Sensor 8",
+        "priority": "HIGH",
+        "color": "#AA96DA",
+        "pulse_rate": 2.5,
+        "description": "Microplastics, chemical runoff, industrial emissions"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.51942623304673,
+          3.0178307032753477
+        ]
+      },
+      "properties": {
+        "id": 69,
+        "type": "pollutant_sensor",
+        "name": "Pollutant Sensor 9",
+        "priority": "HIGH",
+        "color": "#AA96DA",
+        "pulse_rate": 2.5,
+        "description": "Microplastics, chemical runoff, industrial emissions"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.52207592630914,
+          3.022751275234235
+        ]
+      },
+      "properties": {
+        "id": 70,
+        "type": "pollutant_sensor",
+        "name": "Pollutant Sensor 10",
+        "priority": "HIGH",
+        "color": "#AA96DA",
+        "pulse_rate": 2.5,
+        "description": "Microplastics, chemical runoff, industrial emissions"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.52360196712256,
+          3.0284817030180102
+        ]
+      },
+      "properties": {
+        "id": 71,
+        "type": "flood_monitor",
+        "name": "Flood Monitor 1",
+        "priority": "MEDIUM",
+        "color": "#5B9BD5",
+        "pulse_rate": 3.5,
+        "description": "Water surge and hydrological monitoring"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.52772327788153,
+          3.030436691568966
+        ]
+      },
+      "properties": {
+        "id": 72,
+        "type": "flood_monitor",
+        "name": "Flood Monitor 2",
+        "priority": "MEDIUM",
+        "color": "#5B9BD5",
+        "pulse_rate": 3.5,
+        "description": "Water surge and hydrological monitoring"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.53331326422067,
+          3.0286147469657343
+        ]
+      },
+      "properties": {
+        "id": 73,
+        "type": "flood_monitor",
+        "name": "Flood Monitor 3",
+        "priority": "MEDIUM",
+        "color": "#5B9BD5",
+        "pulse_rate": 3.5,
+        "description": "Water surge and hydrological monitoring"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.53919794886531,
+          3.028038889911294
+        ]
+      },
+      "properties": {
+        "id": 74,
+        "type": "flood_monitor",
+        "name": "Flood Monitor 4",
+        "priority": "MEDIUM",
+        "color": "#5B9BD5",
+        "pulse_rate": 3.5,
+        "description": "Water surge and hydrological monitoring"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.54500812199905,
+          3.0292256886748987
+        ]
+      },
+      "properties": {
+        "id": 75,
+        "type": "flood_monitor",
+        "name": "Flood Monitor 5",
+        "priority": "MEDIUM",
+        "color": "#5B9BD5",
+        "pulse_rate": 3.5,
+        "description": "Water surge and hydrological monitoring"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.55086187381212,
+          3.028710276786652
+        ]
+      },
+      "properties": {
+        "id": 76,
+        "type": "flood_monitor",
+        "name": "Flood Monitor 6",
+        "priority": "MEDIUM",
+        "color": "#5B9BD5",
+        "pulse_rate": 3.5,
+        "description": "Water surge and hydrological monitoring"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.55491752754963,
+          3.032291452237281
+        ]
+      },
+      "properties": {
+        "id": 77,
+        "type": "flood_monitor",
+        "name": "Flood Monitor 7",
+        "priority": "MEDIUM",
+        "color": "#5B9BD5",
+        "pulse_rate": 3.5,
+        "description": "Water surge and hydrological monitoring"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.56010199084949,
+          3.035170331088815
+        ]
+      },
+      "properties": {
+        "id": 78,
+        "type": "flood_monitor",
+        "name": "Flood Monitor 8",
+        "priority": "MEDIUM",
+        "color": "#5B9BD5",
+        "pulse_rate": 3.5,
+        "description": "Water surge and hydrological monitoring"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.56316700475521,
+          3.0401851580631
+        ]
+      },
+      "properties": {
+        "id": 79,
+        "type": "wildlife_camera",
+        "name": "Wildlife Cam 1",
+        "priority": "LOW",
+        "color": "#70AD47",
+        "pulse_rate": 5.0,
+        "description": "AI-based wildlife and biodiversity monitoring"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.56713436693313,
+          3.044591546117667
+        ]
+      },
+      "properties": {
+        "id": 80,
+        "type": "wildlife_camera",
+        "name": "Wildlife Cam 2",
+        "priority": "LOW",
+        "color": "#70AD47",
+        "pulse_rate": 5.0,
+        "description": "AI-based wildlife and biodiversity monitoring"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.5689746226322,
+          3.0500988283432586
+        ]
+      },
+      "properties": {
+        "id": 81,
+        "type": "wildlife_camera",
+        "name": "Wildlife Cam 3",
+        "priority": "LOW",
+        "color": "#70AD47",
+        "pulse_rate": 5.0,
+        "description": "AI-based wildlife and biodiversity monitoring"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.5702791696545,
+          3.0558837017399623
+        ]
+      },
+      "properties": {
+        "id": 82,
+        "type": "wildlife_camera",
+        "name": "Wildlife Cam 4",
+        "priority": "LOW",
+        "color": "#70AD47",
+        "pulse_rate": 5.0,
+        "description": "AI-based wildlife and biodiversity monitoring"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.57148102909682,
+          3.0616885078576344
+        ]
+      },
+      "properties": {
+        "id": 83,
+        "type": "wildlife_camera",
+        "name": "Wildlife Cam 5",
+        "priority": "LOW",
+        "color": "#70AD47",
+        "pulse_rate": 5.0,
+        "description": "AI-based wildlife and biodiversity monitoring"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.57243548072981,
+          3.0675413383890566
+        ]
+      },
+      "properties": {
+        "id": 84,
+        "type": "wildlife_camera",
+        "name": "Wildlife Cam 6",
+        "priority": "LOW",
+        "color": "#70AD47",
+        "pulse_rate": 5.0,
+        "description": "AI-based wildlife and biodiversity monitoring"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.5739935845077,
+          3.0729726630247627
+        ]
+      },
+      "properties": {
+        "id": 85,
+        "type": "wildlife_camera",
+        "name": "Wildlife Cam 7",
+        "priority": "LOW",
+        "color": "#70AD47",
+        "pulse_rate": 5.0,
+        "description": "AI-based wildlife and biodiversity monitoring"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.57915940214299,
+          3.0758848668823626
+        ]
+      },
+      "properties": {
+        "id": 86,
+        "type": "wildlife_camera",
+        "name": "Wildlife Cam 8",
+        "priority": "LOW",
+        "color": "#70AD47",
+        "pulse_rate": 5.0,
+        "description": "AI-based wildlife and biodiversity monitoring"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.58393620119293,
+          3.0792586777050754
+        ]
+      },
+      "properties": {
+        "id": 87,
+        "type": "wildlife_camera",
+        "name": "Wildlife Cam 9",
+        "priority": "LOW",
+        "color": "#70AD47",
+        "pulse_rate": 5.0,
+        "description": "AI-based wildlife and biodiversity monitoring"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.58768157692276,
+          3.0838563688421146
+        ]
+      },
+      "properties": {
+        "id": 88,
+        "type": "wildlife_camera",
+        "name": "Wildlife Cam 10",
+        "priority": "LOW",
+        "color": "#70AD47",
+        "pulse_rate": 5.0,
+        "description": "AI-based wildlife and biodiversity monitoring"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.58843046009846,
+          3.089711311977465
+        ]
+      },
+      "properties": {
+        "id": 89,
+        "type": "wildlife_camera",
+        "name": "Wildlife Cam 11",
+        "priority": "LOW",
+        "color": "#70AD47",
+        "pulse_rate": 5.0,
+        "description": "AI-based wildlife and biodiversity monitoring"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          101.589087,
+          3.095605
+        ]
+      },
+      "properties": {
+        "id": 90,
+        "type": "wildlife_camera",
+        "name": "Wildlife Cam 12",
+        "priority": "LOW",
+        "color": "#70AD47",
+        "pulse_rate": 5.0,
+        "description": "AI-based wildlife and biodiversity monitoring"
+      }
+    }
+  ]
+}
