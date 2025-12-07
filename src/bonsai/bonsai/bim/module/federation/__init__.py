@@ -42,6 +42,10 @@ from pathlib import Path
 from . import ui, prop, operator, discipline_legend, cache_monitor, color_palette, crud_operators
 # from . import ui_federation_tab  # Old experimental sandbox - replaced by ui_federation_project
 from . import ui_federation_project  # Clean enterprise layout under Project Overview
+# from . import river_ecosystem_ui  # River Ecosystem Model - Item 11 (ARCHIVED - rebuilding from scratch)
+from . import river_equipment_placement  # River Equipment Placement - Item 11 (Phase 1 POC)
+from . import river_equipment_gizmo  # Equipment Gizmo visualization
+# from . import equipment_placement  # Equipment Placement Tool - Item 12 (ARCHIVED - rebuilding POC)
 from .loading.unified_progressive_loader import GlassOutlineLoader
 from .clash import gizmo
 from .tandem import ui as tandem_ui, operator as tandem_operator, sensor_overlay
@@ -170,6 +174,32 @@ classes = (
     ui_federation_project.BIM_PT_nlp_query,
     ui_federation_project.BIM_PT_visualization_settings,     # #10 - parent for Color
 
+    # River Equipment Placement - Item 11 (Phase 1 POC)
+    river_equipment_placement.BIM_PT_river_equipment_placement,
+    river_equipment_placement.BIM_OT_equipment_select_type,
+    river_equipment_placement.BIM_OT_equipment_place_marker,
+    river_equipment_placement.BIM_OT_equipment_load_from_db,
+    river_equipment_placement.BIM_OT_equipment_view_properties,
+    river_equipment_placement.BIM_OT_equipment_view_sensor_dashboard,
+    river_equipment_placement.BIM_OT_equipment_clear_all,
+
+    # 7D Maintenance - Right-click Context Menu
+    river_equipment_placement.BIM_MT_equipment_context_menu,
+    river_equipment_placement.BIM_OT_equipment_view_pm_schedule,
+    river_equipment_placement.BIM_OT_equipment_log_breakdown,
+    river_equipment_placement.BIM_OT_equipment_create_work_order,
+
+    # Equipment Gizmos (GPU-drawn spheres)
+    river_equipment_gizmo.EquipmentMarkerGizmo,
+    river_equipment_gizmo.EquipmentMarkerGizmoGroup,
+
+    # Equipment Placement - Item 12 (ARCHIVED - rebuilding POC)
+    # equipment_placement.BIM_PT_equipment_placement,
+    # equipment_placement.BIM_OT_equipment_select_type,
+    # equipment_placement.BIM_OT_equipment_place_marker,
+    # equipment_placement.BIM_OT_equipment_export,
+    # equipment_placement.BIM_OT_equipment_clear,
+
     # OLD UI PANELS - Commented out for clean POC
     # ui.BIM_PT_tab_federation,
     # ui.BIM_PT_tab_clash_detection,
@@ -297,6 +327,78 @@ def restore_federation_index_on_load(dummy):
                 print(f"⚠ Could not restore federation index: {e}")
 
 
+@persistent
+def restore_equipment_on_load(dummy):
+    """
+    Restore river equipment markers when .blend file is loaded.
+
+    Equipment Empty objects ARE saved in .blend file, but the
+    PLACED_EQUIPMENT runtime dictionary is not. This handler
+    reconstructs the dictionary from existing scene objects,
+    allowing gizmos to auto-appear on file open.
+    """
+    if not hasattr(bpy.context, 'scene'):
+        return
+
+    try:
+        # Import equipment placement module to access PLACED_EQUIPMENT
+        from . import river_equipment_placement
+
+        # Clear existing data
+        for equipment_type in river_equipment_placement.EQUIPMENT_TYPES.keys():
+            river_equipment_placement.PLACED_EQUIPMENT[equipment_type] = []
+
+        # Equipment name patterns to scan for
+        equipment_map = {
+            'BOOM_TRAP_': 'boom_trap',
+            'WATER_QUALITY_': 'water_quality',
+            'BIODIVERSITY_': 'biodiversity'
+        }
+
+        # Scan scene for equipment Empty objects
+        total_restored = 0
+        for obj in bpy.data.objects:
+            if obj.type == 'EMPTY':
+                for prefix, eq_type in equipment_map.items():
+                    if obj.name.startswith(prefix):
+                        # Extract number from name (e.g., BOOM_TRAP_001 → 1)
+                        try:
+                            num_str = obj.name.replace(prefix, '')
+                            number = int(num_str)
+                        except:
+                            number = len(river_equipment_placement.PLACED_EQUIPMENT[eq_type]) + 1
+
+                        # Add to PLACED_EQUIPMENT dictionary
+                        river_equipment_placement.PLACED_EQUIPMENT[eq_type].append({
+                            'id': obj.name,
+                            'number': number,
+                            'x': obj.location.x,
+                            'y': obj.location.y,
+                            'z': obj.location.z,
+                            'object': obj,
+                            'object_name': obj.name
+                        })
+                        total_restored += 1
+                        break
+
+        if total_restored > 0:
+            print(f"✓ River Equipment: Restored {total_restored} equipment markers from scene")
+
+            # Log details per type
+            for eq_type, items in river_equipment_placement.PLACED_EQUIPMENT.items():
+                if items:
+                    eq_name = river_equipment_placement.EQUIPMENT_TYPES[eq_type]['name']
+                    print(f"  • {eq_name}: {len(items)} markers")
+
+            # Force gizmo refresh
+            for area in bpy.context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    area.tag_redraw()
+
+    except Exception as e:
+        print(f"⚠ Could not restore river equipment markers: {e}")
+
+
 def register():
     """Called when addon is enabled"""
     # Attach properties to Blender's Scene
@@ -332,6 +434,18 @@ def register():
     )
     bpy.types.Scene.bim_tandem_work_orders_index = bpy.props.IntProperty()
 
+    # River Equipment Placement properties (Phase 1 POC)
+    from bpy.props import EnumProperty
+    bpy.types.Scene.equipment_marker_type = EnumProperty(
+        name="Equipment Type",
+        items=[
+            ('boom_trap', 'Boom Trap Station', 'Boom Trap Station'),
+            ('water_quality', 'Water Quality Station', 'Water Quality Station'),
+            ('biodiversity', 'Biodiversity Monitor', 'Biodiversity Monitor'),
+        ],
+        default='boom_trap'
+    )
+
     # Register federation analysis properties on BIMClashProperties
     prop.register_federation_properties()
 
@@ -339,13 +453,28 @@ def register():
     if restore_federation_index_on_load not in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.append(restore_federation_index_on_load)
 
-    print("✓ federation module registered (consolidated + Digital Twin)")
+    # Register load handler to restore river equipment markers
+    if restore_equipment_on_load not in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.append(restore_equipment_on_load)
+
+    # Register equipment context menu (right-click on equipment)
+    bpy.types.VIEW3D_MT_object_context_menu.append(river_equipment_placement.menu_func)
+
+    # Equipment Placement properties (ARCHIVED - rebuilding POC)
+    # equipment_placement.register()
+
+    print("✓ federation module registered (consolidated + Digital Twin + River Equipment + 7D Maintenance)")
 
 def unregister():
     """Called when addon is disabled - cleanup"""
-    # Remove load handler
+    # Remove load handlers
     if restore_federation_index_on_load in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.remove(restore_federation_index_on_load)
+    if restore_equipment_on_load in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.remove(restore_equipment_on_load)
+
+    # Remove equipment context menu
+    bpy.types.VIEW3D_MT_object_context_menu.remove(river_equipment_placement.menu_func)
 
     # Unregister federation analysis properties from BIMClashProperties
     prop.unregister_federation_properties()
@@ -356,6 +485,13 @@ def unregister():
     del bpy.types.Scene.bim_tandem_assets_index
     del bpy.types.Scene.bim_tandem_assets
     del bpy.types.Scene.BIMTandemProperties
+
+    # River Equipment Placement cleanup (Phase 1 POC)
+    if hasattr(bpy.types.Scene, 'equipment_marker_type'):
+        del bpy.types.Scene.equipment_marker_type
+
+    # Equipment Placement cleanup (ARCHIVED - rebuilding POC)
+    # equipment_placement.unregister()
 
     # Remove properties from Scene
     del bpy.types.Scene.BIMFederationProperties
