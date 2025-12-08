@@ -133,12 +133,161 @@ EQUIPMENT_TYPES = {
     },
 }
 
+# =============================================================================
+# SENSOR TYPE ICON & COLOR MAPPINGS (Centralized)
+# =============================================================================
+
+# Sensor emoji icons - used in dashboard GPU overlay and popup displays
+SENSOR_TYPE_ICONS = {
+    # Boom Trap sensors
+    'loadcell': '⚖️',
+    'integrity': '🔧',
+    'waterlevel': '🌊',
+    'flowvelocity': '💨',
+    'camera': '📹',
+    'vibration': '📳',
+    'gps_drift': '🛰️',
+    'powerusage': '🔋',
+
+    # Water Quality sensors
+    'turbidity': '☁️',
+    'heavymetals': '☢️',
+    'ph': '🧪',
+    'dissolvedoxygen': '💧',
+    'temperature': '🌡️',
+    'conductivity': '⚡',
+    'nitrate': '🧬',
+    'phosphate': '💎',
+
+    # Biodiversity sensors
+    'aicamera': '📷',
+    'pirmotion': '👁️',
+    'thermalcamera': '🔥',
+    'audiorecorder': '🎤',
+    'ultrasonic': '🦇',
+    'ndvi': '🌿',
+    'soilmoisture': '🌱',
+    'canopy_height': '🌳',
+
+    # Biochar Facility sensors
+    'feedstock_mass': '🪵',
+    'biochar_yield': '⚫',
+    'pyrolysis_temp': '🔥',
+    'carbon_content': '💨',
+    'co2_emissions': '🌫️',
+    'particulate': '💨',
+    'reactor_pressure': '🔩',
+    'energy_consumption': '⚡',
+
+    # MRF Site sensors
+    'conveyor_load': '📦',
+    'pet_stream': '♻️',
+    'hdpe_stream': '🥤',
+    'organic_stream': '🍃',
+    'contamination': '⚠️',
+    'ai_sorter_accuracy': '🤖',
+    'throughput': '📊',
+    'power_usage': '🔌',
+
+    # Flood Monitor sensors
+    'flowrate': '🌊',
+    'rainfall': '🌧️',
+    'barometric': '🌐',
+    'velocity_spike': '⚡',
+    'debris_radar': '📡',
+    'bridge_clearance': '🌉',
+    'siren_status': '🚨',
+
+    # Pollutant Sensor sensors
+    'voc': '💨',
+    'cod': '🧪',
+    'bod': '🦠',
+    'tss': '🌫️',
+    'oil_grease': '🛢️',
+    'cyanide': '☠️',
+    'phenols': '⚗️',
+}
+
+# Sensor color mappings - RGB tuples for dashboard visualization
+SENSOR_TYPE_COLORS = {
+    # Boom Trap sensors
+    'loadcell': (0.0, 0.5, 1.0),           # Blue
+    'integrity': (1.0, 0.6, 0.0),          # Orange
+    'waterlevel': (0.53, 0.81, 0.92),      # Light Blue
+    'flowvelocity': (0.0, 0.8, 0.8),       # Teal
+    'camera': (0.6, 0.4, 0.8),             # Purple
+    'vibration': (1.0, 0.75, 0.0),         # Amber
+    'gps_drift': (0.68, 0.85, 0.68),       # Light Green
+    'powerusage': (1.0, 1.0, 0.0),         # Yellow
+
+    # Water Quality sensors
+    'turbidity': (0.6, 0.4, 0.2),          # Brown
+    'heavymetals': (1.0, 0.0, 0.0),        # Red
+    'ph': (0.75, 1.0, 0.0),                # Lime
+    'dissolvedoxygen': (0.0, 1.0, 1.0),    # Cyan
+    'temperature': (1.0, 0.27, 0.0),       # Orange-Red
+    'conductivity': (0.93, 0.51, 0.93),    # Violet
+    'nitrate': (0.0, 0.8, 0.0),            # Green
+    'phosphate': (0.8, 1.0, 0.0),          # Yellow-Green
+
+    # Biodiversity sensors
+    'aicamera': (0.90, 0.70, 1.0),         # Lavender
+    'pirmotion': (1.0, 1.0, 0.4),          # Bright Yellow
+    'thermalcamera': (1.0, 0.1, 0.1),      # Bright Red
+    'audiorecorder': (1.0, 0.0, 1.0),      # Magenta
+    'ultrasonic': (0.53, 0.81, 0.98),      # Sky Blue
+    'ndvi': (0.13, 0.55, 0.13),            # Forest Green
+    'soilmoisture': (0.6, 0.4, 0.2),       # Soil Brown
+    'canopy_height': (0.5, 1.0, 0.0),      # Bright Green
+
+    # Biochar Facility sensors
+    'feedstock_mass': (0.82, 0.71, 0.55),  # Tan
+    'biochar_yield': (0.33, 0.33, 0.33),   # Dark Grey
+    'pyrolysis_temp': (1.0, 0.15, 0.0),    # Fire Red
+    'carbon_content': (0.18, 0.18, 0.18),  # Charcoal
+    'co2_emissions': (0.5, 0.5, 0.5),      # Grey
+    'particulate': (0.75, 0.75, 0.75),     # Light Grey
+    'reactor_pressure': (1.0, 0.84, 0.0),  # Gold
+    'energy_consumption': (1.0, 1.0, 0.2), # Bright Yellow
+
+    # MRF Site sensors
+    'conveyor_load': (0.42, 0.56, 0.64),   # Blue-Grey
+    'pet_stream': (0.68, 0.85, 0.90),      # Light Blue
+    'hdpe_stream': (0.96, 0.96, 0.96),     # White
+    'organic_stream': (0.5, 0.5, 0.0),     # Olive
+    'contamination': (1.0, 0.6, 0.0),      # Orange
+    'ai_sorter_accuracy': (0.0, 1.0, 1.0), # Bright Cyan
+    'throughput': (0.8, 0.8, 1.0),         # Periwinkle
+    'power_usage': (1.0, 1.0, 0.2),        # Bright Yellow
+
+    # Flood Monitor sensors
+    'flowrate': (0.0, 0.4, 0.8),           # Ocean Blue
+    'rainfall': (0.4, 0.6, 0.8),           # Rain Blue
+    'barometric': (0.7, 0.75, 0.78),       # Light Blue-Grey
+    'velocity_spike': (1.0, 0.2, 0.2),     # Alert Red
+    'debris_radar': (1.0, 0.75, 0.0),      # Amber
+    'bridge_clearance': (0.6, 0.98, 0.6),  # Mint
+    'siren_status': (1.0, 0.0, 0.0),       # Alarm Red
+
+    # Pollutant Sensor sensors
+    'voc': (1.0, 0.75, 0.80),              # Pink
+    'cod': (0.6, 0.4, 0.2),                # Brown
+    'bod': (0.4, 0.3, 0.2),                # Mud
+    'tss': (0.96, 0.96, 0.86),             # Beige
+    'oil_grease': (0.1, 0.1, 0.1),         # Oil Black
+    'cyanide': (1.0, 1.0, 0.5),            # Toxic Yellow
+    'phenols': (1.0, 0.4, 0.6),            # Rose
+}
+
 # Global storage for placed equipment
 PLACED_EQUIPMENT = {key: [] for key in EQUIPMENT_TYPES.keys()}
 
 LOGGER.log(f"Loaded {len(EQUIPMENT_TYPES)} equipment types:")
 for key, info in EQUIPMENT_TYPES.items():
     LOGGER.log(f"  • {info['name']} - RGB{info['color']}")
+
+LOGGER.log(f"Loaded {len(SENSOR_TYPE_ICONS)} sensor type icons")
+LOGGER.log(f"Loaded {len(SENSOR_TYPE_COLORS)} sensor type colors")
 
 # =============================================================================
 # OPERATORS
@@ -780,77 +929,7 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
 
             self._sensor_data = []
 
-            # Sensor type colors (RGB) - Comprehensive palette for all sensor types
-            colors = {
-                # Boom Trap sensors
-                'loadcell': (0.3, 0.5, 0.9),           # Blue
-                'integrity': (0.9, 0.5, 0.2),          # Orange
-                'waterlevel': (0.2, 0.7, 0.9),         # Light Blue
-                'flowvelocity': (0.4, 0.8, 0.6),       # Teal
-                'camera': (0.7, 0.3, 0.9),             # Purple
-                'vibration': (0.9, 0.6, 0.3),          # Amber
-                'gps_drift': (0.5, 0.9, 0.5),          # Light Green
-                'powerusage': (0.95, 0.8, 0.2),        # Yellow
-
-                # Water Quality sensors
-                'turbidity': (0.8, 0.6, 0.4),          # Brown
-                'heavymetals': (0.9, 0.3, 0.3),        # Red
-                'ph': (0.6, 0.9, 0.4),                 # Lime
-                'dissolvedoxygen': (0.3, 0.9, 0.6),    # Cyan
-                'temperature': (0.95, 0.6, 0.3),       # Orange-Red
-                'conductivity': (0.7, 0.5, 0.9),       # Violet
-                'nitrate': (0.4, 0.7, 0.3),            # Green
-                'phosphate': (0.8, 0.9, 0.5),          # Yellow-Green
-
-                # Biodiversity sensors
-                'aicamera': (0.6, 0.6, 0.95),          # Lavender
-                'pirmotion': (0.95, 0.9, 0.4),         # Bright Yellow
-                'thermalcamera': (0.95, 0.4, 0.4),     # Bright Red
-                'audiorecorder': (0.8, 0.4, 0.8),      # Magenta
-                'ultrasonic': (0.5, 0.7, 0.9),         # Sky Blue
-                'ndvi': (0.3, 0.8, 0.3),               # Forest Green
-                'soilmoisture': (0.6, 0.5, 0.3),       # Soil Brown
-                'canopy_height': (0.4, 0.9, 0.4),      # Bright Green
-
-                # Biochar Facility sensors
-                'feedstock_mass': (0.7, 0.6, 0.4),     # Tan
-                'biochar_yield': (0.3, 0.3, 0.3),      # Dark Grey
-                'pyrolysis_temp': (0.95, 0.3, 0.2),    # Fire Red
-                'carbon_content': (0.2, 0.2, 0.2),     # Charcoal
-                'co2_emissions': (0.6, 0.6, 0.6),      # Grey
-                'particulate': (0.8, 0.8, 0.7),        # Light Grey
-                'reactor_pressure': (0.9, 0.7, 0.3),   # Gold
-                'energy_consumption': (0.9, 0.9, 0.3), # Bright Yellow
-
-                # MRF Site sensors
-                'conveyor_load': (0.5, 0.5, 0.7),      # Blue-Grey
-                'pet_stream': (0.3, 0.7, 0.9),         # Light Blue
-                'hdpe_stream': (0.9, 0.9, 0.9),        # White
-                'organic_stream': (0.5, 0.7, 0.3),     # Olive
-                'contamination': (0.9, 0.5, 0.3),      # Orange
-                'ai_sorter_accuracy': (0.4, 0.8, 0.95),# Bright Cyan
-                'throughput': (0.7, 0.7, 0.9),         # Periwinkle
-                'power_usage': (0.95, 0.9, 0.4),       # Bright Yellow
-
-                # Flood Monitor sensors
-                'flowrate': (0.2, 0.6, 0.9),           # Ocean Blue
-                'rainfall': (0.5, 0.5, 0.95),          # Rain Blue
-                'barometric': (0.8, 0.8, 0.9),         # Light Blue-Grey
-                'velocity_spike': (0.95, 0.3, 0.3),    # Alert Red
-                'debris_radar': (0.9, 0.6, 0.2),       # Amber
-                'bridge_clearance': (0.6, 0.8, 0.6),   # Mint
-                'siren_status': (0.95, 0.2, 0.2),      # Alarm Red
-
-                # Pollutant Sensor sensors
-                'voc': (0.9, 0.7, 0.9),                # Pink
-                'cod': (0.7, 0.4, 0.3),                # Brown
-                'bod': (0.6, 0.5, 0.4),                # Mud
-                'tss': (0.8, 0.7, 0.6),                # Beige
-                'oil_grease': (0.3, 0.3, 0.2),         # Oil Black
-                'cyanide': (0.95, 0.95, 0.3),          # Toxic Yellow
-                'phenols': (0.9, 0.5, 0.7),            # Rose
-            }
-
+            # Use centralized color mapping for sensors
             for sensor_id, sensor_name, sensor_type, unit, threshold_max in sensors:
                 # Get 7-day readings
                 cursor.execute("""
@@ -877,7 +956,7 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
                         'type': sensor_type,
                         'threshold': threshold_max if threshold_max else max(day_values) * 0.9,
                         'values': day_values,
-                        'color': colors.get(sensor_type, (0.5, 0.5, 0.5))
+                        'color': SENSOR_TYPE_COLORS.get(sensor_type, (0.5, 0.5, 0.5))
                     })
                     LOGGER.log(f"  Loaded: {sensor_name} ({sensor_type})")
 
@@ -1191,78 +1270,8 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
                 blf.disable(font_id, blf.ROTATION)
 
             # Draw sensor icon INSIDE bar (bottom section)
-            # Comprehensive sensor type emoji mapping (54 types)
-            sensor_icons = {
-                # Boom Trap sensors (8)
-                'loadcell': '⚖️',
-                'integrity': '🔧',
-                'waterlevel': '🌊',
-                'flowvelocity': '💨',
-                'camera': '📹',
-                'vibration': '📳',
-                'gps_drift': '🛰️',
-                'powerusage': '🔋',
-
-                # Water Quality sensors (8)
-                'turbidity': '☁️',
-                'heavymetals': '☢️',
-                'ph': '🧪',
-                'dissolvedoxygen': '💧',
-                'temperature': '🌡️',
-                'conductivity': '⚡',
-                'nitrate': '🧬',
-                'phosphate': '💎',
-
-                # Biodiversity sensors (8)
-                'aicamera': '📷',
-                'pirmotion': '👁️',
-                'thermalcamera': '🔥',
-                'audiorecorder': '🎤',
-                'ultrasonic': '🦇',
-                'ndvi': '🌿',
-                'soilmoisture': '🌱',
-                'canopy_height': '🌳',
-
-                # Biochar Facility sensors (8)
-                'feedstock_mass': '🪵',
-                'biochar_yield': '⚫',
-                'pyrolysis_temp': '🔥',
-                'carbon_content': '💨',
-                'co2_emissions': '🌫️',
-                'particulate': '💨',
-                'reactor_pressure': '🔩',
-                'energy_consumption': '⚡',
-
-                # MRF Site sensors (8)
-                'conveyor_load': '📦',
-                'pet_stream': '♻️',
-                'hdpe_stream': '🥤',
-                'organic_stream': '🍃',
-                'contamination': '⚠️',
-                'ai_sorter_accuracy': '🤖',
-                'throughput': '📊',
-                'power_usage': '🔌',
-
-                # Flood Monitor sensors (7)
-                'flowrate': '🌊',
-                'rainfall': '🌧️',
-                'barometric': '🌐',
-                'velocity_spike': '⚡',
-                'debris_radar': '📡',
-                'bridge_clearance': '🌉',
-                'siren_status': '🚨',
-
-                # Pollutant Sensor sensors (7)
-                'voc': '💨',
-                'cod': '🧪',
-                'bod': '🦠',
-                'tss': '🌫️',
-                'oil_grease': '🛢️',
-                'cyanide': '☠️',
-                'phenols': '⚗️',
-            }
-
-            sensor_icon = sensor_icons.get(sensor['type'], '📊')
+            # Use centralized icon mapping
+            sensor_icon = SENSOR_TYPE_ICONS.get(sensor['type'], '📊')
             blf.size(font_id, 32)  # 10% smaller (was 36)
             blf.color(font_id, 1.0, 1.0, 1.0, 0.8)  # Slightly more opaque
             icon_x = bar_x + (bar_width // 2) - 16  # Center icon in bar
@@ -1460,10 +1469,11 @@ class BIM_OT_equipment_view_properties(Operator):
                 for sensor_id, sensor_name, sensor_type, unit, manufacturer, model, sensor_status, api_endpoint, mqtt_topic in sensors:
                     sensor_item = grid.box()
 
-                    # Sensor header
+                    # Sensor header with emoji icon
                     row = sensor_item.row()
+                    sensor_emoji = SENSOR_TYPE_ICONS.get(sensor_type, '📊')
                     status_icon = 'CHECKMARK' if sensor_status == 'ACTIVE' else 'QUESTION' if sensor_status == 'PROVISIONED' else 'ERROR'
-                    row.label(text=sensor_name, icon=status_icon)
+                    row.label(text=f"{sensor_emoji} {sensor_name}", icon=status_icon)
 
                     # Sensor details
                     col = sensor_item.column(align=True)
