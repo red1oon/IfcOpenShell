@@ -348,8 +348,23 @@ class BIM_OT_equipment_place_marker(Operator):
         empty.color = (*color, 1.0)  # RGBA
         empty.show_in_front = True  # Always visible on top
 
-        # Add to scene
-        context.collection.objects.link(empty)
+        # Get or create collection for this equipment type
+        parent_collection_name = "River Equipment"
+        if parent_collection_name not in bpy.data.collections:
+            parent_collection = bpy.data.collections.new(parent_collection_name)
+            context.scene.collection.children.link(parent_collection)
+        else:
+            parent_collection = bpy.data.collections[parent_collection_name]
+
+        collection_name = equipment_info['name'] + 's'  # Plural
+        if collection_name not in bpy.data.collections:
+            eq_collection = bpy.data.collections.new(collection_name)
+            parent_collection.children.link(eq_collection)
+        else:
+            eq_collection = bpy.data.collections[collection_name]
+
+        # Add to type-specific collection
+        eq_collection.objects.link(empty)
 
         LOGGER.log(f"→ Created empty: {empty.name}")
         LOGGER.log(f"→ Display type: SPHERE (constant screen-space size)")
@@ -571,7 +586,37 @@ class BIM_OT_equipment_load_from_db(Operator):
             for equipment_type in EQUIPMENT_TYPES.keys():
                 PLACED_EQUIPMENT[equipment_type] = []
 
-            # Create empties from database
+            # Create/get parent collection for all equipment
+            parent_collection_name = "River Equipment"
+            if parent_collection_name in bpy.data.collections:
+                parent_collection = bpy.data.collections[parent_collection_name]
+            else:
+                parent_collection = bpy.data.collections.new(parent_collection_name)
+                context.scene.collection.children.link(parent_collection)
+                LOGGER.log(f"Created parent collection: {parent_collection_name}")
+
+            # Create collections for each equipment type
+            equipment_collections = {}
+            for eq_type in EQUIPMENT_TYPES.keys():
+                eq_info = EQUIPMENT_TYPES[eq_type]
+                collection_name = eq_info['name'] + 's'  # Plural
+
+                # Remove old collection if exists
+                if collection_name in bpy.data.collections:
+                    old_coll = bpy.data.collections[collection_name]
+                    # Unlink all objects
+                    for obj in list(old_coll.objects):
+                        old_coll.objects.unlink(obj)
+                    # Remove collection
+                    bpy.data.collections.remove(old_coll)
+
+                # Create new collection
+                eq_collection = bpy.data.collections.new(collection_name)
+                parent_collection.children.link(eq_collection)
+                equipment_collections[eq_type] = eq_collection
+                LOGGER.log(f"  Created collection: {collection_name}")
+
+            # Create empties from database, organized by collection
             total_loaded = 0
             for marker_type, name, x, y, z in rows:
                 if marker_type not in EQUIPMENT_TYPES:
@@ -594,7 +639,8 @@ class BIM_OT_equipment_load_from_db(Operator):
                 empty.color = (*color, 1.0)
                 empty.show_in_front = True
 
-                context.collection.objects.link(empty)
+                # Link to type-specific collection
+                equipment_collections[marker_type].objects.link(empty)
 
                 # Store with offset-applied coordinates (same as empty.location)
                 # Gizmos read from here, so must match empty position
