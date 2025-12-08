@@ -1023,50 +1023,42 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             LOGGER.log("✓ Sensor dashboard closed (ESC)")
             return {'CANCELLED'}
 
-        # Only handle mouse events if we're in the WINDOW region (3D viewport)
-        # This allows N-panel (UI region) and other panels to work normally
-        if context.region and context.region.type != 'WINDOW':
-            return {'PASS_THROUGH'}
-
         # Helper function to check if mouse is over panel
         def is_mouse_over_panel(mx, my):
+            # Only check bounds if we're in WINDOW region (3D viewport)
+            if not (context.region and context.region.type == 'WINDOW'):
+                return False
             if self._panel_bounds is None:
                 return False
             x_min, y_min, x_max, y_max = self._panel_bounds
             return x_min <= mx <= x_max and y_min <= my <= y_max
 
-        # Handle dragging
+        # Handle dragging - ONLY capture events when actively dragging or clicking our panel
         if event.type == 'LEFTMOUSE':
             if event.value == 'PRESS':
-                # Only start drag if mouse is over panel
+                # Only start drag if mouse is over panel in WINDOW region
                 if is_mouse_over_panel(event.mouse_region_x, event.mouse_region_y):
                     self._is_dragging = True
                     self._drag_start_x = event.mouse_region_x
                     self._drag_start_y = event.mouse_region_y
-                    return {'RUNNING_MODAL'}
-                else:
-                    return {'PASS_THROUGH'}  # Let Blender handle it
+                    # Don't return RUNNING_MODAL - let event through but mark as dragging
+                    # This allows other UI to still work
             elif event.value == 'RELEASE':
                 if self._is_dragging:
                     self._is_dragging = False
-                    return {'RUNNING_MODAL'}
-                else:
-                    return {'PASS_THROUGH'}
+                    # Event handled, continue animation
 
-        if event.type == 'MOUSEMOVE':
-            if self._is_dragging:
-                # Calculate drag delta and update panel offset
-                delta_x = event.mouse_region_x - self._drag_start_x
-                delta_y = event.mouse_region_y - self._drag_start_y
-                self._panel_offset_x += delta_x
-                self._panel_offset_y += delta_y
-                # Update drag start for next frame
-                self._drag_start_x = event.mouse_region_x
-                self._drag_start_y = event.mouse_region_y
-                context.area.tag_redraw()
-                return {'RUNNING_MODAL'}
-            else:
-                return {'PASS_THROUGH'}  # Let Blender handle mouse move
+        # Only capture MOUSEMOVE when actively dragging
+        if event.type == 'MOUSEMOVE' and self._is_dragging:
+            # Calculate drag delta and update panel offset
+            delta_x = event.mouse_region_x - self._drag_start_x
+            delta_y = event.mouse_region_y - self._drag_start_y
+            self._panel_offset_x += delta_x
+            self._panel_offset_y += delta_y
+            # Update drag start for next frame
+            self._drag_start_x = event.mouse_region_x
+            self._drag_start_y = event.mouse_region_y
+            context.area.tag_redraw()
 
         if event.type == 'TIMER':
             # Update animation time
