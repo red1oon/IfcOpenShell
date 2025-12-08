@@ -1023,6 +1023,11 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             LOGGER.log("✓ Sensor dashboard closed (ESC)")
             return {'CANCELLED'}
 
+        # Only handle mouse events if we're in the WINDOW region (3D viewport)
+        # This allows N-panel (UI region) and other panels to work normally
+        if context.region and context.region.type != 'WINDOW':
+            return {'PASS_THROUGH'}
+
         # Helper function to check if mouse is over panel
         def is_mouse_over_panel(mx, my):
             if self._panel_bounds is None:
