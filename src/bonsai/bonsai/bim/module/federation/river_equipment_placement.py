@@ -780,21 +780,75 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
 
             self._sensor_data = []
 
-            # Sensor type colors (RGB)
+            # Sensor type colors (RGB) - Comprehensive palette for all sensor types
             colors = {
-                'loadcell': (0.3, 0.5, 0.9),
-                'waterlevel': (0.2, 0.7, 0.9),
-                'flowvelocity': (0.4, 0.8, 0.6),
-                'ph': (0.6, 0.9, 0.4),
-                'dissolvedoxygen': (0.3, 0.9, 0.6),
-                'turbidity': (0.8, 0.6, 0.4),
-                'temperature': (0.95, 0.6, 0.3),
-                'conductivity': (0.7, 0.5, 0.9),
-                'heavymetals': (0.9, 0.3, 0.3),
-                'aicamera': (0.6, 0.6, 0.95),
-                'pirmotion': (0.95, 0.9, 0.4),
-                'audiorecorder': (0.8, 0.4, 0.8),
-                'integrity': (0.4, 0.4, 0.4),
+                # Boom Trap sensors
+                'loadcell': (0.3, 0.5, 0.9),           # Blue
+                'integrity': (0.9, 0.5, 0.2),          # Orange
+                'waterlevel': (0.2, 0.7, 0.9),         # Light Blue
+                'flowvelocity': (0.4, 0.8, 0.6),       # Teal
+                'camera': (0.7, 0.3, 0.9),             # Purple
+                'vibration': (0.9, 0.6, 0.3),          # Amber
+                'gps_drift': (0.5, 0.9, 0.5),          # Light Green
+                'powerusage': (0.95, 0.8, 0.2),        # Yellow
+
+                # Water Quality sensors
+                'turbidity': (0.8, 0.6, 0.4),          # Brown
+                'heavymetals': (0.9, 0.3, 0.3),        # Red
+                'ph': (0.6, 0.9, 0.4),                 # Lime
+                'dissolvedoxygen': (0.3, 0.9, 0.6),    # Cyan
+                'temperature': (0.95, 0.6, 0.3),       # Orange-Red
+                'conductivity': (0.7, 0.5, 0.9),       # Violet
+                'nitrate': (0.4, 0.7, 0.3),            # Green
+                'phosphate': (0.8, 0.9, 0.5),          # Yellow-Green
+
+                # Biodiversity sensors
+                'aicamera': (0.6, 0.6, 0.95),          # Lavender
+                'pirmotion': (0.95, 0.9, 0.4),         # Bright Yellow
+                'thermalcamera': (0.95, 0.4, 0.4),     # Bright Red
+                'audiorecorder': (0.8, 0.4, 0.8),      # Magenta
+                'ultrasonic': (0.5, 0.7, 0.9),         # Sky Blue
+                'ndvi': (0.3, 0.8, 0.3),               # Forest Green
+                'soilmoisture': (0.6, 0.5, 0.3),       # Soil Brown
+                'canopy_height': (0.4, 0.9, 0.4),      # Bright Green
+
+                # Biochar Facility sensors
+                'feedstock_mass': (0.7, 0.6, 0.4),     # Tan
+                'biochar_yield': (0.3, 0.3, 0.3),      # Dark Grey
+                'pyrolysis_temp': (0.95, 0.3, 0.2),    # Fire Red
+                'carbon_content': (0.2, 0.2, 0.2),     # Charcoal
+                'co2_emissions': (0.6, 0.6, 0.6),      # Grey
+                'particulate': (0.8, 0.8, 0.7),        # Light Grey
+                'reactor_pressure': (0.9, 0.7, 0.3),   # Gold
+                'energy_consumption': (0.9, 0.9, 0.3), # Bright Yellow
+
+                # MRF Site sensors
+                'conveyor_load': (0.5, 0.5, 0.7),      # Blue-Grey
+                'pet_stream': (0.3, 0.7, 0.9),         # Light Blue
+                'hdpe_stream': (0.9, 0.9, 0.9),        # White
+                'organic_stream': (0.5, 0.7, 0.3),     # Olive
+                'contamination': (0.9, 0.5, 0.3),      # Orange
+                'ai_sorter_accuracy': (0.4, 0.8, 0.95),# Bright Cyan
+                'throughput': (0.7, 0.7, 0.9),         # Periwinkle
+                'power_usage': (0.95, 0.9, 0.4),       # Bright Yellow
+
+                # Flood Monitor sensors
+                'flowrate': (0.2, 0.6, 0.9),           # Ocean Blue
+                'rainfall': (0.5, 0.5, 0.95),          # Rain Blue
+                'barometric': (0.8, 0.8, 0.9),         # Light Blue-Grey
+                'velocity_spike': (0.95, 0.3, 0.3),    # Alert Red
+                'debris_radar': (0.9, 0.6, 0.2),       # Amber
+                'bridge_clearance': (0.6, 0.8, 0.6),   # Mint
+                'siren_status': (0.95, 0.2, 0.2),      # Alarm Red
+
+                # Pollutant Sensor sensors
+                'voc': (0.9, 0.7, 0.9),                # Pink
+                'cod': (0.7, 0.4, 0.3),                # Brown
+                'bod': (0.6, 0.5, 0.4),                # Mud
+                'tss': (0.8, 0.7, 0.6),                # Beige
+                'oil_grease': (0.3, 0.3, 0.2),         # Oil Black
+                'cyanide': (0.95, 0.95, 0.3),          # Toxic Yellow
+                'phenols': (0.9, 0.5, 0.7),            # Rose
             }
 
             for sensor_id, sensor_name, sensor_type, unit, threshold_max in sensors:
