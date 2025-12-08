@@ -856,6 +856,13 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
     _cycle_duration = 6.0  # 6 seconds for Day 1-6 (1 sec per day, smoother)
     _linger_duration = 2.0  # 2 second linger on Day 7
 
+    # Draggable panel state
+    _panel_offset_x = 0  # User drag offset from default center position
+    _panel_offset_y = 0
+    _is_dragging = False
+    _drag_start_x = 0
+    _drag_start_y = 0
+
     def invoke(self, context, event):
         import sqlite3
         from pathlib import Path
@@ -984,13 +991,18 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             self._timer = context.window_manager.event_timer_add(0.033, window=context.window)  # ~30fps
             self._animation_time = 0.0
 
+            # Reset drag state for new dashboard instance
+            self._panel_offset_x = 0
+            self._panel_offset_y = 0
+            self._is_dragging = False
+
             context.window_manager.modal_handler_add(self)
 
             # Register this instance as the active one and mark as running
             BIM_OT_equipment_view_sensor_dashboard._active_instance = self
             self._is_running = True
 
-            LOGGER.log("✓ GPU overlay enabled, animation started")
+            LOGGER.log("✓ GPU overlay enabled, animation started (draggable)")
             return {'RUNNING_MODAL'}
 
         except Exception as e:
@@ -1009,6 +1021,31 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
                 BIM_OT_equipment_view_sensor_dashboard._active_instance = None
             LOGGER.log("✓ Sensor dashboard closed (ESC)")
             return {'CANCELLED'}
+
+        # Handle dragging
+        if event.type == 'LEFTMOUSE':
+            if event.value == 'PRESS':
+                # Start drag - check if mouse is over panel
+                # We'll check this in draw callback, for now just start drag
+                self._is_dragging = True
+                self._drag_start_x = event.mouse_region_x
+                self._drag_start_y = event.mouse_region_y
+                return {'RUNNING_MODAL'}
+            elif event.value == 'RELEASE':
+                self._is_dragging = False
+                return {'RUNNING_MODAL'}
+
+        if event.type == 'MOUSEMOVE' and self._is_dragging:
+            # Calculate drag delta and update panel offset
+            delta_x = event.mouse_region_x - self._drag_start_x
+            delta_y = event.mouse_region_y - self._drag_start_y
+            self._panel_offset_x += delta_x
+            self._panel_offset_y += delta_y
+            # Update drag start for next frame
+            self._drag_start_x = event.mouse_region_x
+            self._drag_start_y = event.mouse_region_y
+            context.area.tag_redraw()
+            return {'RUNNING_MODAL'}
 
         if event.type == 'TIMER':
             # Update animation time
@@ -1097,10 +1134,10 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         # Chart width = bars + gap + STATUS box + margins
         chart_width = total_bar_width + status_gap + status_box_width + 100  # 100px extra margin
 
-        # Position in viewport (bottom-center)
+        # Position in viewport (bottom-center) + user drag offset
         region = context.region
-        chart_x = (region.width - chart_width) // 2
-        chart_y = margin_bottom
+        chart_x = (region.width - chart_width) // 2 + operator_self._panel_offset_x
+        chart_y = margin_bottom + operator_self._panel_offset_y
 
         # Draw background panel (main body - dark)
         shader = gpu.shader.from_builtin('UNIFORM_COLOR')
@@ -1491,11 +1528,11 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         blf.position(font_id, status_box_x + 10, item_y, 0)
         blf.draw(font_id, "E. REPAIR/REPLACE")
 
-        # Draw ESC hint (LEFT side, bottom)
+        # Draw control hints (LEFT side, bottom)
         blf.size(font_id, 10)
         blf.color(font_id, 0.6, 0.6, 0.6, 0.9)
         blf.position(font_id, chart_x + 15, chart_y + 5, 0)
-        blf.draw(font_id, "ESC to close")
+        blf.draw(font_id, "Click & Drag to move • ESC to close")
 
         gpu.state.blend_set('NONE')
 
