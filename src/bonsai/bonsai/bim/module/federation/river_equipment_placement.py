@@ -1075,13 +1075,26 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             current_day = 6
             interp_factor = 0.0
 
-        # Chart dimensions - fixed height (legend now integrated into bars)
-        chart_width = 1000
+        # Chart dimensions - DYNAMIC width based on content
         chart_height = 400
-        bar_width = 45  # 50% wider (was 30)
-        bar_spacing = 15  # Increased spacing proportionally
+        bar_width = 45
+        bar_spacing = 15
         margin_left = 50
         margin_bottom = 100
+
+        # Calculate dynamic width based on number of sensors + STATUS box
+        num_sensors = len(operator_self._sensor_data)
+        total_bar_width = num_sensors * (bar_width + bar_spacing)
+
+        # STATUS box width calculation: label(140px) + icons(4 icons × 22px = 88px) + padding(40px) = 268px
+        status_label_width = 140  # "B. INSPECTION" text width
+        status_icon_width = 4 * 22  # Max 4 icons at 22px each
+        status_padding = 40  # Left/right padding
+        status_box_width = status_label_width + status_icon_width + status_padding
+        status_gap = 30
+
+        # Chart width = bars + gap + STATUS box + margins
+        chart_width = total_bar_width + status_gap + status_box_width + 100  # 100px extra margin
 
         # Position in viewport (bottom-center)
         region = context.region
@@ -1124,17 +1137,32 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         shader.uniform_float("color", header_color)
         batch.draw(shader)
 
-        # Draw title and infographic
+        # Calculate header color brightness for text contrast
+        header_r, header_g, header_b = header_color[:3]
+        header_brightness = (header_r * 0.299 + header_g * 0.587 + header_b * 0.114)
+
+        # Use off-white for dark headers, off-black for light headers
+        if header_brightness < 0.5:
+            header_text_color = (0.95, 0.95, 0.95, 1.0)  # Off-white
+            subtitle_color = (0.85, 0.85, 0.85, 1.0)  # Slightly darker off-white
+        else:
+            header_text_color = (0.15, 0.15, 0.15, 1.0)  # Off-black
+            subtitle_color = (0.25, 0.25, 0.25, 1.0)  # Slightly lighter off-black
+
+        # Draw title and infographic - BOLD and larger than STATUS (32pt vs 28pt)
         font_id = 0
-        blf.size(font_id, 20)
-        blf.color(font_id, 1.0, 1.0, 1.0, 1.0)
+        blf.size(font_id, 32)  # Larger than STATUS (28pt)
+        blf.enable(font_id, blf.SHADOW)
+        blf.shadow(font_id, 5, 0.0, 0.0, 0.0, 0.8)  # Shadow for emphasis
+        blf.color(font_id, *header_text_color)
         blf.position(font_id, chart_x, chart_y + chart_height + 40, 0)
         day_text = "TODAY" if current_day == 6 else f"Day {current_day + 1}/7"
         blf.draw(font_id, f"📊 {operator_self._equipment_name} - {day_text}")
+        blf.disable(font_id, blf.SHADOW)
 
-        # Infographic subtitle
+        # Infographic subtitle with contrast-based color
         blf.size(font_id, 12)
-        blf.color(font_id, 0.7, 0.7, 0.7, 1.0)
+        blf.color(font_id, *subtitle_color)
         blf.position(font_id, chart_x, chart_y + chart_height + 20, 0)
         blf.draw(font_id, "7-Day Sensor Trend → Yellow line = Threshold limit")
 
@@ -1149,10 +1177,10 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         shader.uniform_float("color", (1.0, 0.8, 0.0, 0.6))
         batch.draw(shader)
 
-        # Draw threshold label
+        # Draw threshold label - INSIDE panel (not outside at chart_x - 45)
         blf.size(font_id, 14)
         blf.color(font_id, 1.0, 0.8, 0.0, 0.8)
-        blf.position(font_id, chart_x - 45, threshold_y - 7, 0)
+        blf.position(font_id, chart_x + 5, threshold_y - 7, 0)  # Inside panel at chart_x + 5
         blf.draw(font_id, "MAX")
 
         # Draw sensor bars (legend integrated into bars - use full width)
@@ -1258,14 +1286,14 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             r, g, b = base_color
             brightness = (r * 0.299 + g * 0.587 + b * 0.114)  # Perceived brightness
 
-            # Use black for light colors, white for dark colors
-            if brightness > 0.6:
-                text_color = (0.0, 0.0, 0.0, 1.0)  # Black
+            # Use off-black (grey) for light colors, off-white for dark colors
+            if brightness > 0.5:
+                text_color = (0.15, 0.15, 0.15, 1.0)  # Off-black (dark grey)
             else:
-                text_color = (1.0, 1.0, 1.0, 1.0)  # White
+                text_color = (0.95, 0.95, 0.95, 1.0)  # Off-white
 
-            # Shorten type name to fit in bar
-            type_name = sensor['type']
+            # Convert type name to UPPER CASE and shorten to fit in bar
+            type_name = sensor['type'].upper()
             if len(type_name) > 10:
                 type_name = type_name[:8] + '..'
 
@@ -1282,8 +1310,11 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             else:
                 value_text = f"{value:.1f}"
 
-            # If bar is tall enough (>80px), place everything INSIDE bar
-            if bar_pixel_height > 80:
+            # Minimum required height for inside text: icon(40px) + type(~60px) + spacing(100px) + value(~60px) = 260px
+            # If bar is tall enough (>260px), place everything INSIDE with guaranteed spacing
+            min_height_for_inside = 260
+
+            if bar_pixel_height >= min_height_for_inside:
                 # Draw sensor icon at bottom
                 sensor_icon = SENSOR_TYPE_ICONS.get(sensor['type'], '📊')
                 blf.size(font_id, 32)
@@ -1293,59 +1324,66 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
                 blf.position(font_id, icon_x, icon_y, 0)
                 blf.draw(font_id, sensor_icon)
 
-                # Draw type text above icon (rotated)
-                blf.size(font_id, 18)  # SAME size as value number
+                # Draw type text above icon (rotated) - ABSOLUTE position
+                blf.size(font_id, 18)
                 blf.color(font_id, *text_color)
                 blf.enable(font_id, blf.ROTATION)
                 blf.rotation(font_id, angle)
-                blf.position(font_id, bar_x + 22, bar_y + 45, 0)
+                type_y_absolute = bar_y + 45  # Fixed position from bar bottom
+                blf.position(font_id, bar_x + 22, type_y_absolute, 0)
                 blf.draw(font_id, type_name)
                 blf.rotation(font_id, 0)
                 blf.disable(font_id, blf.ROTATION)
 
-                # Draw value at top (rotated) - 100px spacing from type text
-                blf.size(font_id, 18)  # SAME size as type name
+                # Draw value with ABSOLUTE 120px spacing from type text (increased from 100px)
+                blf.size(font_id, 18)
                 blf.color(font_id, *text_color)
                 blf.enable(font_id, blf.ROTATION)
                 blf.rotation(font_id, angle)
-                value_y = bar_y + 45 + 100  # 100px spacing from type text at bar_y + 45
-                blf.position(font_id, bar_x + 22, value_y, 0)
+                value_y_absolute = type_y_absolute + 120  # ABSOLUTE 120px spacing
+                blf.position(font_id, bar_x + 22, value_y_absolute, 0)
                 blf.draw(font_id, value_text)
                 blf.rotation(font_id, 0)
                 blf.disable(font_id, blf.ROTATION)
 
-            # If bar is short/nil, draw everything ABOVE bar (rotated vertically)
-            # With proper spacing to avoid overlap
+            # If bar is short/nil, draw everything INSIDE panel starting from bar_y (fixed position)
+            # Text should NOT move outside the chart area - fixed to bar base
             else:
-                base_y = bar_y + bar_pixel_height + 5
+                # Fixed base position - always start from bar_y (bottom of chart)
+                base_y = bar_y + 5  # Start just above bar base, not moving with bar height
 
-                # Draw sensor icon above bar
+                # Draw sensor icon at fixed position
                 sensor_icon = SENSOR_TYPE_ICONS.get(sensor['type'], '📊')
                 blf.size(font_id, 32)
-                blf.color(font_id, *base_color, 1.0)  # Use sensor color when outside
+                # Use brightness-adjusted color for better visibility
+                if brightness > 0.5:
+                    icon_color = (0.15, 0.15, 0.15, 1.0)  # Dark for light sensors
+                else:
+                    icon_color = (0.95, 0.95, 0.95, 1.0)  # Light for dark sensors
+                blf.color(font_id, *icon_color)
                 icon_x = bar_x + (bar_width // 2) - 16
                 icon_y = base_y
                 blf.position(font_id, icon_x, icon_y, 0)
                 blf.draw(font_id, sensor_icon)
 
-                # Draw type text above icon (rotated) - with spacing
+                # Draw type text above icon (rotated) - ABSOLUTE fixed position
                 blf.size(font_id, 18)
-                blf.color(font_id, *base_color, 1.0)
+                blf.color(font_id, *icon_color)
                 blf.enable(font_id, blf.ROTATION)
                 blf.rotation(font_id, angle)
-                type_y = base_y + 45  # 45px spacing from icon
-                blf.position(font_id, bar_x + 22, type_y, 0)
+                type_y_absolute = base_y + 45  # ABSOLUTE 45px from icon
+                blf.position(font_id, bar_x + 22, type_y_absolute, 0)
                 blf.draw(font_id, type_name)
                 blf.rotation(font_id, 0)
                 blf.disable(font_id, blf.ROTATION)
 
-                # Draw value above type text (rotated) - 100px spacing
+                # Draw value above type text (rotated) - ABSOLUTE 120px spacing (same as tall bars)
                 blf.size(font_id, 18)
-                blf.color(font_id, *base_color, 1.0)
+                blf.color(font_id, *icon_color)
                 blf.enable(font_id, blf.ROTATION)
                 blf.rotation(font_id, angle)
-                value_y = type_y + 100  # 100px spacing from type text
-                blf.position(font_id, bar_x + 22, value_y, 0)
+                value_y_absolute = type_y_absolute + 120  # ABSOLUTE 120px spacing
+                blf.position(font_id, bar_x + 22, value_y_absolute, 0)
                 blf.draw(font_id, value_text)
                 blf.rotation(font_id, 0)
                 blf.disable(font_id, blf.ROTATION)
@@ -1353,7 +1391,7 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         # =============================================================================
         # STATUS BOX (Right side) - Comprehensive status with sensor icons
         # =============================================================================
-        status_box_width = 250
+        # status_box_width already calculated dynamically above (line 1093)
         status_box_height = 200
         # Position box with space from animation area (30px gap from last bar)
         last_bar_x = bar_x + bar_width  # x position of last drawn bar
@@ -1368,10 +1406,10 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         blf.position(font_id, status_box_x + 10, status_box_y + status_box_height - 40, 0)
         blf.draw(font_id, "STATUS")
 
-        # Status items - off-white
+        # Status items - off-white, with MORE spacing from title (70px instead of 55px)
         blf.size(font_id, 11)
         blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white default
-        item_y = status_box_y + status_box_height - 55
+        item_y = status_box_y + status_box_height - 70  # Increased from 55 to 70
         line_height = 30
 
         # A. OK - grey if issues, off-white if all OK
