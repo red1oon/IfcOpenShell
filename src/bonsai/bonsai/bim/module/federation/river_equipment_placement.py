@@ -1033,22 +1033,20 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             x_min, y_min, x_max, y_max = self._panel_bounds
             return x_min <= mx <= x_max and y_min <= my <= y_max
 
-        # Handle dragging - ONLY capture events when actively dragging or clicking our panel
-        if event.type == 'LEFTMOUSE':
-            if event.value == 'PRESS':
-                # Only start drag if mouse is over panel in WINDOW region
-                if is_mouse_over_panel(event.mouse_region_x, event.mouse_region_y):
-                    self._is_dragging = True
-                    self._drag_start_x = event.mouse_region_x
-                    self._drag_start_y = event.mouse_region_y
-                    # Don't return RUNNING_MODAL - let event through but mark as dragging
-                    # This allows other UI to still work
-            elif event.value == 'RELEASE':
-                if self._is_dragging:
-                    self._is_dragging = False
-                    # Event handled, continue animation
+        # Handle dragging - capture events ONLY when mouse is over our panel
+        if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
+            # Check if click is on our panel in WINDOW region
+            if is_mouse_over_panel(event.mouse_region_x, event.mouse_region_y):
+                self._is_dragging = True
+                self._drag_start_x = event.mouse_region_x
+                self._drag_start_y = event.mouse_region_y
+                return {'RUNNING_MODAL'}  # Capture this event - we're handling the drag
 
-        # Only capture MOUSEMOVE when actively dragging
+        if event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
+            if self._is_dragging:
+                self._is_dragging = False
+                return {'RUNNING_MODAL'}  # Capture release to end drag cleanly
+
         if event.type == 'MOUSEMOVE' and self._is_dragging:
             # Calculate drag delta and update panel offset
             delta_x = event.mouse_region_x - self._drag_start_x
@@ -1059,6 +1057,7 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             self._drag_start_x = event.mouse_region_x
             self._drag_start_y = event.mouse_region_y
             context.area.tag_redraw()
+            return {'RUNNING_MODAL'}  # Capture mouse move during drag
 
         if event.type == 'TIMER':
             # Update animation time
