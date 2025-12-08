@@ -1281,75 +1281,63 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
 
         # =============================================================================
         # INTEGRATED SENSOR LEGEND (Below bars, inside main panel)
+        # Single column with full-width colored bars
         # =============================================================================
-        legend_start_y = chart_y + 20
-        legend_x = chart_x + 20
+        legend_start_y = chart_y + 15
+        legend_x = chart_x + 15
+        legend_item_width = 180
+        legend_item_height = 16
         blf.size(font_id, 9)
 
-        # Calculate layout: multi-column if needed
-        sensors_per_column = 4
-        column_width = 120
-
-        num_to_show = min(len(operator_self._sensor_data), 8)  # Max 8 sensors (2 columns x 4 rows)
+        num_to_show = min(len(operator_self._sensor_data), 8)  # Max 8 sensors in single column
         for idx in range(num_to_show):
             sensor = operator_self._sensor_data[idx]
+            item_y = legend_start_y + (idx * (legend_item_height + 2))
 
-            # Calculate position (2 columns)
-            col = idx // sensors_per_column
-            row = idx % sensors_per_column
-
-            item_x = legend_x + (col * column_width)
-            item_y = legend_start_y + (row * 18)
-
-            # Draw colored square (8x8 px)
-            square_size = 8
-            square_x = item_x
-            square_y = item_y - 2
-            square_vertices = [
-                (square_x, square_y),
-                (square_x + square_size, square_y),
-                (square_x + square_size, square_y + square_size),
-                (square_x, square_y + square_size)
+            # Draw full-width colored bar background
+            bar_vertices = [
+                (legend_x, item_y),
+                (legend_x + legend_item_width, item_y),
+                (legend_x + legend_item_width, item_y + legend_item_height),
+                (legend_x, item_y + legend_item_height)
             ]
-            batch = batch_for_shader(shader, 'TRIS', {"pos": square_vertices}, indices=indices)
-            shader.uniform_float("color", (*sensor['color'], 1.0))
+            batch = batch_for_shader(shader, 'TRIS', {"pos": bar_vertices}, indices=indices)
+            # Use sensor color with transparency
+            shader.uniform_float("color", (*sensor['color'], 0.7))
             batch.draw(shader)
 
-            # Sensor icon + short name
+            # Sensor icon + name (white text for contrast on colored background)
             sensor_icon = SENSOR_TYPE_ICONS.get(sensor['type'], '📊')
             # Shorten type names if too long
             type_name = sensor['type']
-            if len(type_name) > 12:
-                type_name = type_name[:10] + '..'
+            if len(type_name) > 14:
+                type_name = type_name[:12] + '..'
 
             sensor_label = f"{sensor_icon} {type_name}"
-            blf.color(font_id, 0.85, 0.85, 0.85, 1.0)
-            blf.position(font_id, square_x + square_size + 5, item_y, 0)
+            blf.color(font_id, 1.0, 1.0, 1.0, 1.0)  # White text
+            blf.position(font_id, legend_x + 5, item_y + 4, 0)
             blf.draw(font_id, sensor_label)
 
-        # If more sensors, show indicator
+        # If more sensors, show indicator below legend
         if len(operator_self._sensor_data) > 8:
             remaining = len(operator_self._sensor_data) - 8
             blf.size(font_id, 8)
             blf.color(font_id, 0.5, 0.5, 0.5, 1.0)
-            blf.position(font_id, legend_x + (column_width * 2), legend_start_y, 0)
-            blf.draw(font_id, f"+{remaining}")
+            extra_y = legend_start_y + (num_to_show * (legend_item_height + 2)) + 5
+            blf.position(font_id, legend_x + 5, extra_y, 0)
+            blf.draw(font_id, f"+ {remaining} more sensors...")
 
-        # Status legend (top right corner of panel)
-        status_x = chart_x + chart_width - 200
+        # Status legend (top right corner of panel) - only Warning and Critical
+        status_x = chart_x + chart_width - 150
         status_y = chart_y + chart_height - 25
         blf.size(font_id, 9)
 
-        blf.color(font_id, 0.3, 1.0, 0.3, 1.0)
-        blf.position(font_id, status_x, status_y, 0)
-        blf.draw(font_id, "■ OK")
-
         blf.color(font_id, 1.0, 0.6, 0.0, 1.0)
-        blf.position(font_id, status_x + 50, status_y, 0)
+        blf.position(font_id, status_x, status_y, 0)
         blf.draw(font_id, "■ Warning")
 
         blf.color(font_id, 1.0, 0.0, 0.0, 1.0)
-        blf.position(font_id, status_x + 120, status_y, 0)
+        blf.position(font_id, status_x + 70, status_y, 0)
         blf.draw(font_id, "■ Critical")
 
         # Draw ESC hint (bottom right)
