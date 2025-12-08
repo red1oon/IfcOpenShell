@@ -856,14 +856,6 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
     _cycle_duration = 6.0  # 6 seconds for Day 1-6 (1 sec per day, smoother)
     _linger_duration = 2.0  # 2 second linger on Day 7
 
-    # Draggable panel state
-    _panel_offset_x = 0  # User drag offset from default center position
-    _panel_offset_y = 0
-    _is_dragging = False
-    _drag_start_x = 0
-    _drag_start_y = 0
-    _panel_bounds = None  # (x_min, y_min, x_max, y_max) for hit detection
-
     def invoke(self, context, event):
         import sqlite3
         from pathlib import Path
@@ -992,18 +984,13 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             self._timer = context.window_manager.event_timer_add(0.033, window=context.window)  # ~30fps
             self._animation_time = 0.0
 
-            # Reset drag state for new dashboard instance
-            self._panel_offset_x = 0
-            self._panel_offset_y = 0
-            self._is_dragging = False
-
             context.window_manager.modal_handler_add(self)
 
             # Register this instance as the active one and mark as running
             BIM_OT_equipment_view_sensor_dashboard._active_instance = self
             self._is_running = True
 
-            LOGGER.log("✓ GPU overlay enabled, animation started (draggable)")
+            LOGGER.log("✓ GPU overlay enabled, animation started")
             return {'RUNNING_MODAL'}
 
         except Exception as e:
@@ -1022,42 +1009,6 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
                 BIM_OT_equipment_view_sensor_dashboard._active_instance = None
             LOGGER.log("✓ Sensor dashboard closed (ESC)")
             return {'CANCELLED'}
-
-        # Helper function to check if mouse is over panel
-        def is_mouse_over_panel(mx, my):
-            # Only check bounds if we're in WINDOW region (3D viewport)
-            if not (context.region and context.region.type == 'WINDOW'):
-                return False
-            if self._panel_bounds is None:
-                return False
-            x_min, y_min, x_max, y_max = self._panel_bounds
-            return x_min <= mx <= x_max and y_min <= my <= y_max
-
-        # Handle dragging - capture events ONLY when mouse is over our panel
-        if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
-            # Check if click is on our panel in WINDOW region
-            if is_mouse_over_panel(event.mouse_region_x, event.mouse_region_y):
-                self._is_dragging = True
-                self._drag_start_x = event.mouse_region_x
-                self._drag_start_y = event.mouse_region_y
-                return {'RUNNING_MODAL'}  # Capture this event - we're handling the drag
-
-        if event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
-            if self._is_dragging:
-                self._is_dragging = False
-                return {'RUNNING_MODAL'}  # Capture release to end drag cleanly
-
-        if event.type == 'MOUSEMOVE' and self._is_dragging:
-            # Calculate drag delta and update panel offset
-            delta_x = event.mouse_region_x - self._drag_start_x
-            delta_y = event.mouse_region_y - self._drag_start_y
-            self._panel_offset_x += delta_x
-            self._panel_offset_y += delta_y
-            # Update drag start for next frame
-            self._drag_start_x = event.mouse_region_x
-            self._drag_start_y = event.mouse_region_y
-            context.area.tag_redraw()
-            return {'RUNNING_MODAL'}  # Capture mouse move during drag
 
         if event.type == 'TIMER':
             # Update animation time
@@ -1146,17 +1097,10 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         # Chart width = bars + gap + STATUS box + margins
         chart_width = total_bar_width + status_gap + status_box_width + 100  # 100px extra margin
 
-        # Position in viewport (bottom-center) + user drag offset
+        # Position in viewport (bottom-center)
         region = context.region
-        chart_x = (region.width - chart_width) // 2 + operator_self._panel_offset_x
-        chart_y = margin_bottom + operator_self._panel_offset_y
-
-        # Store panel bounds for hit detection (include header)
-        panel_x_min = chart_x - 20
-        panel_y_min = chart_y - 20
-        panel_x_max = chart_x + chart_width + 20
-        panel_y_max = chart_y + chart_height + 80  # Include header height
-        operator_self._panel_bounds = (panel_x_min, panel_y_min, panel_x_max, panel_y_max)
+        chart_x = (region.width - chart_width) // 2
+        chart_y = margin_bottom
 
         # Draw background panel (main body - dark)
         shader = gpu.shader.from_builtin('UNIFORM_COLOR')
@@ -1552,11 +1496,11 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         blf.position(font_id, status_box_x + 10, item_y, 0)
         blf.draw(font_id, "E. REPAIR/REPLACE")
 
-        # Draw control hints (LEFT side, bottom)
+        # Draw ESC hint (LEFT side, bottom)
         blf.size(font_id, 10)
         blf.color(font_id, 0.6, 0.6, 0.6, 0.9)
         blf.position(font_id, chart_x + 15, chart_y + 5, 0)
-        blf.draw(font_id, "Click & Drag to move • ESC to close")
+        blf.draw(font_id, "ESC to close")
 
         gpu.state.blend_set('NONE')
 
