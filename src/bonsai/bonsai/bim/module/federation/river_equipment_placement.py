@@ -1244,12 +1244,17 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         blf.position(font_id, chart_x + 5, threshold_y + 5, 0)  # Above line (threshold_y + 5)
         blf.draw(font_id, "MAX")
 
-        # Draw sensor bars (legend integrated into bars - use full width)
+        # Draw sensor bars (legend integrated into bars)
         num_sensors = len(operator_self._sensor_data)
         total_bar_width = num_sensors * (bar_width + bar_spacing)
 
-        # Center bars in full chart width (no reserved space)
-        start_x = chart_x + (chart_width - total_bar_width) // 2
+        # Center the entire content (bars + gap + STATUS) as a unit within panel
+        # Total content width = bars + gap + STATUS box
+        content_width = total_bar_width + status_gap + status_box_width
+        content_start_x = chart_x + (chart_width - content_width) // 2
+
+        # Bars start at the beginning of centered content
+        start_x = content_start_x
 
         # Track sensor status for STATUS BOX
         sensors_inspection = []  # Sensors that went above threshold (yellow line)
