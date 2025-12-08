@@ -1075,7 +1075,7 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             current_day = 6
             interp_factor = 0.0
 
-        # Chart dimensions
+        # Chart dimensions - fixed height (legend now integrated into bars)
         chart_width = 1000
         chart_height = 400
         bar_width = 45  # 50% wider (was 30)
@@ -1138,14 +1138,12 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         blf.position(font_id, chart_x, chart_y + chart_height + 20, 0)
         blf.draw(font_id, "7-Day Sensor Trend → Yellow line = Threshold limit")
 
-        # Draw threshold line (only across bar area, not under legend)
+        # Draw threshold line (full width - no legend on right anymore)
         threshold_y = chart_y + int(chart_height * 0.77)  # Threshold at ~77% height
-        legend_reserved_width = 200  # Match bar calculation
-        threshold_line_end = chart_x + chart_width - legend_reserved_width + 20  # Small overlap
 
         vertices = [
             (chart_x, threshold_y),
-            (threshold_line_end, threshold_y)
+            (chart_x + chart_width, threshold_y)
         ]
         batch = batch_for_shader(shader, 'LINES', {"pos": vertices})
         shader.uniform_float("color", (1.0, 0.8, 0.0, 0.6))
@@ -1157,16 +1155,17 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         blf.position(font_id, chart_x - 45, threshold_y - 7, 0)
         blf.draw(font_id, "MAX")
 
-        # Draw sensor bars (dynamically adjust for legend on right)
+        # Draw sensor bars (legend integrated into bars - use full width)
         num_sensors = len(operator_self._sensor_data)
         total_bar_width = num_sensors * (bar_width + bar_spacing)
 
-        # Reserve space for legend on right side (170px width + 30px padding)
-        legend_reserved_width = 200
-        available_chart_width = chart_width - legend_reserved_width
+        # Center bars in full chart width (no reserved space)
+        start_x = chart_x + (chart_width - total_bar_width) // 2
 
-        # Center bars in the available space (left of legend)
-        start_x = chart_x + (available_chart_width - total_bar_width) // 2
+        # Track sensor status for STATUS BOX
+        sensors_inspection = []  # Sensors that went above threshold (yellow line)
+        sensors_pm_action = []   # Sensors in WARNING zone (orange)
+        sensors_follow_sop = []  # Sensors in CRITICAL zone (red)
 
         for i, sensor in enumerate(operator_self._sensor_data):
             # Smooth interpolation between current day and next day
@@ -1218,9 +1217,17 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
                     top_height = bar_pixel_height - threshold_height
                     # Orange: 100-110%, Red: >110%
                     if value <= threshold * 1.10:
-                        top_color = (1.0, 0.6, 0.0, 1.0)  # Orange
+                        top_color = (1.0, 0.6, 0.0, 1.0)  # Orange - WARNING
+                        if sensor not in sensors_pm_action:
+                            sensors_pm_action.append(sensor)
                     else:
-                        top_color = (1.0, 0.0, 0.0, 1.0)  # Red
+                        top_color = (1.0, 0.0, 0.0, 1.0)  # Red - CRITICAL
+                        if sensor not in sensors_follow_sop:
+                            sensors_follow_sop.append(sensor)
+
+                    # Track if sensor went above threshold at all (INSPECTION)
+                    if sensor not in sensors_inspection:
+                        sensors_inspection.append(sensor)
 
                     vertices = [
                         (bar_x, bar_y + threshold_height),
@@ -1247,118 +1254,208 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
                 batch.draw(shader)
                 gpu.state.line_width_set(1.0)
 
-            # Draw value label INSIDE bar (rotated sideways) - all days during animation
-            if bar_pixel_height > 50:
-                blf.size(font_id, 18)
+            # Calculate brightness of bar color to determine text/icon color
+            r, g, b = base_color
+            brightness = (r * 0.299 + g * 0.587 + b * 0.114)  # Perceived brightness
 
-                # Format value based on magnitude
-                if value >= 1000:
-                    value_text = f"{value/1000:.1f}k"
-                elif value >= 100:
-                    value_text = f"{value:.0f}"
-                else:
-                    value_text = f"{value:.1f}"
+            # Use black for light colors, white for dark colors
+            if brightness > 0.6:
+                text_color = (0.0, 0.0, 0.0, 1.0)  # Black
+            else:
+                text_color = (1.0, 1.0, 1.0, 1.0)  # White
 
-                # White text for contrast
-                blf.color(font_id, 1.0, 1.0, 1.0, 1.0)
+            # Shorten type name to fit in bar
+            type_name = sensor['type']
+            if len(type_name) > 10:
+                type_name = type_name[:8] + '..'
 
-                # Calculate text position (middle of bar)
-                text_x = bar_x + 5
-                text_y = bar_y + (bar_pixel_height // 2) - 15
+            import math
+            angle = math.radians(90)  # 90 degrees rotation
 
-                # Save current state
-                import math
-                angle = math.radians(90)  # 90 degrees in radians
+            # Format value based on magnitude
+            if value == 0:
+                value_text = "0"
+            elif value >= 1000:
+                value_text = f"{value/1000:.1f}k"
+            elif value >= 100:
+                value_text = f"{value:.0f}"
+            else:
+                value_text = f"{value:.1f}"
 
-                # Apply rotation and draw
+            # If bar is tall enough (>80px), place everything INSIDE bar
+            if bar_pixel_height > 80:
+                # Draw sensor icon at bottom
+                sensor_icon = SENSOR_TYPE_ICONS.get(sensor['type'], '📊')
+                blf.size(font_id, 32)
+                blf.color(font_id, *text_color)  # Same color as text
+                icon_x = bar_x + (bar_width // 2) - 16
+                icon_y = bar_y + 8
+                blf.position(font_id, icon_x, icon_y, 0)
+                blf.draw(font_id, sensor_icon)
+
+                # Draw type text above icon (rotated)
+                blf.size(font_id, 18)  # SAME size as value number
+                blf.color(font_id, *text_color)
                 blf.enable(font_id, blf.ROTATION)
                 blf.rotation(font_id, angle)
-                blf.position(font_id, text_x + 22, text_y, 0)
-                blf.draw(font_id, value_text)
-                blf.rotation(font_id, 0)  # Reset rotation
+                blf.position(font_id, bar_x + 22, bar_y + 45, 0)
+                blf.draw(font_id, type_name)
+                blf.rotation(font_id, 0)
                 blf.disable(font_id, blf.ROTATION)
 
-            # Draw sensor icon INSIDE bar (bottom section)
-            # Use centralized icon mapping
-            sensor_icon = SENSOR_TYPE_ICONS.get(sensor['type'], '📊')
-            blf.size(font_id, 32)  # 10% smaller (was 36)
-            blf.color(font_id, 1.0, 1.0, 1.0, 0.8)  # Slightly more opaque
-            icon_x = bar_x + (bar_width // 2) - 16  # Center icon in bar
-            icon_y = bar_y + 8
-            blf.position(font_id, icon_x, icon_y, 0)
-            blf.draw(font_id, sensor_icon)
+                # Draw value at top (rotated) - 100px spacing from type text
+                blf.size(font_id, 18)  # SAME size as type name
+                blf.color(font_id, *text_color)
+                blf.enable(font_id, blf.ROTATION)
+                blf.rotation(font_id, angle)
+                value_y = bar_y + 45 + 100  # 100px spacing from type text at bar_y + 45
+                blf.position(font_id, bar_x + 22, value_y, 0)
+                blf.draw(font_id, value_text)
+                blf.rotation(font_id, 0)
+                blf.disable(font_id, blf.ROTATION)
+
+            # If bar is short/nil, draw everything ABOVE bar (rotated vertically)
+            # With proper spacing to avoid overlap
+            else:
+                base_y = bar_y + bar_pixel_height + 5
+
+                # Draw sensor icon above bar
+                sensor_icon = SENSOR_TYPE_ICONS.get(sensor['type'], '📊')
+                blf.size(font_id, 32)
+                blf.color(font_id, *base_color, 1.0)  # Use sensor color when outside
+                icon_x = bar_x + (bar_width // 2) - 16
+                icon_y = base_y
+                blf.position(font_id, icon_x, icon_y, 0)
+                blf.draw(font_id, sensor_icon)
+
+                # Draw type text above icon (rotated) - with spacing
+                blf.size(font_id, 18)
+                blf.color(font_id, *base_color, 1.0)
+                blf.enable(font_id, blf.ROTATION)
+                blf.rotation(font_id, angle)
+                type_y = base_y + 45  # 45px spacing from icon
+                blf.position(font_id, bar_x + 22, type_y, 0)
+                blf.draw(font_id, type_name)
+                blf.rotation(font_id, 0)
+                blf.disable(font_id, blf.ROTATION)
+
+                # Draw value above type text (rotated) - 100px spacing
+                blf.size(font_id, 18)
+                blf.color(font_id, *base_color, 1.0)
+                blf.enable(font_id, blf.ROTATION)
+                blf.rotation(font_id, angle)
+                value_y = type_y + 100  # 100px spacing from type text
+                blf.position(font_id, bar_x + 22, value_y, 0)
+                blf.draw(font_id, value_text)
+                blf.rotation(font_id, 0)
+                blf.disable(font_id, blf.ROTATION)
 
         # =============================================================================
-        # INTEGRATED SENSOR LEGEND (Right side, below threshold line)
-        # Single column with full-width colored bars
+        # STATUS BOX (Right side) - Comprehensive status with sensor icons
         # =============================================================================
-        legend_item_width = 170
-        legend_item_height = 16
-        legend_gap = 2  # Gap between items
+        status_box_width = 250
+        status_box_height = 200
+        # Position box with space from animation area (30px gap from last bar)
+        last_bar_x = bar_x + bar_width  # x position of last drawn bar
+        status_box_x = last_bar_x + 30
+        status_box_y = chart_y + 40
 
-        num_to_show = min(len(operator_self._sensor_data), 8)  # Max 8 sensors
-        legend_total_height = num_to_show * (legend_item_height + legend_gap)
+        # No background - transparent only
 
-        # Position: Right side, below threshold, above ESC hint
-        legend_x = chart_x + chart_width - legend_item_width - 15
-        legend_start_y = chart_y + 30  # Start from bottom with padding
+        # STATUS BOX Title - double size (28pt), off-white
+        blf.size(font_id, 28)
+        blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white
+        blf.position(font_id, status_box_x + 10, status_box_y + status_box_height - 40, 0)
+        blf.draw(font_id, "STATUS")
 
-        blf.size(font_id, 9)
+        # Status items - off-white
+        blf.size(font_id, 11)
+        blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white default
+        item_y = status_box_y + status_box_height - 55
+        line_height = 30
 
-        for idx in range(num_to_show):
-            sensor = operator_self._sensor_data[idx]
-            item_y = legend_start_y + (idx * (legend_item_height + legend_gap))
+        # A. OK - grey if issues, off-white if all OK
+        all_ok = len(sensors_inspection) == 0
+        if all_ok:
+            blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white
+        else:
+            blf.color(font_id, 0.4, 0.4, 0.4, 0.7)  # Grey transparent
+        blf.position(font_id, status_box_x + 10, item_y, 0)
+        blf.draw(font_id, "A. OK")
 
-            # Draw full-width colored bar background
-            bar_vertices = [
-                (legend_x, item_y),
-                (legend_x + legend_item_width, item_y),
-                (legend_x + legend_item_width, item_y + legend_item_height),
-                (legend_x, item_y + legend_item_height)
-            ]
-            batch = batch_for_shader(shader, 'TRIS', {"pos": bar_vertices}, indices=indices)
-            # Use sensor color with transparency
-            shader.uniform_float("color", (*sensor['color'], 0.75))
-            batch.draw(shader)
+        # B. INSPECTION - with icons of sensors that went above threshold
+        item_y -= line_height
+        if len(sensors_inspection) > 0:
+            blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white (active)
+            blf.position(font_id, status_box_x + 10, item_y, 0)
+            blf.draw(font_id, "B. INSPECTION")
+            # Show sensor icons
+            icon_x_offset = 140
+            for sensor in sensors_inspection[:4]:  # Max 4 icons
+                sensor_icon = SENSOR_TYPE_ICONS.get(sensor['type'], '📊')
+                blf.size(font_id, 16)
+                blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white
+                blf.position(font_id, status_box_x + icon_x_offset, item_y - 2, 0)
+                blf.draw(font_id, sensor_icon)
+                icon_x_offset += 22
+            blf.size(font_id, 11)
+        else:
+            blf.color(font_id, 0.4, 0.4, 0.4, 0.7)  # Grey (inactive)
+            blf.position(font_id, status_box_x + 10, item_y, 0)
+            blf.draw(font_id, "B. INSPECTION")
 
-            # Sensor icon + name (white text for contrast on colored background)
-            sensor_icon = SENSOR_TYPE_ICONS.get(sensor['type'], '📊')
-            # Shorten type names if too long
-            type_name = sensor['type']
-            if len(type_name) > 13:
-                type_name = type_name[:11] + '..'
+        # C. PM ACTION - sensors in WARNING (orange)
+        item_y -= line_height
+        if len(sensors_pm_action) > 0:
+            blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white (active)
+            blf.position(font_id, status_box_x + 10, item_y, 0)
+            blf.draw(font_id, "C. PM ACTION")
+            # Show sensor icons
+            icon_x_offset = 140
+            for sensor in sensors_pm_action[:4]:
+                sensor_icon = SENSOR_TYPE_ICONS.get(sensor['type'], '📊')
+                blf.size(font_id, 16)
+                blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white
+                blf.position(font_id, status_box_x + icon_x_offset, item_y - 2, 0)
+                blf.draw(font_id, sensor_icon)
+                icon_x_offset += 22
+            blf.size(font_id, 11)
+        else:
+            blf.color(font_id, 0.4, 0.4, 0.4, 0.7)  # Grey (inactive)
+            blf.position(font_id, status_box_x + 10, item_y, 0)
+            blf.draw(font_id, "C. PM ACTION")
 
-            sensor_label = f"{sensor_icon} {type_name}"
-            blf.color(font_id, 1.0, 1.0, 1.0, 1.0)  # White text
-            blf.position(font_id, legend_x + 5, item_y + 4, 0)
-            blf.draw(font_id, sensor_label)
+        # D. FOLLOW SOP - sensors in CRITICAL (red)
+        item_y -= line_height
+        if len(sensors_follow_sop) > 0:
+            blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white (active)
+            blf.position(font_id, status_box_x + 10, item_y, 0)
+            blf.draw(font_id, "D. FOLLOW SOP")
+            # Show sensor icons
+            icon_x_offset = 140
+            for sensor in sensors_follow_sop[:4]:
+                sensor_icon = SENSOR_TYPE_ICONS.get(sensor['type'], '📊')
+                blf.size(font_id, 16)
+                blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white
+                blf.position(font_id, status_box_x + icon_x_offset, item_y - 2, 0)
+                blf.draw(font_id, sensor_icon)
+                icon_x_offset += 22
+            blf.size(font_id, 11)
+        else:
+            blf.color(font_id, 0.4, 0.4, 0.4, 0.7)  # Grey (inactive)
+            blf.position(font_id, status_box_x + 10, item_y, 0)
+            blf.draw(font_id, "D. FOLLOW SOP")
 
-        # If more sensors, show indicator below legend
-        if len(operator_self._sensor_data) > 8:
-            remaining = len(operator_self._sensor_data) - 8
-            blf.size(font_id, 8)
-            blf.color(font_id, 0.5, 0.5, 0.5, 1.0)
-            extra_y = legend_start_y + (num_to_show * (legend_item_height + legend_gap)) + 3
-            blf.position(font_id, legend_x + 5, extra_y, 0)
-            blf.draw(font_id, f"+ {remaining} more...")
+        # E. REPAIR/REPLACE - to be implemented
+        item_y -= line_height
+        blf.color(font_id, 0.4, 0.4, 0.4, 0.7)  # Grey (not implemented)
+        blf.position(font_id, status_box_x + 10, item_y, 0)
+        blf.draw(font_id, "E. REPAIR/REPLACE")
 
-        # Status legend (top right corner of panel) - only Warning and Critical
-        status_x = chart_x + chart_width - 150
-        status_y = chart_y + chart_height - 25
-        blf.size(font_id, 9)
-
-        blf.color(font_id, 1.0, 0.6, 0.0, 1.0)
-        blf.position(font_id, status_x, status_y, 0)
-        blf.draw(font_id, "■ Warning")
-
-        blf.color(font_id, 1.0, 0.0, 0.0, 1.0)
-        blf.position(font_id, status_x + 70, status_y, 0)
-        blf.draw(font_id, "■ Critical")
-
-        # Draw ESC hint (bottom right)
+        # Draw ESC hint (LEFT side, bottom)
         blf.size(font_id, 10)
         blf.color(font_id, 0.6, 0.6, 0.6, 0.9)
-        blf.position(font_id, chart_x + chart_width - 80, chart_y + 5, 0)
+        blf.position(font_id, chart_x + 15, chart_y + 5, 0)
         blf.draw(font_id, "ESC to close")
 
         gpu.state.blend_set('NONE')
