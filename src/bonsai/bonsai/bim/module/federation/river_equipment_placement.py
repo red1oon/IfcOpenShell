@@ -1188,12 +1188,13 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         num_sensors = len(operator_self._sensor_data)
         total_bar_width = num_sensors * (bar_width + bar_spacing)
 
-        # Center the entire content (bars + gap + STATUS) as a unit within panel
+        # Position content (bars + gap + STATUS) slightly right of center
         # Total content width = bars + gap + STATUS box
         content_width = total_bar_width + status_gap + status_box_width
-        content_start_x = chart_x + (chart_width - content_width) // 2
+        # Add 50px offset to shift right from perfect center
+        content_start_x = chart_x + (chart_width - content_width) // 2 + 50
 
-        # Bars start at the beginning of centered content
+        # Bars start at the beginning of positioned content
         start_x = content_start_x
 
         # Track sensor status for STATUS BOX
