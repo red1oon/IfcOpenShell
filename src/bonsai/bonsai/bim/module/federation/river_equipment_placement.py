@@ -85,20 +85,50 @@ LOGGER.log("River Equipment Placement module loading...")
 EQUIPMENT_TYPES = {
     'boom_trap': {
         'name': 'Boom Trap Station',
-        'color': (1.0, 0.0, 0.0),  # Pure Red
+        'color': (1.0, 0.42, 0.21),  # Orange #FF6B35
         'icon': 'MESH_CIRCLE',
         'radius': 3.0
     },
     'water_quality': {
         'name': 'Water Quality Station',
-        'color': (0.0, 0.5, 1.0),  # Blue
+        'color': (0.31, 0.80, 0.77),  # Turquoise #4ECDC4
         'icon': 'MATFLUID',
         'radius': 3.0
     },
     'biodiversity': {
         'name': 'Biodiversity Monitor',
-        'color': (0.0, 1.0, 0.0),  # Pure Green
+        'color': (0.0, 1.0, 0.0),  # Green
         'icon': 'ORPHAN_DATA',
+        'radius': 3.0
+    },
+    'wildlife_camera': {
+        'name': 'Wildlife Camera',
+        'color': (0.0, 1.0, 0.0),  # Green (alias for biodiversity)
+        'icon': 'CAMERA_DATA',
+        'radius': 3.0
+    },
+    'biochar': {
+        'name': 'Biochar Facility',
+        'color': (0.60, 0.93, 0.85),  # Mint #99EDD9
+        'icon': 'EXPERIMENTAL',
+        'radius': 3.0
+    },
+    'mrf': {
+        'name': 'MRF Site',
+        'color': (1.0, 0.75, 0.80),  # Pink #FFBFCC
+        'icon': 'PREFERENCES',
+        'radius': 3.0
+    },
+    'pollutant_sensor': {
+        'name': 'Pollutant Sensor',
+        'color': (0.67, 0.59, 0.85),  # Purple #AA96DA
+        'icon': 'EXPERIMENTAL',
+        'radius': 3.0
+    },
+    'flood_monitor': {
+        'name': 'Flood Monitor',
+        'color': (0.36, 0.61, 0.84),  # Blue #5B9BD5
+        'icon': 'MOD_FLUIDSIM',
         'radius': 3.0
     },
 }
@@ -163,8 +193,35 @@ class BIM_OT_equipment_select_type(Operator):
         # Show equipment info
         info = EQUIPMENT_TYPES[self.equipment_type]
         box = layout.box()
-        box.label(text=f"Color: {'Red' if info['color'][0] == 1.0 else 'Blue' if info['color'][2] == 1.0 else 'Green'}")
+
+        # Color display with emoji
+        color_map = {
+            'boom_trap': '🟠 Orange',
+            'water_quality': '🩵 Turquoise',
+            'biodiversity': '🟢 Green',
+            'wildlife_camera': '🟢 Green',
+            'biochar': '🟩 Mint',
+            'mrf': '🩷 Pink',
+            'pollutant_sensor': '🟣 Purple',
+            'flood_monitor': '🔵 Blue',
+        }
+        color_name = color_map.get(self.equipment_type, '⚪ Unknown')
+
+        box.label(text=f"Color: {color_name}")
         box.label(text=f"Radius: {info['radius']}m")
+
+        # Show sensor count
+        sensor_counts = {
+            'boom_trap': 8,
+            'water_quality': 8,
+            'biodiversity': 8,
+            'wildlife_camera': 8,
+            'biochar': 8,
+            'mrf': 8,
+            'pollutant_sensor': 8,
+            'flood_monitor': 8,
+        }
+        box.label(text=f"Sensors: {sensor_counts.get(self.equipment_type, 0)} IoT devices")
 
 
 class BIM_OT_equipment_place_marker(Operator):
@@ -491,11 +548,12 @@ class BIM_OT_equipment_load_from_db(Operator):
             LOGGER.log(f"Mesh object offset: ({mesh_offset[0]:.2f}, {mesh_offset[1]:.2f}, {mesh_offset[2]:.2f})")
             LOGGER.log("Applying same offset to equipment (display time, not stored)")
 
-            # Query equipment markers
-            cursor.execute("""
+            # Query equipment markers (all types)
+            marker_types = ', '.join([f"'{mt}'" for mt in EQUIPMENT_TYPES.keys()])
+            cursor.execute(f"""
                 SELECT marker_type, name, location_x, location_y, location_z
                 FROM project_markers
-                WHERE marker_type IN ('boom_trap', 'water_quality', 'biodiversity')
+                WHERE marker_type IN ({marker_types})
                 ORDER BY marker_id
             """)
 
@@ -517,6 +575,7 @@ class BIM_OT_equipment_load_from_db(Operator):
             total_loaded = 0
             for marker_type, name, x, y, z in rows:
                 if marker_type not in EQUIPMENT_TYPES:
+                    LOGGER.log(f"WARNING: Unknown marker type '{marker_type}' - skipping", error=True)
                     continue
 
                 equipment_info = EQUIPMENT_TYPES[marker_type]
@@ -621,8 +680,9 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
 
         obj = context.active_object
 
-        # Extract marker ID from object name
-        patterns = ['BOOM_TRAP_', 'WATER_QUALITY_', 'BIODIVERSITY_']
+        # Extract marker ID from object name (all equipment types)
+        patterns = ['BOOM_TRAP_', 'WATER_QUALITY_', 'BIODIVERSITY_', 'WILDLIFE_CAMERA_',
+                    'BIOCHAR_', 'MRF_', 'POLLUTANT_SENSOR_', 'FLOOD_MONITOR_']
         found = False
         for pattern in patterns:
             if obj.name.startswith(pattern):
@@ -865,16 +925,15 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         batch.draw(shader)
 
         # Draw header panel (color-coded by equipment type)
-        # Determine equipment type color
+        # Determine equipment type color from EQUIPMENT_TYPES
         equipment_name = operator_self._equipment_name
-        if equipment_name.startswith('BOOM_TRAP'):
-            header_color = (1.0, 0.0, 0.0, 0.85)  # Red for Boom Traps
-        elif equipment_name.startswith('WATER_QUALITY'):
-            header_color = (0.0, 0.5, 1.0, 0.85)  # Blue for Water Quality
-        elif equipment_name.startswith('BIODIVERSITY'):
-            header_color = (0.0, 1.0, 0.0, 0.85)  # Green for Biodiversity
-        else:
-            header_color = (0.3, 0.3, 0.3, 0.85)  # Gray fallback
+        header_color = (0.3, 0.3, 0.3, 0.85)  # Gray fallback
+
+        for eq_type, eq_info in EQUIPMENT_TYPES.items():
+            pattern = eq_type.upper().replace('_', '_')
+            if equipment_name.upper().startswith(pattern):
+                header_color = (*eq_info['color'], 0.85)
+                break
 
         header_vertices = [
             (chart_x - 20, chart_y + chart_height + 10),
@@ -1107,18 +1166,13 @@ class BIM_OT_equipment_view_properties(Operator):
 
         obj = context.active_object
 
-        # Check if it's an equipment marker
-        patterns = ['BOOM_TRAP_', 'WATER_QUALITY_', 'BIODIVERSITY_']
+        # Check if it's an equipment marker and extract type
         equipment_type = None
 
-        for pattern in patterns:
-            if obj.name.startswith(pattern):
-                if pattern == 'BOOM_TRAP_':
-                    equipment_type = 'boom_trap'
-                elif pattern == 'WATER_QUALITY_':
-                    equipment_type = 'water_quality'
-                elif pattern == 'BIODIVERSITY_':
-                    equipment_type = 'biodiversity'
+        for eq_type in EQUIPMENT_TYPES.keys():
+            pattern = eq_type.upper() + '_'
+            if obj.name.upper().startswith(pattern):
+                equipment_type = eq_type
                 break
 
         if not equipment_type:
@@ -1178,7 +1232,19 @@ class BIM_OT_equipment_view_properties(Operator):
 
             # Header
             equipment_info = EQUIPMENT_TYPES.get(marker_type, {})
-            color_name = '🔴 RED' if marker_type == 'boom_trap' else '🔵 BLUE' if marker_type == 'water_quality' else '🟢 GREEN'
+
+            # Dynamic color emoji mapping
+            color_map = {
+                'boom_trap': '🟠 ORANGE',
+                'water_quality': '🩵 TURQUOISE',
+                'biodiversity': '🟢 GREEN',
+                'wildlife_camera': '🟢 GREEN',
+                'biochar': '🟩 MINT',
+                'mrf': '🩷 PINK',
+                'pollutant_sensor': '🟣 PURPLE',
+                'flood_monitor': '🔵 BLUE',
+            }
+            color_name = color_map.get(marker_type, '⚪ UNKNOWN')
 
             header_box = layout.box()
             header_box.scale_y = 1.5
@@ -1283,7 +1349,8 @@ class BIM_OT_equipment_clear_all(Operator):
         total = 0
 
         # Delete by name pattern (more robust - doesn't rely on object references)
-        patterns = ['BOOM_TRAP_', 'WATER_QUALITY_', 'BIODIVERSITY_']
+        patterns = ['BOOM_TRAP_', 'WATER_QUALITY_', 'BIODIVERSITY_', 'WILDLIFE_CAMERA_',
+                    'BIOCHAR_', 'MRF_', 'POLLUTANT_SENSOR_', 'FLOOD_MONITOR_']
         for obj in list(bpy.data.objects):
             if any(obj.name.startswith(pattern) for pattern in patterns):
                 try:
@@ -1344,13 +1411,15 @@ class BIM_OT_equipment_clear_all(Operator):
             LOGGER.section("DELETING FROM DATABASE")
 
             # Get count before delete
-            cursor.execute("SELECT COUNT(*) FROM project_markers WHERE marker_type IN ('boom_trap', 'water_quality', 'biodiversity')")
+            marker_types = ', '.join([f"'{mt}'" for mt in EQUIPMENT_TYPES.keys()])
+            cursor.execute(f"SELECT COUNT(*) FROM project_markers WHERE marker_type IN ({marker_types})")
             count_before = cursor.fetchone()[0]
 
             # Delete equipment markers (keep other marker types if any)
-            cursor.execute("""
+            marker_types = ', '.join([f"'{mt}'" for mt in EQUIPMENT_TYPES.keys()])
+            cursor.execute(f"""
                 DELETE FROM project_markers
-                WHERE marker_type IN ('boom_trap', 'water_quality', 'biodiversity')
+                WHERE marker_type IN ({marker_types})
             """)
 
             deleted = cursor.rowcount
@@ -1406,14 +1475,27 @@ class BIM_PT_river_equipment_placement(Panel):
 
         global PLACED_EQUIPMENT
         total_count = 0
+
+        # Color emoji mapping
+        color_map = {
+            'boom_trap': '🟠',
+            'water_quality': '🩵',
+            'biodiversity': '🟢',
+            'wildlife_camera': '🟢',
+            'biochar': '🟩',
+            'mrf': '🩷',
+            'pollutant_sensor': '🟣',
+            'flood_monitor': '🔵',
+        }
+
         for equipment_type, items in PLACED_EQUIPMENT.items():
             count = len(items)
             if count > 0:
                 row = box.row()
                 icon = EQUIPMENT_TYPES[equipment_type]['icon']
                 name = EQUIPMENT_TYPES[equipment_type]['name']
-                color_name = '🔴 Red' if equipment_type == 'boom_trap' else '🔵 Blue' if equipment_type == 'water_quality' else '🟢 Green'
-                row.label(text=f"{color_name} - {name}: {count}", icon=icon)
+                color_emoji = color_map.get(equipment_type, '⚪')
+                row.label(text=f"{color_emoji} {name}: {count}", icon=icon)
                 total_count += count
 
         if total_count == 0:
@@ -1423,8 +1505,8 @@ class BIM_PT_river_equipment_placement(Panel):
 
         # View Details (if equipment selected)
         if context.active_object:
-            patterns = ['BOOM_TRAP_', 'WATER_QUALITY_', 'BIODIVERSITY_']
-            if any(context.active_object.name.startswith(p) for p in patterns):
+            patterns = [eq_type.upper() + '_' for eq_type in EQUIPMENT_TYPES.keys()]
+            if any(context.active_object.name.upper().startswith(p) for p in patterns):
                 detail_box = layout.box()
                 detail_box.label(text="Selected Equipment:", icon='OUTLINER_OB_EMPTY')
                 detail_box.label(text=f"  {context.active_object.name}")
@@ -1463,8 +1545,8 @@ class BIM_MT_equipment_context_menu(bpy.types.Menu):
     def poll(cls, context):
         if not context.active_object:
             return False
-        patterns = ['BOOM_TRAP_', 'WATER_QUALITY_', 'BIODIVERSITY_']
-        return any(context.active_object.name.startswith(p) for p in patterns)
+        patterns = [eq_type.upper() + '_' for eq_type in EQUIPMENT_TYPES.keys()]
+        return any(context.active_object.name.upper().startswith(p) for p in patterns)
 
     def draw(self, context):
         layout = self.layout
@@ -1502,15 +1584,17 @@ class BIM_OT_equipment_view_pm_schedule(Operator):
             self.report({'ERROR'}, "No equipment selected")
             return {'CANCELLED'}
 
-        # Extract marker ID from name
+        # Extract marker ID from name (all equipment types)
+        marker_id = None
         try:
-            if obj.name.startswith('BOOM_TRAP_'):
-                marker_id = int(obj.name.replace('BOOM_TRAP_', ''))
-            elif obj.name.startswith('WATER_QUALITY_'):
-                marker_id = int(obj.name.replace('WATER_QUALITY_', ''))
-            elif obj.name.startswith('BIODIVERSITY_'):
-                marker_id = int(obj.name.replace('BIODIVERSITY_', ''))
-            else:
+            for eq_type in EQUIPMENT_TYPES.keys():
+                pattern = eq_type.upper() + '_'
+                if obj.name.upper().startswith(pattern):
+                    num_str = obj.name.split('_')[-1]
+                    marker_id = int(num_str)
+                    break
+
+            if marker_id is None:
                 self.report({'ERROR'}, "Not a valid equipment marker")
                 return {'CANCELLED'}
         except:
@@ -1614,15 +1698,17 @@ class BIM_OT_equipment_log_breakdown(Operator):
             self.report({'ERROR'}, "No equipment selected")
             return {'CANCELLED'}
 
-        # Extract marker ID
+        # Extract marker ID (all equipment types)
+        marker_id = None
         try:
-            if obj.name.startswith('BOOM_TRAP_'):
-                marker_id = int(obj.name.replace('BOOM_TRAP_', ''))
-            elif obj.name.startswith('WATER_QUALITY_'):
-                marker_id = int(obj.name.replace('WATER_QUALITY_', ''))
-            elif obj.name.startswith('BIODIVERSITY_'):
-                marker_id = int(obj.name.replace('BIODIVERSITY_', ''))
-            else:
+            for eq_type in EQUIPMENT_TYPES.keys():
+                pattern = eq_type.upper() + '_'
+                if obj.name.upper().startswith(pattern):
+                    num_str = obj.name.split('_')[-1]
+                    marker_id = int(num_str)
+                    break
+
+            if marker_id is None:
                 self.report({'ERROR'}, "Not a valid equipment marker")
                 return {'CANCELLED'}
         except:
@@ -1728,15 +1814,17 @@ class BIM_OT_equipment_create_work_order(Operator):
             self.report({'ERROR'}, "No equipment selected")
             return {'CANCELLED'}
 
-        # Extract marker ID
+        # Extract marker ID (all equipment types)
+        marker_id = None
         try:
-            if obj.name.startswith('BOOM_TRAP_'):
-                marker_id = int(obj.name.replace('BOOM_TRAP_', ''))
-            elif obj.name.startswith('WATER_QUALITY_'):
-                marker_id = int(obj.name.replace('WATER_QUALITY_', ''))
-            elif obj.name.startswith('BIODIVERSITY_'):
-                marker_id = int(obj.name.replace('BIODIVERSITY_', ''))
-            else:
+            for eq_type in EQUIPMENT_TYPES.keys():
+                pattern = eq_type.upper() + '_'
+                if obj.name.upper().startswith(pattern):
+                    num_str = obj.name.split('_')[-1]
+                    marker_id = int(num_str)
+                    break
+
+            if marker_id is None:
                 self.report({'ERROR'}, "Not a valid equipment marker")
                 return {'CANCELLED'}
         except:
@@ -1805,8 +1893,8 @@ class BIM_OT_equipment_create_work_order(Operator):
 # Register context menu to appear on right-click
 def menu_func(self, context):
     if context.active_object:
-        patterns = ['BOOM_TRAP_', 'WATER_QUALITY_', 'BIODIVERSITY_']
-        if any(context.active_object.name.startswith(p) for p in patterns):
+        patterns = [eq_type.upper() + '_' for eq_type in EQUIPMENT_TYPES.keys()]
+        if any(context.active_object.name.upper().startswith(p) for p in patterns):
             self.layout.separator()
             self.layout.menu("BIM_MT_equipment_context_menu", icon='TOOL_SETTINGS')
 
