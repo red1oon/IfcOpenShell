@@ -1086,10 +1086,11 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         num_sensors = len(operator_self._sensor_data)
         total_bar_width = num_sensors * (bar_width + bar_spacing)
 
-        # STATUS box width: dynamically accommodate ALL sensor icons (not just 4)
-        # Width = label(140px) + icons(num_sensors × 22px) + padding(40px)
+        # STATUS box width: compact width with double-line layout for icons
+        # Width = label(140px) + icons per line (4 icons × 22px) + padding(40px)
         status_label_width = 140  # "B. INSPECTION" text width
-        status_icon_width = num_sensors * 22  # ALL sensors can potentially show as icons
+        icons_per_line = 4  # Icons wrap to second line after 4
+        status_icon_width = icons_per_line * 22  # 4 icons per line
         status_padding = 40  # Left/right padding
         status_box_width = status_label_width + status_icon_width + status_padding
         status_gap = 30
@@ -1413,11 +1414,12 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         blf.position(font_id, status_box_x + 10, status_box_y + status_box_height - 40, 0)
         blf.draw(font_id, "STATUS")
 
-        # Status items - off-white, with MORE spacing from title (70px instead of 55px)
+        # Status items - off-white, double-line layout (label + icons on two lines)
         blf.size(font_id, 11)
         blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white default
         item_y = status_box_y + status_box_height - 70  # Increased from 55 to 70
-        line_height = 30
+        line_height = 45  # Increased from 30 to 45 for double-line layout
+        icons_per_line = 4  # Max icons per line before wrapping
 
         # A. OK - grey if issues, off-white if all OK
         all_ok = len(sensors_inspection) == 0
@@ -1428,63 +1430,79 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         blf.position(font_id, status_box_x + 10, item_y, 0)
         blf.draw(font_id, "A. OK")
 
-        # B. INSPECTION - with icons of ALL sensors that went above threshold
+        # B. INSPECTION - with icons wrapping to second line
         item_y -= line_height
         if len(sensors_inspection) > 0:
             blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white (active)
             blf.position(font_id, status_box_x + 10, item_y, 0)
             blf.draw(font_id, "B. INSPECTION")
-            # Show ALL sensor icons (not limited to 4)
-            icon_x_offset = 140
-            for sensor in sensors_inspection:  # Show ALL icons
+            # Show icons with wrapping (4 per line)
+            icon_x_start = 140
+            icon_y_line1 = item_y - 2  # First line (same as label)
+            icon_y_line2 = item_y - 18  # Second line (16px below)
+            for idx, sensor in enumerate(sensors_inspection):
                 sensor_icon = SENSOR_TYPE_ICONS.get(sensor['type'], '📊')
                 blf.size(font_id, 16)
                 blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white
-                blf.position(font_id, status_box_x + icon_x_offset, item_y - 2, 0)
+                # Calculate position with wrapping
+                col = idx % icons_per_line
+                row = idx // icons_per_line
+                icon_x = status_box_x + icon_x_start + (col * 22)
+                icon_y = icon_y_line1 if row == 0 else icon_y_line2
+                blf.position(font_id, icon_x, icon_y, 0)
                 blf.draw(font_id, sensor_icon)
-                icon_x_offset += 22
             blf.size(font_id, 11)
         else:
             blf.color(font_id, 0.4, 0.4, 0.4, 0.7)  # Grey (inactive)
             blf.position(font_id, status_box_x + 10, item_y, 0)
             blf.draw(font_id, "B. INSPECTION")
 
-        # C. PM ACTION - sensors in WARNING (orange)
+        # C. PM ACTION - sensors in WARNING (orange) with wrapping
         item_y -= line_height
         if len(sensors_pm_action) > 0:
             blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white (active)
             blf.position(font_id, status_box_x + 10, item_y, 0)
             blf.draw(font_id, "C. PM ACTION")
-            # Show ALL sensor icons
-            icon_x_offset = 140
-            for sensor in sensors_pm_action:  # Show ALL icons
+            # Show icons with wrapping (4 per line)
+            icon_x_start = 140
+            icon_y_line1 = item_y - 2
+            icon_y_line2 = item_y - 18
+            for idx, sensor in enumerate(sensors_pm_action):
                 sensor_icon = SENSOR_TYPE_ICONS.get(sensor['type'], '📊')
                 blf.size(font_id, 16)
                 blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white
-                blf.position(font_id, status_box_x + icon_x_offset, item_y - 2, 0)
+                col = idx % icons_per_line
+                row = idx // icons_per_line
+                icon_x = status_box_x + icon_x_start + (col * 22)
+                icon_y = icon_y_line1 if row == 0 else icon_y_line2
+                blf.position(font_id, icon_x, icon_y, 0)
                 blf.draw(font_id, sensor_icon)
-                icon_x_offset += 22
             blf.size(font_id, 11)
         else:
             blf.color(font_id, 0.4, 0.4, 0.4, 0.7)  # Grey (inactive)
             blf.position(font_id, status_box_x + 10, item_y, 0)
             blf.draw(font_id, "C. PM ACTION")
 
-        # D. FOLLOW SOP - sensors in CRITICAL (red)
+        # D. FOLLOW SOP - sensors in CRITICAL (red) with wrapping
         item_y -= line_height
         if len(sensors_follow_sop) > 0:
             blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white (active)
             blf.position(font_id, status_box_x + 10, item_y, 0)
             blf.draw(font_id, "D. FOLLOW SOP")
-            # Show ALL sensor icons
-            icon_x_offset = 140
-            for sensor in sensors_follow_sop:  # Show ALL icons
+            # Show icons with wrapping (4 per line)
+            icon_x_start = 140
+            icon_y_line1 = item_y - 2
+            icon_y_line2 = item_y - 18
+            for idx, sensor in enumerate(sensors_follow_sop):
                 sensor_icon = SENSOR_TYPE_ICONS.get(sensor['type'], '📊')
                 blf.size(font_id, 16)
                 blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white
-                blf.position(font_id, status_box_x + icon_x_offset, item_y - 2, 0)
+                col = idx % icons_per_line
+                row = idx // icons_per_line
+                icon_x = status_box_x + icon_x_start + (col * 22)
+                icon_y = icon_y_line1 if row == 0 else icon_y_line2
+                blf.position(font_id, icon_x, icon_y, 0)
                 blf.draw(font_id, sensor_icon)
-                icon_x_offset += 22
             blf.size(font_id, 11)
         else:
             blf.color(font_id, 0.4, 0.4, 0.4, 0.7)  # Grey (inactive)
