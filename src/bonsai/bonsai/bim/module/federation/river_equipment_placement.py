@@ -563,10 +563,10 @@ class BIM_OT_equipment_load_from_db(Operator):
             LOGGER.log(f"Mesh object offset: ({mesh_offset[0]:.2f}, {mesh_offset[1]:.2f}, {mesh_offset[2]:.2f})")
             LOGGER.log("Applying same offset to equipment (display time, not stored)")
 
-            # Query equipment markers (all types)
+            # Query equipment markers (all types) - MUST include marker_id for sensor lookup
             marker_types = ', '.join([f"'{mt}'" for mt in EQUIPMENT_TYPES.keys()])
             cursor.execute(f"""
-                SELECT marker_type, name, location_x, location_y, location_z
+                SELECT marker_id, marker_type, name, location_x, location_y, location_z
                 FROM project_markers
                 WHERE marker_type IN ({marker_types})
                 ORDER BY marker_id
@@ -618,7 +618,7 @@ class BIM_OT_equipment_load_from_db(Operator):
 
             # Create empties from database, organized by collection
             total_loaded = 0
-            for marker_type, name, x, y, z in rows:
+            for marker_id, marker_type, name, x, y, z in rows:
                 if marker_type not in EQUIPMENT_TYPES:
                     LOGGER.log(f"WARNING: Unknown marker type '{marker_type}' - skipping", error=True)
                     continue
@@ -651,6 +651,7 @@ class BIM_OT_equipment_load_from_db(Operator):
                 PLACED_EQUIPMENT[marker_type].append({
                     'id': empty.name,
                     'number': count,
+                    'marker_id': marker_id,  # Store actual DB marker_id for sensor lookup
                     'x': stored_x,
                     'y': stored_y,
                     'z': stored_z,
@@ -659,7 +660,7 @@ class BIM_OT_equipment_load_from_db(Operator):
                 })
 
                 total_loaded += 1
-                LOGGER.log(f"  Loaded: {name} - DB:({x:.1f}, {y:.1f}, {z:.1f}) → Display:({stored_x:.1f}, {stored_y:.1f}, {stored_z:.1f})")
+                LOGGER.log(f"  Loaded: {name} (marker_id={marker_id}) - DB:({x:.1f}, {y:.1f}, {z:.1f}) → Display:({stored_x:.1f}, {stored_y:.1f}, {stored_z:.1f})")
 
             LOGGER.log(f"✅ Loaded {total_loaded} equipment markers from database")
 
@@ -726,27 +727,26 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
 
         obj = context.active_object
 
-        # Extract marker ID from object name (all equipment types)
-        patterns = ['BOOM_TRAP_', 'WATER_QUALITY_', 'BIODIVERSITY_', 'WILDLIFE_CAMERA_',
-                    'BIOCHAR_', 'MRF_', 'POLLUTANT_SENSOR_', 'FLOOD_MONITOR_']
-        found = False
-        for pattern in patterns:
-            if obj.name.startswith(pattern):
-                try:
-                    num_str = obj.name.split('_')[-1]
-                    self._marker_id = int(num_str)
-                    self._equipment_name = obj.name
-                    found = True
-                    LOGGER.log(f"Equipment: {obj.name}, Marker ID: {self._marker_id}")
+        # Find actual database marker_id from PLACED_EQUIPMENT
+        global PLACED_EQUIPMENT
+        found_marker = None
+        for eq_type, items in PLACED_EQUIPMENT.items():
+            for item in items:
+                if item['object_name'] == obj.name:
+                    found_marker = item
                     break
-                except Exception as e:
-                    LOGGER.log(f"ERROR parsing equipment name: {e}", error=True)
-                    pass
+            if found_marker:
+                break
 
-        if not found:
-            LOGGER.log("WARNING: Selected object is not equipment marker", error=True)
-            self.report({'WARNING'}, "Selected object is not equipment marker")
+        if not found_marker:
+            LOGGER.log("WARNING: Selected object not found in PLACED_EQUIPMENT", error=True)
+            self.report({'WARNING'}, "Equipment not loaded. Use 'Load from DB' first.")
             return {'CANCELLED'}
+
+        # Use actual database marker_id (not sequential count)
+        self._marker_id = found_marker.get('marker_id', found_marker['number'])
+        self._equipment_name = obj.name
+        LOGGER.log(f"Equipment: {obj.name}, Database Marker ID: {self._marker_id}")
 
         # Load sensor data
         db_path = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER/klang_river_perfect.db")
