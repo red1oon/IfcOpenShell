@@ -588,6 +588,9 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
     bl_label = "View Sensor Dashboard"
     bl_options = {'REGISTER'}
 
+    # Class-level singleton instance tracker
+    _active_instance = None
+
     _draw_handler = None
     _timer = None
     _sensor_data = []
@@ -600,6 +603,13 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
     def invoke(self, context, event):
         import sqlite3
         from pathlib import Path
+
+        # Close any existing dashboard instance first
+        if BIM_OT_equipment_view_sensor_dashboard._active_instance is not None:
+            old_instance = BIM_OT_equipment_view_sensor_dashboard._active_instance
+            LOGGER.log("Closing previous dashboard instance...")
+            old_instance.cleanup(context)
+            BIM_OT_equipment_view_sensor_dashboard._active_instance = None
 
         LOGGER.section("SENSOR DASHBOARD OPENING (GPU OVERLAY)")
 
@@ -735,6 +745,10 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             self._animation_time = 0.0
 
             context.window_manager.modal_handler_add(self)
+
+            # Register this instance as the active one
+            BIM_OT_equipment_view_sensor_dashboard._active_instance = self
+
             LOGGER.log("✓ GPU overlay enabled, animation started")
             return {'RUNNING_MODAL'}
 
@@ -748,6 +762,9 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
     def modal(self, context, event):
         if event.type in {'ESC'}:
             self.cleanup(context)
+            # Clear the active instance tracker
+            if BIM_OT_equipment_view_sensor_dashboard._active_instance == self:
+                BIM_OT_equipment_view_sensor_dashboard._active_instance = None
             LOGGER.log("✓ Sensor dashboard closed (ESC)")
             return {'CANCELLED'}
 
@@ -795,10 +812,10 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             interp_factor = 0.0
 
         # Chart dimensions
-        chart_width = 800
+        chart_width = 1000
         chart_height = 400
-        bar_width = 30
-        bar_spacing = 10
+        bar_width = 45  # 50% wider (was 30)
+        bar_spacing = 15  # Increased spacing proportionally
         margin_left = 50
         margin_bottom = 100
 
@@ -807,19 +824,41 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         chart_x = (region.width - chart_width) // 2
         chart_y = margin_bottom
 
-        # Draw background panel
+        # Draw background panel (main body - dark)
         shader = gpu.shader.from_builtin('UNIFORM_COLOR')
         vertices = [
             (chart_x - 20, chart_y - 20),
             (chart_x + chart_width + 20, chart_y - 20),
-            (chart_x + chart_width + 20, chart_y + chart_height + 80),
-            (chart_x - 20, chart_y + chart_height + 80)
+            (chart_x + chart_width + 20, chart_y + chart_height + 10),
+            (chart_x - 20, chart_y + chart_height + 10)
         ]
         indices = [(0, 1, 2), (2, 3, 0)]
         batch = batch_for_shader(shader, 'TRIS', {"pos": vertices}, indices=indices)
         shader.bind()
         shader.uniform_float("color", (0.1, 0.1, 0.1, 0.85))
         gpu.state.blend_set('ALPHA')
+        batch.draw(shader)
+
+        # Draw header panel (color-coded by equipment type)
+        # Determine equipment type color
+        equipment_name = operator_self._equipment_name
+        if equipment_name.startswith('BOOM_TRAP'):
+            header_color = (1.0, 0.0, 0.0, 0.85)  # Red for Boom Traps
+        elif equipment_name.startswith('WATER_QUALITY'):
+            header_color = (0.0, 0.5, 1.0, 0.85)  # Blue for Water Quality
+        elif equipment_name.startswith('BIODIVERSITY'):
+            header_color = (0.0, 1.0, 0.0, 0.85)  # Green for Biodiversity
+        else:
+            header_color = (0.3, 0.3, 0.3, 0.85)  # Gray fallback
+
+        header_vertices = [
+            (chart_x - 20, chart_y + chart_height + 10),
+            (chart_x + chart_width + 20, chart_y + chart_height + 10),
+            (chart_x + chart_width + 20, chart_y + chart_height + 80),
+            (chart_x - 20, chart_y + chart_height + 80)
+        ]
+        batch = batch_for_shader(shader, 'TRIS', {"pos": header_vertices}, indices=indices)
+        shader.uniform_float("color", header_color)
         batch.draw(shader)
 
         # Draw title and infographic
@@ -935,9 +974,9 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
                 batch.draw(shader)
                 gpu.state.line_width_set(1.0)
 
-            # Draw value label (horizontal, above bar) - only on Day 7
-            if current_day == 6 and interp_factor == 0.0:
-                blf.size(font_id, 10)
+            # Draw value label INSIDE bar (rotated sideways) - all days during animation
+            if bar_pixel_height > 50:
+                blf.size(font_id, 9)
 
                 # Format value based on magnitude
                 if value >= 1000:
@@ -947,27 +986,50 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
                 else:
                     value_text = f"{value:.1f}"
 
-                # Color based on threshold status
-                if value > threshold * 1.10:
-                    blf.color(font_id, 1.0, 0.0, 0.0, 1.0)  # Red
-                elif value > threshold:
-                    blf.color(font_id, 1.0, 0.6, 0.0, 1.0)  # Orange
-                else:
-                    blf.color(font_id, 0.3, 1.0, 0.3, 1.0)  # Green
+                # White text for contrast
+                blf.color(font_id, 1.0, 1.0, 1.0, 1.0)
 
-                # Position above bar
-                label_x = bar_x + bar_width // 2 - 10
-                label_y = bar_y + bar_pixel_height + 5
-                blf.position(font_id, label_x, label_y, 0)
+                # Calculate text position (middle of bar)
+                text_x = bar_x + 5
+                text_y = bar_y + (bar_pixel_height // 2) - 15
+
+                # Save current state
+                import math
+                angle = math.radians(90)  # 90 degrees in radians
+
+                # Apply rotation and draw
+                blf.enable(font_id, blf.ROTATION)
+                blf.rotation(font_id, angle)
+                blf.position(font_id, text_x + 22, text_y, 0)
                 blf.draw(font_id, value_text)
+                blf.rotation(font_id, 0)  # Reset rotation
+                blf.disable(font_id, blf.ROTATION)
 
-            # Draw sensor type label (below chart)
-            blf.size(font_id, 9)
-            blf.color(font_id, 0.6, 0.6, 0.6, 0.8)
-            sensor_type_short = sensor['type'][:4].upper()
-            label_x = bar_x + (bar_width - len(sensor_type_short) * 3) // 2
-            blf.position(font_id, label_x, chart_y - 25, 0)
-            blf.draw(font_id, sensor_type_short)
+            # Draw sensor icon INSIDE bar (bottom section)
+            # Sensor type emoji mapping
+            sensor_icons = {
+                'loadcell': '⚖️',
+                'waterlevel': '🌊',
+                'flowvelocity': '💨',
+                'ph': '🧪',
+                'dissolvedoxygen': '💧',
+                'turbidity': '☁️',
+                'temperature': '🌡️',
+                'conductivity': '⚡',
+                'heavymetals': '☢️',
+                'aicamera': '📷',
+                'pirmotion': '👁️',
+                'audiorecorder': '🎤',
+                'integrity': '🔧',
+            }
+
+            sensor_icon = sensor_icons.get(sensor['type'], '📊')
+            blf.size(font_id, 18)  # Larger icon (was 14)
+            blf.color(font_id, 1.0, 1.0, 1.0, 0.8)  # Slightly more opaque
+            icon_x = bar_x + (bar_width // 2) - 9  # Center icon in wider bar
+            icon_y = bar_y + 8
+            blf.position(font_id, icon_x, icon_y, 0)
+            blf.draw(font_id, sensor_icon)
 
         # Draw color legend (bottom right)
         legend_x = chart_x + chart_width - 250
