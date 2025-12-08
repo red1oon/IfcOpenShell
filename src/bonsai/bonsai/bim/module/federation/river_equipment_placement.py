@@ -1086,9 +1086,10 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         num_sensors = len(operator_self._sensor_data)
         total_bar_width = num_sensors * (bar_width + bar_spacing)
 
-        # STATUS box width calculation: label(140px) + icons(4 icons × 22px = 88px) + padding(40px) = 268px
+        # STATUS box width: dynamically accommodate ALL sensor icons (not just 4)
+        # Width = label(140px) + icons(num_sensors × 22px) + padding(40px)
         status_label_width = 140  # "B. INSPECTION" text width
-        status_icon_width = 4 * 22  # Max 4 icons at 22px each
+        status_icon_width = num_sensors * 22  # ALL sensors can potentially show as icons
         status_padding = 40  # Left/right padding
         status_box_width = status_label_width + status_icon_width + status_padding
         status_gap = 30
@@ -1177,10 +1178,10 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         shader.uniform_float("color", (1.0, 0.8, 0.0, 0.6))
         batch.draw(shader)
 
-        # Draw threshold label - INSIDE panel (not outside at chart_x - 45)
+        # Draw threshold label - ABOVE the line, inside panel
         blf.size(font_id, 14)
         blf.color(font_id, 1.0, 0.8, 0.0, 0.8)
-        blf.position(font_id, chart_x + 5, threshold_y - 7, 0)  # Inside panel at chart_x + 5
+        blf.position(font_id, chart_x + 5, threshold_y + 5, 0)  # Above line (threshold_y + 5)
         blf.draw(font_id, "MAX")
 
         # Draw sensor bars (legend integrated into bars - use full width)
@@ -1421,15 +1422,15 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         blf.position(font_id, status_box_x + 10, item_y, 0)
         blf.draw(font_id, "A. OK")
 
-        # B. INSPECTION - with icons of sensors that went above threshold
+        # B. INSPECTION - with icons of ALL sensors that went above threshold
         item_y -= line_height
         if len(sensors_inspection) > 0:
             blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white (active)
             blf.position(font_id, status_box_x + 10, item_y, 0)
             blf.draw(font_id, "B. INSPECTION")
-            # Show sensor icons
+            # Show ALL sensor icons (not limited to 4)
             icon_x_offset = 140
-            for sensor in sensors_inspection[:4]:  # Max 4 icons
+            for sensor in sensors_inspection:  # Show ALL icons
                 sensor_icon = SENSOR_TYPE_ICONS.get(sensor['type'], '📊')
                 blf.size(font_id, 16)
                 blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white
@@ -1448,9 +1449,9 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white (active)
             blf.position(font_id, status_box_x + 10, item_y, 0)
             blf.draw(font_id, "C. PM ACTION")
-            # Show sensor icons
+            # Show ALL sensor icons
             icon_x_offset = 140
-            for sensor in sensors_pm_action[:4]:
+            for sensor in sensors_pm_action:  # Show ALL icons
                 sensor_icon = SENSOR_TYPE_ICONS.get(sensor['type'], '📊')
                 blf.size(font_id, 16)
                 blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white
@@ -1469,9 +1470,9 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white (active)
             blf.position(font_id, status_box_x + 10, item_y, 0)
             blf.draw(font_id, "D. FOLLOW SOP")
-            # Show sensor icons
+            # Show ALL sensor icons
             icon_x_offset = 140
-            for sensor in sensors_follow_sop[:4]:
+            for sensor in sensors_follow_sop:  # Show ALL icons
                 sensor_icon = SENSOR_TYPE_ICONS.get(sensor['type'], '📊')
                 blf.size(font_id, 16)
                 blf.color(font_id, 0.85, 0.85, 0.85, 1.0)  # Off-white
