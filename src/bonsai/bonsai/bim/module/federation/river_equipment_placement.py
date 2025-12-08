@@ -1082,12 +1082,10 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         bar_spacing = 15  # Increased spacing proportionally
         margin_left = 50
         margin_bottom = 100
-        legend_width = 220  # Reserve space for legend
 
-        # Position in viewport (bottom-center, with legend on left)
+        # Position in viewport (bottom-center)
         region = context.region
-        total_width = legend_width + 30 + chart_width  # legend + padding + chart
-        chart_x = (region.width - total_width) // 2 + legend_width + 30  # Shift right for legend
+        chart_x = (region.width - chart_width) // 2
         chart_y = margin_bottom
 
         # Draw background panel (main body - dark)
@@ -1155,72 +1153,6 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         blf.color(font_id, 1.0, 0.8, 0.0, 0.8)
         blf.position(font_id, chart_x - 45, threshold_y - 7, 0)
         blf.draw(font_id, "MAX")
-
-        # =============================================================================
-        # LEGEND PANEL (Left side of bars)
-        # =============================================================================
-        legend_padding = 30
-
-        # Position legend to the left of the chart
-        legend_x = chart_x - legend_width - legend_padding
-        legend_y = chart_y
-        legend_height = chart_height
-
-        # Draw legend background
-        legend_vertices = [
-            (legend_x, legend_y),
-            (legend_x + legend_width, legend_y),
-            (legend_x + legend_width, legend_y + legend_height),
-            (legend_x, legend_y + legend_height)
-        ]
-        batch = batch_for_shader(shader, 'TRIS', {"pos": legend_vertices}, indices=indices)
-        shader.uniform_float("color", (0.08, 0.08, 0.08, 0.95))  # Slightly darker than main panel
-        batch.draw(shader)
-
-        # Legend title
-        blf.size(font_id, 14)
-        blf.color(font_id, 1.0, 1.0, 1.0, 1.0)
-        blf.position(font_id, legend_x + 10, legend_y + legend_height - 30, 0)
-        blf.draw(font_id, "Sensor Legend")
-
-        # Draw legend items (sensor list with color squares and icons)
-        blf.size(font_id, 11)
-        item_height = 30
-        start_y = legend_y + legend_height - 60
-
-        num_sensors_to_show = min(len(operator_self._sensor_data), 10)  # Show max 10 items
-        for i in range(num_sensors_to_show):
-            sensor = operator_self._sensor_data[i]
-            item_y = start_y - (i * item_height)
-
-            # Color square (10x10 px)
-            square_size = 10
-            square_x = legend_x + 10
-            square_y = item_y - 3
-            square_vertices = [
-                (square_x, square_y),
-                (square_x + square_size, square_y),
-                (square_x + square_size, square_y + square_size),
-                (square_x, square_y + square_size)
-            ]
-            batch = batch_for_shader(shader, 'TRIS', {"pos": square_vertices}, indices=indices)
-            shader.uniform_float("color", (*sensor['color'], 1.0))
-            batch.draw(shader)
-
-            # Sensor icon and name
-            sensor_icon = SENSOR_TYPE_ICONS.get(sensor['type'], '📊')
-            sensor_label = f"{sensor_icon} {sensor['type']}"
-            blf.color(font_id, 0.9, 0.9, 0.9, 1.0)
-            blf.position(font_id, square_x + square_size + 8, item_y - 2, 0)
-            blf.draw(font_id, sensor_label)
-
-        # If more than 10 sensors, show "+X more"
-        if len(operator_self._sensor_data) > 10:
-            remaining = len(operator_self._sensor_data) - 10
-            blf.size(font_id, 10)
-            blf.color(font_id, 0.6, 0.6, 0.6, 1.0)
-            blf.position(font_id, legend_x + 10, start_y - (10 * item_height) - 5, 0)
-            blf.draw(font_id, f"+ {remaining} more sensors...")
 
         # Draw sensor bars
         num_sensors = len(operator_self._sensor_data)
@@ -1347,30 +1279,83 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             blf.position(font_id, icon_x, icon_y, 0)
             blf.draw(font_id, sensor_icon)
 
-        # Draw color legend (bottom right)
-        legend_x = chart_x + chart_width - 250
-        legend_y = chart_y - 60
-        blf.size(font_id, 11)
+        # =============================================================================
+        # INTEGRATED SENSOR LEGEND (Below bars, inside main panel)
+        # =============================================================================
+        legend_start_y = chart_y + 20
+        legend_x = chart_x + 20
+        blf.size(font_id, 9)
 
-        # Green indicator
+        # Calculate layout: multi-column if needed
+        sensors_per_column = 4
+        column_width = 120
+
+        num_to_show = min(len(operator_self._sensor_data), 8)  # Max 8 sensors (2 columns x 4 rows)
+        for idx in range(num_to_show):
+            sensor = operator_self._sensor_data[idx]
+
+            # Calculate position (2 columns)
+            col = idx // sensors_per_column
+            row = idx % sensors_per_column
+
+            item_x = legend_x + (col * column_width)
+            item_y = legend_start_y + (row * 18)
+
+            # Draw colored square (8x8 px)
+            square_size = 8
+            square_x = item_x
+            square_y = item_y - 2
+            square_vertices = [
+                (square_x, square_y),
+                (square_x + square_size, square_y),
+                (square_x + square_size, square_y + square_size),
+                (square_x, square_y + square_size)
+            ]
+            batch = batch_for_shader(shader, 'TRIS', {"pos": square_vertices}, indices=indices)
+            shader.uniform_float("color", (*sensor['color'], 1.0))
+            batch.draw(shader)
+
+            # Sensor icon + short name
+            sensor_icon = SENSOR_TYPE_ICONS.get(sensor['type'], '📊')
+            # Shorten type names if too long
+            type_name = sensor['type']
+            if len(type_name) > 12:
+                type_name = type_name[:10] + '..'
+
+            sensor_label = f"{sensor_icon} {type_name}"
+            blf.color(font_id, 0.85, 0.85, 0.85, 1.0)
+            blf.position(font_id, square_x + square_size + 5, item_y, 0)
+            blf.draw(font_id, sensor_label)
+
+        # If more sensors, show indicator
+        if len(operator_self._sensor_data) > 8:
+            remaining = len(operator_self._sensor_data) - 8
+            blf.size(font_id, 8)
+            blf.color(font_id, 0.5, 0.5, 0.5, 1.0)
+            blf.position(font_id, legend_x + (column_width * 2), legend_start_y, 0)
+            blf.draw(font_id, f"+{remaining}")
+
+        # Status legend (top right corner of panel)
+        status_x = chart_x + chart_width - 200
+        status_y = chart_y + chart_height - 25
+        blf.size(font_id, 9)
+
         blf.color(font_id, 0.3, 1.0, 0.3, 1.0)
-        blf.position(font_id, legend_x, legend_y, 0)
-        blf.draw(font_id, "■ Normal")
+        blf.position(font_id, status_x, status_y, 0)
+        blf.draw(font_id, "■ OK")
 
-        # Orange indicator
         blf.color(font_id, 1.0, 0.6, 0.0, 1.0)
-        blf.position(font_id, legend_x + 70, legend_y, 0)
+        blf.position(font_id, status_x + 50, status_y, 0)
         blf.draw(font_id, "■ Warning")
 
-        # Red indicator
         blf.color(font_id, 1.0, 0.0, 0.0, 1.0)
-        blf.position(font_id, legend_x + 150, legend_y, 0)
+        blf.position(font_id, status_x + 120, status_y, 0)
         blf.draw(font_id, "■ Critical")
 
-        # Draw ESC hint
-        blf.size(font_id, 16)
-        blf.color(font_id, 0.8, 0.8, 0.8, 0.9)
-        blf.position(font_id, chart_x + chart_width - 100, chart_y - 85, 0)
+        # Draw ESC hint (bottom right)
+        blf.size(font_id, 10)
+        blf.color(font_id, 0.6, 0.6, 0.6, 0.9)
+        blf.position(font_id, chart_x + chart_width - 80, chart_y + 5, 0)
         blf.draw(font_id, "ESC to close")
 
         gpu.state.blend_set('NONE')
