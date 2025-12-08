@@ -583,71 +583,419 @@ class BIM_OT_equipment_load_from_db(Operator):
 
 
 class BIM_OT_equipment_view_sensor_dashboard(Operator):
-    """Open interactive sensor dashboard in web browser"""
+    """View animated sensor bar chart overlay (Day 1-7 animation)"""
     bl_idname = "bim.equipment_view_sensor_dashboard"
     bl_label = "View Sensor Dashboard"
     bl_options = {'REGISTER'}
 
-    equipment_name: bpy.props.StringProperty()
-    marker_id: bpy.props.IntProperty()
-
-    def execute(self, context):
-        import subprocess
-        import sys
-        from pathlib import Path
-
-        # Path to dashboard generator script
-        script_path = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER/scripts/generate_sensor_dashboard.py")
-
-        if not script_path.exists():
-            self.report({'ERROR'}, "Dashboard script not found")
-            return {'CANCELLED'}
-
-        try:
-            # Run dashboard generator
-            result = subprocess.run(
-                [sys.executable, str(script_path), str(self.marker_id)],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-
-            if result.returncode == 0:
-                self.report({'INFO'}, f"Dashboard opened for {self.equipment_name}")
-            else:
-                self.report({'ERROR'}, f"Dashboard generation failed: {result.stderr}")
-                return {'CANCELLED'}
-
-        except Exception as e:
-            self.report({'ERROR'}, f"Failed to open dashboard: {str(e)}")
-            return {'CANCELLED'}
-
-        return {'FINISHED'}
+    _draw_handler = None
+    _timer = None
+    _sensor_data = []
+    _equipment_name = ""
+    _marker_id = 0
+    _animation_time = 0.0
+    _cycle_duration = 6.0  # 6 seconds for Day 1-6 (1 sec per day, smoother)
+    _linger_duration = 2.0  # 2 second linger on Day 7
 
     def invoke(self, context, event):
-        # Get selected object
+        import sqlite3
+        from pathlib import Path
+
+        LOGGER.section("SENSOR DASHBOARD OPENING (GPU OVERLAY)")
+
         if not context.active_object:
+            LOGGER.log("WARNING: No equipment selected", error=True)
             self.report({'WARNING'}, "No equipment selected")
             return {'CANCELLED'}
 
         obj = context.active_object
 
-        # Check if it's an equipment marker
+        # Extract marker ID from object name
         patterns = ['BOOM_TRAP_', 'WATER_QUALITY_', 'BIODIVERSITY_']
+        found = False
         for pattern in patterns:
             if obj.name.startswith(pattern):
-                # Extract marker ID
                 try:
                     num_str = obj.name.split('_')[-1]
-                    self.marker_id = int(num_str)
-                    self.equipment_name = obj.name
-                    return self.execute(context)
-                except:
-                    self.report({'ERROR'}, "Could not parse equipment ID")
-                    return {'CANCELLED'}
+                    self._marker_id = int(num_str)
+                    self._equipment_name = obj.name
+                    found = True
+                    LOGGER.log(f"Equipment: {obj.name}, Marker ID: {self._marker_id}")
+                    break
+                except Exception as e:
+                    LOGGER.log(f"ERROR parsing equipment name: {e}", error=True)
+                    pass
 
-        self.report({'WARNING'}, "Selected object is not equipment marker")
-        return {'CANCELLED'}
+        if not found:
+            LOGGER.log("WARNING: Selected object is not equipment marker", error=True)
+            self.report({'WARNING'}, "Selected object is not equipment marker")
+            return {'CANCELLED'}
+
+        # Load sensor data
+        db_path = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER/klang_river_perfect.db")
+        if not db_path.exists():
+            LOGGER.log(f"ERROR: Database not found: {db_path}", error=True)
+            self.report({'ERROR'}, "Database not found")
+            return {'CANCELLED'}
+
+        try:
+            LOGGER.log("Loading sensor data from database...")
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+
+            # Get sensors
+            cursor.execute("""
+                SELECT sensor_id, sensor_name, sensor_type, unit, threshold_max
+                FROM sensors
+                WHERE equipment_marker_id = ?
+                ORDER BY sensor_type
+            """, (self._marker_id,))
+
+            sensors = cursor.fetchall()
+
+            if not sensors:
+                LOGGER.log(f"WARNING: No sensors found for equipment {self._marker_id}", error=True)
+                self.report({'WARNING'}, "No sensors for this equipment")
+                conn.close()
+                return {'CANCELLED'}
+
+            LOGGER.log(f"Found {len(sensors)} sensors")
+
+            self._sensor_data = []
+
+            # Sensor type colors (RGB)
+            colors = {
+                'loadcell': (0.3, 0.5, 0.9),
+                'waterlevel': (0.2, 0.7, 0.9),
+                'flowvelocity': (0.4, 0.8, 0.6),
+                'ph': (0.6, 0.9, 0.4),
+                'dissolvedoxygen': (0.3, 0.9, 0.6),
+                'turbidity': (0.8, 0.6, 0.4),
+                'temperature': (0.95, 0.6, 0.3),
+                'conductivity': (0.7, 0.5, 0.9),
+                'heavymetals': (0.9, 0.3, 0.3),
+                'aicamera': (0.6, 0.6, 0.95),
+                'pirmotion': (0.95, 0.9, 0.4),
+                'audiorecorder': (0.8, 0.4, 0.8),
+                'integrity': (0.4, 0.4, 0.4),
+            }
+
+            for sensor_id, sensor_name, sensor_type, unit, threshold_max in sensors:
+                # Get 7-day readings
+                cursor.execute("""
+                    SELECT timestamp, value
+                    FROM sensor_readings
+                    WHERE sensor_id = ?
+                    ORDER BY timestamp ASC
+                """, (sensor_id,))
+
+                readings = cursor.fetchall()
+
+                # Extract Day 1-7 values
+                day_values = []
+                for day in range(1, 8):
+                    day_label = f'Day {day}'
+                    for timestamp, value in readings:
+                        if timestamp.startswith(day_label):
+                            day_values.append(float(value))
+                            break
+
+                if len(day_values) == 7:
+                    self._sensor_data.append({
+                        'name': sensor_name,
+                        'type': sensor_type,
+                        'threshold': threshold_max if threshold_max else max(day_values) * 0.9,
+                        'values': day_values,
+                        'color': colors.get(sensor_type, (0.5, 0.5, 0.5))
+                    })
+                    LOGGER.log(f"  Loaded: {sensor_name} ({sensor_type})")
+
+            conn.close()
+
+            if not self._sensor_data:
+                LOGGER.log("WARNING: No sensor data available", error=True)
+                self.report({'WARNING'}, "No sensor data available")
+                return {'CANCELLED'}
+
+            LOGGER.log(f"✓ Loaded {len(self._sensor_data)} sensors with data")
+
+            # Set up GPU draw handler
+            import bpy
+            import blf
+            import gpu
+            from gpu_extras.batch import batch_for_shader
+
+            args = (self, context)
+            self._draw_handler = bpy.types.SpaceView3D.draw_handler_add(
+                self.draw_callback_px, args, 'WINDOW', 'POST_PIXEL'
+            )
+
+            # Set up timer for animation
+            self._timer = context.window_manager.event_timer_add(0.033, window=context.window)  # ~30fps
+            self._animation_time = 0.0
+
+            context.window_manager.modal_handler_add(self)
+            LOGGER.log("✓ GPU overlay enabled, animation started")
+            return {'RUNNING_MODAL'}
+
+        except Exception as e:
+            LOGGER.log(f"ERROR loading sensor data: {e}", error=True)
+            import traceback
+            traceback.print_exc()
+            self.report({'ERROR'}, f"Failed: {str(e)}")
+            return {'CANCELLED'}
+
+    def modal(self, context, event):
+        if event.type in {'ESC'}:
+            self.cleanup(context)
+            LOGGER.log("✓ Sensor dashboard closed (ESC)")
+            return {'CANCELLED'}
+
+        if event.type == 'TIMER':
+            # Update animation time
+            self._animation_time += 0.033
+            total_cycle = self._cycle_duration + self._linger_duration
+            if self._animation_time > total_cycle:
+                self._animation_time -= total_cycle
+
+            # Redraw viewport
+            context.area.tag_redraw()
+
+        return {'PASS_THROUGH'}
+
+    def cleanup(self, context):
+        import bpy
+
+        if self._draw_handler:
+            bpy.types.SpaceView3D.draw_handler_remove(self._draw_handler, 'WINDOW')
+            self._draw_handler = None
+
+        if self._timer:
+            context.window_manager.event_timer_remove(self._timer)
+            self._timer = None
+
+    @staticmethod
+    def draw_callback_px(operator_self, context):
+        import blf
+        import gpu
+        from gpu_extras.batch import batch_for_shader
+
+        # Calculate current day (0-6 for Day 1-7) with smooth interpolation
+        total_cycle = operator_self._cycle_duration + operator_self._linger_duration
+        if operator_self._animation_time < operator_self._cycle_duration:
+            # Days 1-6: smooth progression with interpolation
+            progress = operator_self._animation_time / operator_self._cycle_duration
+            current_day_float = progress * 6.0
+            current_day = int(current_day_float)
+            # Interpolation factor for smooth morphing (0.0 to 1.0 within each day)
+            interp_factor = current_day_float - current_day
+        else:
+            # Day 7: linger (no interpolation)
+            current_day = 6
+            interp_factor = 0.0
+
+        # Chart dimensions
+        chart_width = 800
+        chart_height = 400
+        bar_width = 30
+        bar_spacing = 10
+        margin_left = 50
+        margin_bottom = 100
+
+        # Position in viewport (bottom-left area)
+        region = context.region
+        chart_x = (region.width - chart_width) // 2
+        chart_y = margin_bottom
+
+        # Draw background panel
+        shader = gpu.shader.from_builtin('UNIFORM_COLOR')
+        vertices = [
+            (chart_x - 20, chart_y - 20),
+            (chart_x + chart_width + 20, chart_y - 20),
+            (chart_x + chart_width + 20, chart_y + chart_height + 80),
+            (chart_x - 20, chart_y + chart_height + 80)
+        ]
+        indices = [(0, 1, 2), (2, 3, 0)]
+        batch = batch_for_shader(shader, 'TRIS', {"pos": vertices}, indices=indices)
+        shader.bind()
+        shader.uniform_float("color", (0.1, 0.1, 0.1, 0.85))
+        gpu.state.blend_set('ALPHA')
+        batch.draw(shader)
+
+        # Draw title and infographic
+        font_id = 0
+        blf.size(font_id, 20)
+        blf.color(font_id, 1.0, 1.0, 1.0, 1.0)
+        blf.position(font_id, chart_x, chart_y + chart_height + 40, 0)
+        blf.draw(font_id, f"📊 {operator_self._equipment_name} - Day {current_day + 1}/7")
+
+        # Infographic subtitle
+        blf.size(font_id, 12)
+        blf.color(font_id, 0.7, 0.7, 0.7, 1.0)
+        blf.position(font_id, chart_x, chart_y + chart_height + 20, 0)
+        blf.draw(font_id, "7-Day Sensor Trend → Yellow line = Threshold limit")
+
+        # Draw threshold line
+        threshold_y = chart_y + int(chart_height * 0.77)  # Threshold at ~77% height
+        vertices = [
+            (chart_x, threshold_y),
+            (chart_x + chart_width, threshold_y)
+        ]
+        batch = batch_for_shader(shader, 'LINES', {"pos": vertices})
+        shader.uniform_float("color", (1.0, 0.8, 0.0, 0.6))
+        batch.draw(shader)
+
+        # Draw threshold label
+        blf.size(font_id, 14)
+        blf.color(font_id, 1.0, 0.8, 0.0, 0.8)
+        blf.position(font_id, chart_x - 45, threshold_y - 7, 0)
+        blf.draw(font_id, "MAX")
+
+        # Draw sensor bars
+        num_sensors = len(operator_self._sensor_data)
+        total_bar_width = num_sensors * (bar_width + bar_spacing)
+        start_x = chart_x + (chart_width - total_bar_width) // 2
+
+        for i, sensor in enumerate(operator_self._sensor_data):
+            # Smooth interpolation between current day and next day
+            current_value = sensor['values'][current_day]
+            if current_day < 6 and interp_factor > 0:
+                next_value = sensor['values'][current_day + 1]
+                value = current_value + (next_value - current_value) * interp_factor
+            else:
+                value = current_value
+
+            threshold = sensor['threshold']
+            base_color = sensor['color']
+
+            # Normalized height (safety check for zero threshold)
+            if threshold <= 0:
+                threshold = max(sensor['values']) if sensor['values'] else 1.0
+
+            max_val = threshold * 1.3
+            if max_val == 0:
+                max_val = 1.0  # Fallback to prevent division by zero
+
+            norm_height = min(value / max_val, 1.0)
+            bar_pixel_height = int(norm_height * chart_height)
+
+            # Threshold pixel position
+            threshold_height = int((threshold / max_val) * chart_height)
+
+            # Bar position
+            bar_x = start_x + i * (bar_width + bar_spacing)
+            bar_y = chart_y
+
+            # Draw bar (split colors based on threshold)
+            if bar_pixel_height > 0:
+                # Bottom part (below threshold or entire bar if below)
+                bottom_height = min(bar_pixel_height, threshold_height)
+                if bottom_height > 0:
+                    vertices = [
+                        (bar_x, bar_y),
+                        (bar_x + bar_width, bar_y),
+                        (bar_x + bar_width, bar_y + bottom_height),
+                        (bar_x, bar_y + bottom_height)
+                    ]
+                    batch = batch_for_shader(shader, 'TRIS', {"pos": vertices}, indices=[(0, 1, 2), (2, 3, 0)])
+                    shader.uniform_float("color", (*base_color, 1.0))
+                    batch.draw(shader)
+
+                # Top part (above threshold)
+                if bar_pixel_height > threshold_height:
+                    top_height = bar_pixel_height - threshold_height
+                    # Orange: 100-110%, Red: >110%
+                    if value <= threshold * 1.10:
+                        top_color = (1.0, 0.6, 0.0, 1.0)  # Orange
+                    else:
+                        top_color = (1.0, 0.0, 0.0, 1.0)  # Red
+
+                    vertices = [
+                        (bar_x, bar_y + threshold_height),
+                        (bar_x + bar_width, bar_y + threshold_height),
+                        (bar_x + bar_width, bar_y + threshold_height + top_height),
+                        (bar_x, bar_y + threshold_height + top_height)
+                    ]
+                    batch = batch_for_shader(shader, 'TRIS', {"pos": vertices}, indices=[(0, 1, 2), (2, 3, 0)])
+                    shader.uniform_float("color", top_color)
+                    batch.draw(shader)
+
+            # Highlight current day bar (white outline on Day 7)
+            if current_day == 6 and interp_factor == 0.0:
+                vertices = [
+                    (bar_x - 2, bar_y - 2),
+                    (bar_x + bar_width + 2, bar_y - 2),
+                    (bar_x + bar_width + 2, bar_y + chart_height + 2),
+                    (bar_x - 2, bar_y + chart_height + 2),
+                    (bar_x - 2, bar_y - 2)
+                ]
+                batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": vertices})
+                shader.uniform_float("color", (1.0, 1.0, 1.0, 0.7))
+                gpu.state.line_width_set(2.0)
+                batch.draw(shader)
+                gpu.state.line_width_set(1.0)
+
+            # Draw value label (horizontal, above bar) - only on Day 7
+            if current_day == 6 and interp_factor == 0.0:
+                blf.size(font_id, 10)
+
+                # Format value based on magnitude
+                if value >= 1000:
+                    value_text = f"{value/1000:.1f}k"
+                elif value >= 100:
+                    value_text = f"{value:.0f}"
+                else:
+                    value_text = f"{value:.1f}"
+
+                # Color based on threshold status
+                if value > threshold * 1.10:
+                    blf.color(font_id, 1.0, 0.0, 0.0, 1.0)  # Red
+                elif value > threshold:
+                    blf.color(font_id, 1.0, 0.6, 0.0, 1.0)  # Orange
+                else:
+                    blf.color(font_id, 0.3, 1.0, 0.3, 1.0)  # Green
+
+                # Position above bar
+                label_x = bar_x + bar_width // 2 - 10
+                label_y = bar_y + bar_pixel_height + 5
+                blf.position(font_id, label_x, label_y, 0)
+                blf.draw(font_id, value_text)
+
+            # Draw sensor type label (below chart)
+            blf.size(font_id, 9)
+            blf.color(font_id, 0.6, 0.6, 0.6, 0.8)
+            sensor_type_short = sensor['type'][:4].upper()
+            label_x = bar_x + (bar_width - len(sensor_type_short) * 3) // 2
+            blf.position(font_id, label_x, chart_y - 25, 0)
+            blf.draw(font_id, sensor_type_short)
+
+        # Draw color legend (bottom right)
+        legend_x = chart_x + chart_width - 250
+        legend_y = chart_y - 60
+        blf.size(font_id, 11)
+
+        # Green indicator
+        blf.color(font_id, 0.3, 1.0, 0.3, 1.0)
+        blf.position(font_id, legend_x, legend_y, 0)
+        blf.draw(font_id, "■ Normal")
+
+        # Orange indicator
+        blf.color(font_id, 1.0, 0.6, 0.0, 1.0)
+        blf.position(font_id, legend_x + 70, legend_y, 0)
+        blf.draw(font_id, "■ Warning")
+
+        # Red indicator
+        blf.color(font_id, 1.0, 0.0, 0.0, 1.0)
+        blf.position(font_id, legend_x + 150, legend_y, 0)
+        blf.draw(font_id, "■ Critical")
+
+        # Draw ESC hint
+        blf.size(font_id, 16)
+        blf.color(font_id, 0.8, 0.8, 0.8, 0.9)
+        blf.position(font_id, chart_x + chart_width - 100, chart_y - 85, 0)
+        blf.draw(font_id, "ESC to close")
+
+        gpu.state.blend_set('NONE')
 
 
 class BIM_OT_equipment_view_properties(Operator):
