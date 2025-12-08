@@ -1191,21 +1191,75 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
                 blf.disable(font_id, blf.ROTATION)
 
             # Draw sensor icon INSIDE bar (bottom section)
-            # Sensor type emoji mapping
+            # Comprehensive sensor type emoji mapping (54 types)
             sensor_icons = {
+                # Boom Trap sensors (8)
                 'loadcell': '⚖️',
+                'integrity': '🔧',
                 'waterlevel': '🌊',
                 'flowvelocity': '💨',
+                'camera': '📹',
+                'vibration': '📳',
+                'gps_drift': '🛰️',
+                'powerusage': '🔋',
+
+                # Water Quality sensors (8)
+                'turbidity': '☁️',
+                'heavymetals': '☢️',
                 'ph': '🧪',
                 'dissolvedoxygen': '💧',
-                'turbidity': '☁️',
                 'temperature': '🌡️',
                 'conductivity': '⚡',
-                'heavymetals': '☢️',
+                'nitrate': '🧬',
+                'phosphate': '💎',
+
+                # Biodiversity sensors (8)
                 'aicamera': '📷',
                 'pirmotion': '👁️',
+                'thermalcamera': '🔥',
                 'audiorecorder': '🎤',
-                'integrity': '🔧',
+                'ultrasonic': '🦇',
+                'ndvi': '🌿',
+                'soilmoisture': '🌱',
+                'canopy_height': '🌳',
+
+                # Biochar Facility sensors (8)
+                'feedstock_mass': '🪵',
+                'biochar_yield': '⚫',
+                'pyrolysis_temp': '🔥',
+                'carbon_content': '💨',
+                'co2_emissions': '🌫️',
+                'particulate': '💨',
+                'reactor_pressure': '🔩',
+                'energy_consumption': '⚡',
+
+                # MRF Site sensors (8)
+                'conveyor_load': '📦',
+                'pet_stream': '♻️',
+                'hdpe_stream': '🥤',
+                'organic_stream': '🍃',
+                'contamination': '⚠️',
+                'ai_sorter_accuracy': '🤖',
+                'throughput': '📊',
+                'power_usage': '🔌',
+
+                # Flood Monitor sensors (7)
+                'flowrate': '🌊',
+                'rainfall': '🌧️',
+                'barometric': '🌐',
+                'velocity_spike': '⚡',
+                'debris_radar': '📡',
+                'bridge_clearance': '🌉',
+                'siren_status': '🚨',
+
+                # Pollutant Sensor sensors (7)
+                'voc': '💨',
+                'cod': '🧪',
+                'bod': '🦠',
+                'tss': '🌫️',
+                'oil_grease': '🛢️',
+                'cyanide': '☠️',
+                'phenols': '⚗️',
             }
 
             sensor_icon = sensor_icons.get(sensor['type'], '📊')
