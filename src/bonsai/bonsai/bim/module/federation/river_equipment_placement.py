@@ -591,6 +591,7 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
     # Class-level singleton instance tracker
     _active_instance = None
 
+    _is_running = False  # Flag to prevent stale draw calls
     _draw_handler = None
     _timer = None
     _sensor_data = []
@@ -746,8 +747,9 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
 
             context.window_manager.modal_handler_add(self)
 
-            # Register this instance as the active one
+            # Register this instance as the active one and mark as running
             BIM_OT_equipment_view_sensor_dashboard._active_instance = self
+            self._is_running = True
 
             LOGGER.log("✓ GPU overlay enabled, animation started")
             return {'RUNNING_MODAL'}
@@ -761,6 +763,7 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
 
     def modal(self, context, event):
         if event.type in {'ESC'}:
+            self._is_running = False  # Stop draw callbacks
             self.cleanup(context)
             # Clear the active instance tracker
             if BIM_OT_equipment_view_sensor_dashboard._active_instance == self:
@@ -783,19 +786,41 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
     def cleanup(self, context):
         import bpy
 
-        if self._draw_handler:
-            bpy.types.SpaceView3D.draw_handler_remove(self._draw_handler, 'WINDOW')
-            self._draw_handler = None
+        # Mark as not running first to prevent draw callbacks
+        self._is_running = False
 
         if self._timer:
-            context.window_manager.event_timer_remove(self._timer)
+            try:
+                context.window_manager.event_timer_remove(self._timer)
+            except:
+                pass
             self._timer = None
+
+        if self._draw_handler:
+            try:
+                bpy.types.SpaceView3D.draw_handler_remove(self._draw_handler, 'WINDOW')
+            except:
+                pass
+            self._draw_handler = None
+
+        # Force redraw to clear artifacts
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                area.tag_redraw()
 
     @staticmethod
     def draw_callback_px(operator_self, context):
         import blf
         import gpu
         from gpu_extras.batch import batch_for_shader
+
+        # Safety check: exit if operator is no longer running
+        try:
+            if not operator_self._is_running:
+                return
+        except (ReferenceError, AttributeError):
+            # Operator has been removed, exit silently
+            return
 
         # Calculate current day (0-6 for Day 1-7) with smooth interpolation
         total_cycle = operator_self._cycle_duration + operator_self._linger_duration
