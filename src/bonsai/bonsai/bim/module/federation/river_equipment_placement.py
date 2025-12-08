@@ -862,6 +862,7 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
     _is_dragging = False
     _drag_start_x = 0
     _drag_start_y = 0
+    _panel_bounds = None  # (x_min, y_min, x_max, y_max) for hit detection
 
     def invoke(self, context, event):
         import sqlite3
@@ -1022,30 +1023,45 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             LOGGER.log("✓ Sensor dashboard closed (ESC)")
             return {'CANCELLED'}
 
+        # Helper function to check if mouse is over panel
+        def is_mouse_over_panel(mx, my):
+            if self._panel_bounds is None:
+                return False
+            x_min, y_min, x_max, y_max = self._panel_bounds
+            return x_min <= mx <= x_max and y_min <= my <= y_max
+
         # Handle dragging
         if event.type == 'LEFTMOUSE':
             if event.value == 'PRESS':
-                # Start drag - check if mouse is over panel
-                # We'll check this in draw callback, for now just start drag
-                self._is_dragging = True
+                # Only start drag if mouse is over panel
+                if is_mouse_over_panel(event.mouse_region_x, event.mouse_region_y):
+                    self._is_dragging = True
+                    self._drag_start_x = event.mouse_region_x
+                    self._drag_start_y = event.mouse_region_y
+                    return {'RUNNING_MODAL'}
+                else:
+                    return {'PASS_THROUGH'}  # Let Blender handle it
+            elif event.value == 'RELEASE':
+                if self._is_dragging:
+                    self._is_dragging = False
+                    return {'RUNNING_MODAL'}
+                else:
+                    return {'PASS_THROUGH'}
+
+        if event.type == 'MOUSEMOVE':
+            if self._is_dragging:
+                # Calculate drag delta and update panel offset
+                delta_x = event.mouse_region_x - self._drag_start_x
+                delta_y = event.mouse_region_y - self._drag_start_y
+                self._panel_offset_x += delta_x
+                self._panel_offset_y += delta_y
+                # Update drag start for next frame
                 self._drag_start_x = event.mouse_region_x
                 self._drag_start_y = event.mouse_region_y
+                context.area.tag_redraw()
                 return {'RUNNING_MODAL'}
-            elif event.value == 'RELEASE':
-                self._is_dragging = False
-                return {'RUNNING_MODAL'}
-
-        if event.type == 'MOUSEMOVE' and self._is_dragging:
-            # Calculate drag delta and update panel offset
-            delta_x = event.mouse_region_x - self._drag_start_x
-            delta_y = event.mouse_region_y - self._drag_start_y
-            self._panel_offset_x += delta_x
-            self._panel_offset_y += delta_y
-            # Update drag start for next frame
-            self._drag_start_x = event.mouse_region_x
-            self._drag_start_y = event.mouse_region_y
-            context.area.tag_redraw()
-            return {'RUNNING_MODAL'}
+            else:
+                return {'PASS_THROUGH'}  # Let Blender handle mouse move
 
         if event.type == 'TIMER':
             # Update animation time
@@ -1138,6 +1154,13 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         region = context.region
         chart_x = (region.width - chart_width) // 2 + operator_self._panel_offset_x
         chart_y = margin_bottom + operator_self._panel_offset_y
+
+        # Store panel bounds for hit detection (include header)
+        panel_x_min = chart_x - 20
+        panel_y_min = chart_y - 20
+        panel_x_max = chart_x + chart_width + 20
+        panel_y_max = chart_y + chart_height + 80  # Include header height
+        operator_self._panel_bounds = (panel_x_min, panel_y_min, panel_x_max, panel_y_max)
 
         # Draw background panel (main body - dark)
         shader = gpu.shader.from_builtin('UNIFORM_COLOR')
