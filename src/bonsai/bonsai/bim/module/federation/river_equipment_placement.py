@@ -1138,11 +1138,14 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         blf.position(font_id, chart_x, chart_y + chart_height + 20, 0)
         blf.draw(font_id, "7-Day Sensor Trend → Yellow line = Threshold limit")
 
-        # Draw threshold line
+        # Draw threshold line (only across bar area, not under legend)
         threshold_y = chart_y + int(chart_height * 0.77)  # Threshold at ~77% height
+        legend_reserved_width = 200  # Match bar calculation
+        threshold_line_end = chart_x + chart_width - legend_reserved_width + 20  # Small overlap
+
         vertices = [
             (chart_x, threshold_y),
-            (chart_x + chart_width, threshold_y)
+            (threshold_line_end, threshold_y)
         ]
         batch = batch_for_shader(shader, 'LINES', {"pos": vertices})
         shader.uniform_float("color", (1.0, 0.8, 0.0, 0.6))
@@ -1154,10 +1157,16 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         blf.position(font_id, chart_x - 45, threshold_y - 7, 0)
         blf.draw(font_id, "MAX")
 
-        # Draw sensor bars
+        # Draw sensor bars (dynamically adjust for legend on right)
         num_sensors = len(operator_self._sensor_data)
         total_bar_width = num_sensors * (bar_width + bar_spacing)
-        start_x = chart_x + (chart_width - total_bar_width) // 2
+
+        # Reserve space for legend on right side (170px width + 30px padding)
+        legend_reserved_width = 200
+        available_chart_width = chart_width - legend_reserved_width
+
+        # Center bars in the available space (left of legend)
+        start_x = chart_x + (available_chart_width - total_bar_width) // 2
 
         for i, sensor in enumerate(operator_self._sensor_data):
             # Smooth interpolation between current day and next day
@@ -1280,19 +1289,25 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             blf.draw(font_id, sensor_icon)
 
         # =============================================================================
-        # INTEGRATED SENSOR LEGEND (Below bars, inside main panel)
+        # INTEGRATED SENSOR LEGEND (Right side, below threshold line)
         # Single column with full-width colored bars
         # =============================================================================
-        legend_start_y = chart_y + 15
-        legend_x = chart_x + 15
-        legend_item_width = 180
+        legend_item_width = 170
         legend_item_height = 16
+        legend_gap = 2  # Gap between items
+
+        num_to_show = min(len(operator_self._sensor_data), 8)  # Max 8 sensors
+        legend_total_height = num_to_show * (legend_item_height + legend_gap)
+
+        # Position: Right side, below threshold, above ESC hint
+        legend_x = chart_x + chart_width - legend_item_width - 15
+        legend_start_y = chart_y + 30  # Start from bottom with padding
+
         blf.size(font_id, 9)
 
-        num_to_show = min(len(operator_self._sensor_data), 8)  # Max 8 sensors in single column
         for idx in range(num_to_show):
             sensor = operator_self._sensor_data[idx]
-            item_y = legend_start_y + (idx * (legend_item_height + 2))
+            item_y = legend_start_y + (idx * (legend_item_height + legend_gap))
 
             # Draw full-width colored bar background
             bar_vertices = [
@@ -1303,15 +1318,15 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             ]
             batch = batch_for_shader(shader, 'TRIS', {"pos": bar_vertices}, indices=indices)
             # Use sensor color with transparency
-            shader.uniform_float("color", (*sensor['color'], 0.7))
+            shader.uniform_float("color", (*sensor['color'], 0.75))
             batch.draw(shader)
 
             # Sensor icon + name (white text for contrast on colored background)
             sensor_icon = SENSOR_TYPE_ICONS.get(sensor['type'], '📊')
             # Shorten type names if too long
             type_name = sensor['type']
-            if len(type_name) > 14:
-                type_name = type_name[:12] + '..'
+            if len(type_name) > 13:
+                type_name = type_name[:11] + '..'
 
             sensor_label = f"{sensor_icon} {type_name}"
             blf.color(font_id, 1.0, 1.0, 1.0, 1.0)  # White text
@@ -1323,9 +1338,9 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             remaining = len(operator_self._sensor_data) - 8
             blf.size(font_id, 8)
             blf.color(font_id, 0.5, 0.5, 0.5, 1.0)
-            extra_y = legend_start_y + (num_to_show * (legend_item_height + 2)) + 5
+            extra_y = legend_start_y + (num_to_show * (legend_item_height + legend_gap)) + 3
             blf.position(font_id, legend_x + 5, extra_y, 0)
-            blf.draw(font_id, f"+ {remaining} more sensors...")
+            blf.draw(font_id, f"+ {remaining} more...")
 
         # Status legend (top right corner of panel) - only Warning and Critical
         status_x = chart_x + chart_width - 150
