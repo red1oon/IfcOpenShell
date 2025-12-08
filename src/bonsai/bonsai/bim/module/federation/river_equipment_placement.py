@@ -891,7 +891,8 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         blf.size(font_id, 20)
         blf.color(font_id, 1.0, 1.0, 1.0, 1.0)
         blf.position(font_id, chart_x, chart_y + chart_height + 40, 0)
-        blf.draw(font_id, f"📊 {operator_self._equipment_name} - Day {current_day + 1}/7")
+        day_text = "TODAY" if current_day == 6 else f"Day {current_day + 1}/7"
+        blf.draw(font_id, f"📊 {operator_self._equipment_name} - {day_text}")
 
         # Infographic subtitle
         blf.size(font_id, 12)
@@ -1001,7 +1002,7 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
 
             # Draw value label INSIDE bar (rotated sideways) - all days during animation
             if bar_pixel_height > 50:
-                blf.size(font_id, 9)
+                blf.size(font_id, 18)
 
                 # Format value based on magnitude
                 if value >= 1000:
@@ -1049,9 +1050,9 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             }
 
             sensor_icon = sensor_icons.get(sensor['type'], '📊')
-            blf.size(font_id, 18)  # Larger icon (was 14)
+            blf.size(font_id, 32)  # 10% smaller (was 36)
             blf.color(font_id, 1.0, 1.0, 1.0, 0.8)  # Slightly more opaque
-            icon_x = bar_x + (bar_width // 2) - 9  # Center icon in wider bar
+            icon_x = bar_x + (bar_width // 2) - 16  # Center icon in bar
             icon_y = bar_y + 8
             blf.position(font_id, icon_x, icon_y, 0)
             blf.draw(font_id, sensor_icon)
