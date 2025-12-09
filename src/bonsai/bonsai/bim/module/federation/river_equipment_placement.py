@@ -1032,6 +1032,66 @@ class GlobalAlertView:
         else:
             return True
 
+    def create_beacon_objects(self, context):
+        """
+        Create Blender empties for each beacon (appears in outliner)
+        These replace pure GPU drawing for better UX
+        """
+        import bpy
+
+        # Clean up existing beacons
+        beacon_collection_name = "River_Alert_Beacons"
+        if beacon_collection_name in bpy.data.collections:
+            old_collection = bpy.data.collections[beacon_collection_name]
+            for obj in old_collection.objects:
+                bpy.data.objects.remove(obj, do_unlink=True)
+            bpy.data.collections.remove(old_collection)
+
+        # Create collection for beacons
+        beacon_collection = bpy.data.collections.new(beacon_collection_name)
+        context.scene.collection.children.link(beacon_collection)
+
+        # Build a map of marker_id to equipment Blender object
+        marker_to_object = {}
+        for obj in bpy.data.objects:
+            if obj.get("marker_id"):
+                marker_to_object[obj["marker_id"]] = obj
+
+        markers = self.get_filtered_markers()
+        for marker in markers:
+            marker_id = marker['marker_id']
+
+            if marker_id not in marker_to_object:
+                continue
+
+            # Get equipment object location
+            equipment_obj = marker_to_object[marker_id]
+            x, y, z = equipment_obj.location
+            z += 50.0  # Raise beacon 50m above equipment
+
+            # Create beacon empty
+            status = marker['status']
+            beacon_name = f"BEACON_{status}_{marker['equipment_name']}"
+            beacon = bpy.data.objects.new(beacon_name, None)
+            beacon.location = (x, y, z)
+            beacon.empty_display_type = 'SPHERE'
+            beacon.empty_display_size = 200.0  # 200m radius
+
+            # Color code by status
+            color = SensorStatusCalculator.STATUS_COLORS[status]
+            beacon.color = color
+
+            # Store metadata
+            beacon["beacon_type"] = "alert_beacon"
+            beacon["marker_id"] = marker_id
+            beacon["status"] = status
+            beacon["equipment_name"] = marker['equipment_name']
+
+            # Add to collection
+            beacon_collection.objects.link(beacon)
+
+        LOGGER.log(f"✓ Created {len(markers)} beacon objects in outliner")
+
     def draw_beacons_3d(self, context):
         """
         Render large 3D world-space spheres visible from any distance
@@ -1137,6 +1197,9 @@ class FilterPanelUI:
         self.panel_width = 550
         self.panel_height = 520
 
+        # Track clickable regions for interaction
+        self.clickable_regions = []  # List of (x1, y1, x2, y2, callback, label)
+
     def draw_panel_2d(self, context):
         """
         Render filter panel overlay in 2D
@@ -1151,6 +1214,9 @@ class FilterPanelUI:
         # Position panel (top-left corner with margin)
         panel_x = 50
         panel_y = region.height - self.panel_height - 50
+
+        # Clear clickable regions for this frame
+        self.clickable_regions = []
 
         # Draw background panel
         shader = gpu.shader.from_builtin('UNIFORM_COLOR')
@@ -1212,8 +1278,23 @@ class FilterPanelUI:
             color = (0.95, 0.95, 0.95, 1.0) if selected else (0.6, 0.6, 0.6, 1.0)
 
             blf.color(font_id, *color)
-            blf.position(font_id, panel_x + 35, content_y, 0)
+            text_x = panel_x + 35
+            text_y = content_y
+            blf.position(font_id, text_x, text_y, 0)
             blf.draw(font_id, f"{radio_symbol} {mode_label}")
+
+            # Register clickable region
+            text_width = blf.dimensions(font_id, mode_label)[0] + 60  # Include radio symbol
+            self.clickable_regions.append({
+                'x1': text_x,
+                'y1': text_y - 5,
+                'x2': text_x + text_width,
+                'y2': text_y + 18,
+                'action': 'set_alert_mode',
+                'value': mode_key,
+                'label': mode_label
+            })
+
             content_y -= 24
 
         # Separator
@@ -1249,8 +1330,23 @@ class FilterPanelUI:
             color = (0.95, 0.95, 0.95, 1.0) if checked else (0.6, 0.6, 0.6, 1.0)
 
             blf.color(font_id, *color)
-            blf.position(font_id, panel_x + 35, content_y, 0)
+            text_x = panel_x + 35
+            text_y = content_y
+            blf.position(font_id, text_x, text_y, 0)
             blf.draw(font_id, f"{checkbox} {zone_label}")
+
+            # Register clickable region
+            text_width = blf.dimensions(font_id, zone_label)[0] + 50
+            self.clickable_regions.append({
+                'x1': text_x,
+                'y1': text_y - 5,
+                'x2': text_x + text_width,
+                'y2': text_y + 18,
+                'action': 'toggle_zone',
+                'value': zone_key,
+                'label': zone_label
+            })
+
             content_y -= 24
 
         # Equipment Type section
@@ -1268,8 +1364,24 @@ class FilterPanelUI:
 
         blf.size(font_id, 13)
         blf.color(font_id, *color)
-        blf.position(font_id, panel_x + 35, content_y, 0)
-        blf.draw(font_id, f"{checkbox} All Types")
+        text_x = panel_x + 35
+        text_y = content_y
+        blf.position(font_id, text_x, text_y, 0)
+        all_types_label = "All Types"
+        blf.draw(font_id, f"{checkbox} {all_types_label}")
+
+        # Register clickable region
+        text_width = blf.dimensions(font_id, all_types_label)[0] + 50
+        self.clickable_regions.append({
+            'x1': text_x,
+            'y1': text_y - 5,
+            'x2': text_x + text_width,
+            'y2': text_y + 18,
+            'action': 'toggle_all_types',
+            'value': None,
+            'label': all_types_label
+        })
+
         content_y -= 30
 
         # Separator
@@ -1322,6 +1434,41 @@ class FilterPanelUI:
         blf.draw(font_id, "Click marker → Select → Dashboard to view sensors")
 
         gpu.state.blend_set('NONE')
+
+    def handle_click(self, mouse_x, mouse_y):
+        """
+        Handle mouse click on filter panel
+        Returns True if click was handled, False otherwise
+        """
+        for region in self.clickable_regions:
+            if (region['x1'] <= mouse_x <= region['x2'] and
+                region['y1'] <= mouse_y <= region['y2']):
+
+                action = region['action']
+                value = region['value']
+
+                LOGGER.log(f"✓ Clicked filter: {action} = {value} ({region['label']})")
+
+                if action == 'set_alert_mode':
+                    self.alert_view.alert_mode = value
+                    return True
+
+                elif action == 'toggle_zone':
+                    if value in self.alert_view.filter_zones:
+                        self.alert_view.filter_zones.remove(value)
+                    else:
+                        self.alert_view.filter_zones.add(value)
+                    return True
+
+                elif action == 'toggle_all_types':
+                    # Toggle between all types and no types
+                    if len(self.alert_view.filter_equipment_types) == len(EQUIPMENT_TYPES):
+                        self.alert_view.filter_equipment_types = set()
+                    else:
+                        self.alert_view.filter_equipment_types = set(EQUIPMENT_TYPES.keys())
+                    return True
+
+        return False  # Click not on any filter
 
 
 class MarkerSensorView:
@@ -1489,6 +1636,9 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             self._global_alert_view = GlobalAlertView(str(db_path))
             self._filter_panel_ui = FilterPanelUI(self._global_alert_view)
 
+            # Create beacon objects in the outliner
+            self._global_alert_view.create_beacon_objects(context)
+
             # Set up GPU draw handlers (2D for panel, 3D for beacons)
             import bpy
             self._draw_handler_2d = bpy.types.SpaceView3D.draw_handler_add(
@@ -1649,6 +1799,19 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
                 BIM_OT_equipment_view_sensor_dashboard._active_instance = None
             LOGGER.log("✓ Sensor dashboard closed (ESC)")
             return {'CANCELLED'}
+
+        # Handle left mouse clicks in GLOBAL_ALERTS mode
+        if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
+            if self._mode == 'GLOBAL_ALERTS' and self._filter_panel_ui:
+                mouse_x = event.mouse_region_x
+                mouse_y = event.mouse_region_y
+
+                # Check if click is on filter panel
+                if self._filter_panel_ui.handle_click(mouse_x, mouse_y):
+                    # Refresh beacon objects when filters change
+                    self._global_alert_view.create_beacon_objects(context)
+                    context.area.tag_redraw()
+                    return {'RUNNING_MODAL'}
 
         if event.type == 'TIMER':
             if self._mode == 'MARKER_SENSORS':
