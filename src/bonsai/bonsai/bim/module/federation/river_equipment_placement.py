@@ -1039,15 +1039,31 @@ class GlobalAlertView:
         """
         import bpy
 
-        # Clean up existing beacons
+        # Clean up existing beacons - more robust approach
         beacon_collection_name = "River_Alert_Beacons"
+
+        # First pass: Remove all beacon objects by type
+        objects_to_remove = []
+        for obj in bpy.data.objects:
+            if obj.get("beacon_type") == "alert_beacon":
+                objects_to_remove.append(obj)
+
+        for obj in objects_to_remove:
+            bpy.data.objects.remove(obj, do_unlink=True)
+
+        # Second pass: Clean up collection
         if beacon_collection_name in bpy.data.collections:
             old_collection = bpy.data.collections[beacon_collection_name]
-            for obj in old_collection.objects:
-                bpy.data.objects.remove(obj, do_unlink=True)
+
+            # Unlink from all scenes
+            for scene in bpy.data.scenes:
+                if old_collection.name in scene.collection.children:
+                    scene.collection.children.unlink(old_collection)
+
+            # Remove the collection
             bpy.data.collections.remove(old_collection)
 
-        # Create collection for beacons
+        # Create fresh collection for beacons
         beacon_collection = bpy.data.collections.new(beacon_collection_name)
         context.scene.collection.children.link(beacon_collection)
 
