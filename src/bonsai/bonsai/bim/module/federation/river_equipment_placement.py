@@ -1269,52 +1269,11 @@ class FilterPanelUI:
         blf.position(font_id, panel_x + 20, panel_y + self.panel_height - 40, 0)
         blf.draw(font_id, "RIVER ALERT OVERVIEW")
 
-        # North indicator icon (⬆ N)
-        header_right_x = panel_x + self.panel_width - 100
-        header_y = panel_y + self.panel_height - 40
-
-        # Draw compass circle background
+        # Zoom/Frame All button (target icon) - centered in header right area
         import math
-        compass_center_x = header_right_x + 25
-        compass_center_y = header_y + 8
-        compass_radius = 18
-
-        # Compass circle
-        circle_verts = []
-        num_segments = 24
-        for i in range(num_segments + 1):
-            angle = 2.0 * math.pi * i / num_segments
-            cx = compass_center_x + compass_radius * math.cos(angle)
-            cy = compass_center_y + compass_radius * math.sin(angle)
-            circle_verts.append((cx, cy))
-
-        batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": circle_verts})
-        shader.uniform_float("color", (0.9, 0.9, 0.9, 0.8))
-        gpu.state.line_width_set(2.0)
-        batch.draw(shader)
-        gpu.state.line_width_set(1.0)
-
-        # North arrow (triangle pointing up)
-        arrow_verts = [
-            (compass_center_x, compass_center_y + 10),  # Top
-            (compass_center_x - 5, compass_center_y - 3),  # Bottom left
-            (compass_center_x + 5, compass_center_y - 3),  # Bottom right
-        ]
-        arrow_indices = [(0, 1, 2)]
-        batch = batch_for_shader(shader, 'TRIS', {"pos": arrow_verts}, indices=arrow_indices)
-        shader.uniform_float("color", (0.9, 0.2, 0.2, 0.9))  # Red for North
-        batch.draw(shader)
-
-        # "N" text
-        blf.size(font_id, 14)
-        blf.color(font_id, 0.95, 0.95, 0.95, 1.0)
-        blf.position(font_id, compass_center_x - 5, compass_center_y - 10, 0)
-        blf.draw(font_id, "N")
-
-        # Zoom/Frame All button (target icon)
-        zoom_button_x = header_right_x + 60
-        zoom_button_y = header_y
-        zoom_button_size = 36
+        zoom_button_size = 40
+        zoom_button_x = panel_x + self.panel_width - zoom_button_size - 15  # 15px margin from right
+        zoom_button_y = panel_y + self.panel_height - 50  # Centered vertically in header (60px header, 40px button = 10px top margin)
 
         # Button background
         zoom_bg_verts = [
@@ -1346,6 +1305,7 @@ class FilterPanelUI:
         target_center_y = zoom_button_y + zoom_button_size / 2
 
         # Outer circle
+        num_segments = 24
         outer_circle_verts = []
         for i in range(num_segments + 1):
             angle = 2.0 * math.pi * i / num_segments
