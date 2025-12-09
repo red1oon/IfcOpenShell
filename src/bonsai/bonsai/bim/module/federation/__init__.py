@@ -180,6 +180,7 @@ classes = (
     river_equipment_placement.BIM_OT_equipment_place_marker,
     river_equipment_placement.BIM_OT_equipment_load_from_db,
     river_equipment_placement.BIM_OT_equipment_view_properties,
+    river_equipment_placement.BIM_OT_equipment_open_google_maps,
     river_equipment_placement.BIM_OT_equipment_view_sensor_dashboard,
     river_equipment_placement.BIM_OT_equipment_clear_all,
 

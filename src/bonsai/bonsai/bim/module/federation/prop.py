@@ -131,6 +131,15 @@ class BIMFederationProperties(PropertyGroup):
         default=False
     )
 
+    # Office/Depot address for navigation
+    office_address: StringProperty(
+        name="Address",
+        description="Office or depot address for navigation to equipment sites.\n"
+                    "Used as starting point for Google Maps directions.\n"
+                    "Example: '123 Main St, Kuala Lumpur, Malaysia'",
+        default=""
+    )
+
     # Sample extraction settings
     sample_anchor_type: EnumProperty(
         name="Sample Anchor",

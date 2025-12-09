@@ -2897,6 +2897,43 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         gpu.state.blend_set('NONE')
 
 
+class BIM_OT_equipment_open_google_maps(Operator):
+    """Open Google Maps with directions from office to equipment location"""
+    bl_idname = "bim.equipment_open_google_maps"
+    bl_label = "Get Directions"
+    bl_options = {'REGISTER'}
+
+    latitude: bpy.props.FloatProperty()
+    longitude: bpy.props.FloatProperty()
+
+    def execute(self, context):
+        import webbrowser
+
+        props = context.scene.BIMFederationProperties
+        office_address = props.office_address
+
+        if not office_address:
+            self.report({'WARNING'}, "Please set Office/Depot Address in N Panel first")
+            return {'CANCELLED'}
+
+        if not self.latitude or not self.longitude:
+            self.report({'ERROR'}, "Equipment has no GPS coordinates")
+            return {'CANCELLED'}
+
+        # Build Google Maps directions URL
+        # Format: https://www.google.com/maps/dir/?api=1&origin=ADDRESS&destination=LAT,LON
+        origin = office_address.replace(' ', '+')
+        destination = f"{self.latitude},{self.longitude}"
+
+        url = f"https://www.google.com/maps/dir/?api=1&origin={origin}&destination={destination}"
+
+        LOGGER.log(f"Opening Google Maps directions: {office_address} → {destination}")
+        webbrowser.open(url)
+
+        self.report({'INFO'}, f"Opened directions in browser")
+        return {'FINISHED'}
+
+
 class BIM_OT_equipment_view_properties(Operator):
     """View equipment properties and sensor details"""
     bl_idname = "bim.equipment_view_properties"
@@ -3018,13 +3055,23 @@ class BIM_OT_equipment_view_properties(Operator):
             if latitude and longitude:
                 col.separator(factor=0.5)
 
+                # GPS coordinates with clickable link
+                gps_row = col.row(align=True)
                 # GPS verification status
                 if pos_source == 'gps_verified':
-                    col.label(text=f"GPS: {latitude:.6f}°N, {longitude:.6f}°E ✓", icon='WORLD')
+                    gps_row.label(text=f"📍 {latitude:.6f}°N, {longitude:.6f}°E ✓", icon='WORLD')
                 else:
-                    col.label(text=f"GPS: {latitude:.6f}°N, {longitude:.6f}°E (estimated)", icon='WORLD')
+                    gps_row.label(text=f"📍 {latitude:.6f}°N, {longitude:.6f}°E", icon='WORLD')
+
+                # Google Maps directions button
+                nav_row = col.row(align=True)
+                nav_row.scale_y = 1.2
+                op = nav_row.operator("bim.equipment_open_google_maps", text="🗺️ Get Directions from Office", icon='URL')
+                op.latitude = latitude
+                op.longitude = longitude
 
                 if gps_elevation:
+                    col.separator(factor=0.3)
                     col.label(text=f"Elevation: {gps_elevation:.1f}m")
 
                 # GPS accuracy info
@@ -3291,6 +3338,17 @@ class BIM_PT_river_equipment_placement(Panel):
         col = layout.column(align=True)
         col.alert = True
         col.operator("bim.equipment_clear_all", text="Clear All", icon='TRASH')
+
+        layout.separator()
+
+        # Office Address for navigation
+        address_box = layout.box()
+        address_box.label(text="Office/Depot Address:", icon='HOME')
+        col = address_box.column(align=True)
+        col.scale_y = 0.8
+        col.label(text="Starting point for Google Maps directions")
+        props = context.scene.BIMFederationProperties
+        address_box.prop(props, "office_address", text="")
 
         layout.separator()
 
