@@ -840,76 +840,508 @@ class BIM_OT_equipment_load_from_db(Operator):
             return {'CANCELLED'}
 
 
-class BIM_OT_equipment_view_sensor_dashboard(Operator):
-    """View animated sensor bar chart overlay (Day 1-7 animation)"""
-    bl_idname = "bim.equipment_view_sensor_dashboard"
-    bl_label = "View Sensor Dashboard"
-    bl_options = {'REGISTER'}
+# =============================================================================
+# SENSOR DASHBOARD - HELPER CLASSES (Refactored Design)
+# =============================================================================
 
-    # Class-level singleton instance tracker
-    _active_instance = None
+class SensorStatusCalculator:
+    """Calculates equipment status from sensor readings"""
 
-    _is_running = False  # Flag to prevent stale draw calls
-    _draw_handler = None
-    _timer = None
-    _sensor_data = []
-    _equipment_name = ""
-    _marker_id = 0
-    _animation_time = 0.0
-    _cycle_duration = 6.0  # 6 seconds for Day 1-6 (1 sec per day, smoother)
-    _linger_duration = 2.0  # 2 second linger on Day 7
+    STATUS_PRIORITY = {
+        'OK': 0,
+        'INSPECTION': 1,
+        'PM_ACTION': 2,
+        'FOLLOW_SOP': 3,
+        'REPAIR': 4
+    }
 
-    def invoke(self, context, event):
+    STATUS_COLORS = {
+        'OK': (0.2, 0.8, 0.2, 0.6),         # Green, low opacity
+        'INSPECTION': (0.9, 0.7, 0.2, 0.7),  # Yellow
+        'PM_ACTION': (0.9, 0.5, 0.1, 0.8),   # Orange
+        'FOLLOW_SOP': (0.9, 0.2, 0.1, 0.9),  # Red-orange
+        'REPAIR': (0.9, 0.1, 0.1, 1.0),      # Bright red
+    }
+
+    STATUS_ICONS = {
+        'OK': '✓',
+        'INSPECTION': '🔍',
+        'PM_ACTION': '⚠️',
+        'FOLLOW_SOP': '🚨',
+        'REPAIR': '🔧',
+    }
+
+    @staticmethod
+    def calculate_sensor_status(value, threshold_min, threshold_max):
+        """
+        Determines status based on threshold breach severity
+        Returns: 'OK', 'INSPECTION', 'PM_ACTION', 'FOLLOW_SOP', or 'REPAIR'
+        """
+        if value is None:
+            return 'OK'
+
+        # Check if outside safe range
+        breach_pct = 0
+        if threshold_min is not None and value < threshold_min:
+            breach_pct = abs(value - threshold_min) / max(threshold_min, 0.01) * 100
+        elif threshold_max is not None and value > threshold_max:
+            breach_pct = abs(value - threshold_max) / max(threshold_max, 0.01) * 100
+        else:
+            return 'OK'
+
+        # Severity levels
+        if breach_pct > 50:
+            return 'REPAIR'
+        elif breach_pct > 30:
+            return 'FOLLOW_SOP'
+        elif breach_pct > 15:
+            return 'PM_ACTION'
+        else:
+            return 'INSPECTION'
+
+    @staticmethod
+    def get_marker_status(marker_id, db_path):
+        """
+        Returns worst sensor status for this marker
+        Priority: REPAIR > FOLLOW_SOP > PM_ACTION > INSPECTION > OK
+        """
         import sqlite3
-        from pathlib import Path
-
-        # Close any existing dashboard instance first
-        if BIM_OT_equipment_view_sensor_dashboard._active_instance is not None:
-            old_instance = BIM_OT_equipment_view_sensor_dashboard._active_instance
-            LOGGER.log("Closing previous dashboard instance...")
-            old_instance.cleanup(context)
-            BIM_OT_equipment_view_sensor_dashboard._active_instance = None
-
-        LOGGER.section("SENSOR DASHBOARD OPENING (GPU OVERLAY)")
-
-        if not context.active_object:
-            LOGGER.log("WARNING: No equipment selected", error=True)
-            self.report({'WARNING'}, "No equipment selected")
-            return {'CANCELLED'}
-
-        obj = context.active_object
-
-        # Find actual database marker_id from PLACED_EQUIPMENT
-        global PLACED_EQUIPMENT
-        found_marker = None
-        for eq_type, items in PLACED_EQUIPMENT.items():
-            for item in items:
-                if item['object_name'] == obj.name:
-                    found_marker = item
-                    break
-            if found_marker:
-                break
-
-        if not found_marker:
-            LOGGER.log("WARNING: Selected object not found in PLACED_EQUIPMENT", error=True)
-            self.report({'WARNING'}, "Equipment not loaded. Use 'Load from DB' first.")
-            return {'CANCELLED'}
-
-        # Use actual database marker_id (not sequential count)
-        self._marker_id = found_marker.get('marker_id', found_marker['number'])
-        self._equipment_name = obj.name
-        LOGGER.log(f"Equipment: {obj.name}, Database Marker ID: {self._marker_id}")
-
-        # Load sensor data
-        db_path = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER/klang_river_perfect.db")
-        if not db_path.exists():
-            LOGGER.log(f"ERROR: Database not found: {db_path}", error=True)
-            self.report({'ERROR'}, "Database not found")
-            return {'CANCELLED'}
 
         try:
-            LOGGER.log("Loading sensor data from database...")
             conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT s.sensor_type, sr.value, s.threshold_min, s.threshold_max
+                FROM sensors s
+                LEFT JOIN sensor_readings sr ON s.sensor_id = sr.sensor_id
+                WHERE s.equipment_marker_id = ?
+                  AND sr.timestamp LIKE 'Day 7%'
+                ORDER BY s.sensor_type
+            """, (marker_id,))
+
+            results = cursor.fetchall()
+            if not results:
+                # No sensor data for this marker
+                conn.close()
+                return 'OK'
+
+            worst_status = 'OK'
+
+            for sensor_type, value, tmin, tmax in results:
+                status = SensorStatusCalculator.calculate_sensor_status(value, tmin, tmax)
+                if SensorStatusCalculator.STATUS_PRIORITY[status] > SensorStatusCalculator.STATUS_PRIORITY[worst_status]:
+                    worst_status = status
+
+            conn.close()
+            return worst_status
+
+        except Exception as e:
+            LOGGER.log(f"ERROR calculating status for marker {marker_id}: {e}", error=True)
+            return 'OK'
+
+
+class GlobalAlertView:
+    """Manages global alert beacon rendering and filtering"""
+
+    def __init__(self, db_path):
+        self.db_path = db_path
+        self.filtered_markers = []
+        self.filter_zones = ['ZONE_I_EAST', 'ZONE_II_MIDDLE', 'ZONE_III_WEST']
+        self.filter_equipment_types = list(EQUIPMENT_TYPES.keys())
+        self.alert_mode = 'AUTO'  # AUTO, ALL_CRITICAL, REPAIR_ONLY, etc.
+        self._cached_markers = None
+        self._cache_valid = False
+
+    def get_filtered_markers(self):
+        """
+        Query database for markers matching current filters
+        Returns list of dicts with marker info and status
+        """
+        # Return cached results if still valid
+        if self._cache_valid and self._cached_markers is not None:
+            return self._cached_markers
+
+        import sqlite3
+
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            # Build zone filter
+            zone_placeholders = ','.join('?' * len(self.filter_zones))
+            equipment_placeholders = ','.join('?' * len(self.filter_equipment_types))
+
+            query = f"""
+                SELECT marker_id, marker_type, location_x, location_y, location_z, river_section
+                FROM project_markers
+                WHERE river_section IN ({zone_placeholders})
+                  AND marker_type IN ({equipment_placeholders})
+            """
+
+            cursor.execute(query, self.filter_zones + self.filter_equipment_types)
+            raw_results = cursor.fetchall()
+
+            markers = []
+            for marker_id, marker_type, x, y, z, section in raw_results:
+                # Calculate status
+                status = SensorStatusCalculator.get_marker_status(marker_id, self.db_path)
+
+                # Apply alert level filter
+                if self._should_include_status(status):
+                    markers.append({
+                        'marker_id': marker_id,
+                        'equipment_type': marker_type,
+                        'location': (x, y, z),
+                        'river_section': section,
+                        'status': status
+                    })
+
+            conn.close()
+
+            # Sort by priority (worst first)
+            markers.sort(key=lambda m: SensorStatusCalculator.STATUS_PRIORITY[m['status']], reverse=True)
+
+            # Apply AUTO limit (max 20)
+            if self.alert_mode == 'AUTO' and len(markers) > 20:
+                markers = markers[:20]
+
+            # Cache the results
+            self._cached_markers = markers
+            self._cache_valid = True
+
+            return markers
+
+        except Exception as e:
+            LOGGER.log(f"ERROR querying filtered markers: {e}", error=True)
+            return []
+
+    def _should_include_status(self, status):
+        """Check if status matches current alert mode filter"""
+        if self.alert_mode == 'AUTO':
+            # Include up to 20 worst
+            return True
+        elif self.alert_mode == 'ALL_CRITICAL':
+            return status in ['REPAIR', 'FOLLOW_SOP', 'PM_ACTION']
+        elif self.alert_mode == 'REPAIR_ONLY':
+            return status == 'REPAIR'
+        elif self.alert_mode == 'FOLLOW_SOP_ONLY':
+            return status == 'FOLLOW_SOP'
+        elif self.alert_mode == 'PM_ACTION_ONLY':
+            return status == 'PM_ACTION'
+        else:
+            return True
+
+    def draw_beacons_3d(self, context):
+        """
+        Render large 3D world-space spheres visible from any distance
+        Similar scale to equipment but bigger and pulsing
+        """
+        import bpy
+        import gpu
+        from gpu_extras.batch import batch_for_shader
+        import math
+        import time
+
+        # Use cached markers (no repeated queries)
+        markers = self.get_filtered_markers()
+        if not markers:
+            return
+
+        shader = gpu.shader.from_builtin('UNIFORM_COLOR')
+        gpu.state.blend_set('ALPHA')
+        gpu.state.depth_test_set('LESS_EQUAL')
+
+        # Build a map of marker_id to Blender object
+        marker_to_object = {}
+        for obj in bpy.data.objects:
+            if obj.get("marker_id"):
+                marker_to_object[obj["marker_id"]] = obj
+
+        # Pulsing animation (scale)
+        pulse_time = time.time()
+        pulse_scale = 1.0 + 0.3 * math.sin(pulse_time * 3.0)  # Pulse between 1.0 and 1.3
+
+        for marker in markers:
+            marker_id = marker['marker_id']
+
+            # Try to find the actual Blender object for this marker
+            if marker_id not in marker_to_object:
+                continue
+
+            # Use the actual Blender object location (already has correct offset)
+            obj = marker_to_object[marker_id]
+            x, y, z = obj.location
+            z += 50.0  # Raise beacon 50m above equipment so it's very visible
+
+            status = marker['status']
+            color = SensorStatusCalculator.STATUS_COLORS[status]
+
+            # Draw LARGE 3D sphere (200m radius = very visible from afar)
+            sphere_radius = 200.0 * pulse_scale
+            num_segments = 16
+            num_rings = 8
+
+            # Generate wireframe sphere vertices
+            vertices = []
+            for ring in range(num_rings + 1):
+                theta = math.pi * ring / num_rings
+                for segment in range(num_segments + 1):
+                    phi = 2.0 * math.pi * segment / num_segments
+
+                    sx = sphere_radius * math.sin(theta) * math.cos(phi)
+                    sy = sphere_radius * math.sin(theta) * math.sin(phi)
+                    sz = sphere_radius * math.cos(theta)
+
+                    vertices.append((x + sx, y + sy, z + sz))
+
+            # Draw sphere wireframe (horizontal rings)
+            for ring in range(num_rings + 1):
+                ring_verts = []
+                for segment in range(num_segments + 1):
+                    idx = ring * (num_segments + 1) + segment
+                    if idx < len(vertices):
+                        ring_verts.append(vertices[idx])
+
+                if len(ring_verts) > 1:
+                    batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": ring_verts})
+                    shader.bind()
+                    shader.uniform_float("color", color)
+                    gpu.state.line_width_set(3.0)
+                    batch.draw(shader)
+
+            # Draw vertical meridians
+            for segment in range(0, num_segments, 2):  # Every other meridian
+                meridian_verts = []
+                for ring in range(num_rings + 1):
+                    idx = ring * (num_segments + 1) + segment
+                    if idx < len(vertices):
+                        meridian_verts.append(vertices[idx])
+
+                if len(meridian_verts) > 1:
+                    batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": meridian_verts})
+                    shader.bind()
+                    shader.uniform_float("color", color)
+                    gpu.state.line_width_set(3.0)
+                    batch.draw(shader)
+
+        gpu.state.line_width_set(1.0)
+        gpu.state.blend_set('NONE')
+
+
+class FilterPanelUI:
+    """Renders filter panel UI for global alert view"""
+
+    def __init__(self, global_alert_view):
+        self.alert_view = global_alert_view
+        self.panel_width = 550
+        self.panel_height = 520
+
+    def draw_panel_2d(self, context):
+        """
+        Render filter panel overlay in 2D
+        Called from modal operator's 2D draw handler
+        """
+        import blf
+        import gpu
+        from gpu_extras.batch import batch_for_shader
+
+        region = context.region
+
+        # Position panel (top-left corner with margin)
+        panel_x = 50
+        panel_y = region.height - self.panel_height - 50
+
+        # Draw background panel
+        shader = gpu.shader.from_builtin('UNIFORM_COLOR')
+        vertices = [
+            (panel_x, panel_y),
+            (panel_x + self.panel_width, panel_y),
+            (panel_x + self.panel_width, panel_y + self.panel_height),
+            (panel_x, panel_y + self.panel_height)
+        ]
+        indices = [(0, 1, 2), (2, 3, 0)]
+        batch = batch_for_shader(shader, 'TRIS', {"pos": vertices}, indices=indices)
+        shader.bind()
+        shader.uniform_float("color", (0.1, 0.1, 0.1, 0.90))
+        gpu.state.blend_set('ALPHA')
+        batch.draw(shader)
+
+        # Draw header
+        header_vertices = [
+            (panel_x, panel_y + self.panel_height - 60),
+            (panel_x + self.panel_width, panel_y + self.panel_height - 60),
+            (panel_x + self.panel_width, panel_y + self.panel_height),
+            (panel_x, panel_y + self.panel_height)
+        ]
+        batch = batch_for_shader(shader, 'TRIS', {"pos": header_vertices}, indices=indices)
+        shader.uniform_float("color", (0.2, 0.4, 0.6, 0.95))
+        batch.draw(shader)
+
+        font_id = 0
+
+        # Title
+        blf.size(font_id, 24)
+        blf.color(font_id, 0.95, 0.95, 0.95, 1.0)
+        blf.position(font_id, panel_x + 20, panel_y + self.panel_height - 40, 0)
+        blf.draw(font_id, "RIVER ALERT OVERVIEW - KLANG RIVER")
+
+        # Content area with better spacing
+        content_y = panel_y + self.panel_height - 90
+
+        # Alert Level section
+        blf.size(font_id, 16)
+        blf.color(font_id, 0.95, 0.95, 0.95, 1.0)
+        blf.position(font_id, panel_x + 20, content_y, 0)
+        blf.draw(font_id, "Alert Level:")
+        content_y -= 30
+
+        # Alert mode options (radio buttons)
+        alert_modes = [
+            ('AUTO', 'AUTO (Max 20 worst)'),
+            ('ALL_CRITICAL', 'ALL CRITICAL (REPAIR + FOLLOW SOP + PM)'),
+            ('REPAIR_ONLY', 'REPAIR ONLY'),
+            ('FOLLOW_SOP_ONLY', 'FOLLOW SOP ONLY'),
+            ('PM_ACTION_ONLY', 'PM ACTION ONLY'),
+        ]
+
+        blf.size(font_id, 13)
+        for mode_key, mode_label in alert_modes:
+            selected = (self.alert_view.alert_mode == mode_key)
+            radio_symbol = '(•)' if selected else '( )'
+            color = (0.95, 0.95, 0.95, 1.0) if selected else (0.6, 0.6, 0.6, 1.0)
+
+            blf.color(font_id, *color)
+            blf.position(font_id, panel_x + 35, content_y, 0)
+            blf.draw(font_id, f"{radio_symbol} {mode_label}")
+            content_y -= 24
+
+        # Separator
+        content_y -= 15
+        sep_vertices = [
+            (panel_x + 20, content_y),
+            (panel_x + self.panel_width - 20, content_y)
+        ]
+        batch = batch_for_shader(shader, 'LINES', {"pos": sep_vertices})
+        shader.uniform_float("color", (0.4, 0.4, 0.4, 0.8))
+        gpu.state.line_width_set(2.0)
+        batch.draw(shader)
+        gpu.state.line_width_set(1.0)
+        content_y -= 25
+
+        # River Zones section
+        blf.size(font_id, 16)
+        blf.color(font_id, 0.95, 0.95, 0.95, 1.0)
+        blf.position(font_id, panel_x + 20, content_y, 0)
+        blf.draw(font_id, "River Zones:")
+        content_y -= 30
+
+        zones = [
+            ('ZONE_I_EAST', 'Zone I (EAST - Puchong, 30m width)'),
+            ('ZONE_II_MIDDLE', 'Zone II (MIDDLE - Meandering)'),
+            ('ZONE_III_WEST', 'Zone III (WEST - Intake, 80m width)'),
+        ]
+
+        blf.size(font_id, 13)
+        for zone_key, zone_label in zones:
+            checked = zone_key in self.alert_view.filter_zones
+            checkbox = '[✓]' if checked else '[ ]'
+            color = (0.95, 0.95, 0.95, 1.0) if checked else (0.6, 0.6, 0.6, 1.0)
+
+            blf.color(font_id, *color)
+            blf.position(font_id, panel_x + 35, content_y, 0)
+            blf.draw(font_id, f"{checkbox} {zone_label}")
+            content_y -= 24
+
+        # Equipment Type section
+        content_y -= 15
+        blf.size(font_id, 16)
+        blf.color(font_id, 0.95, 0.95, 0.95, 1.0)
+        blf.position(font_id, panel_x + 20, content_y, 0)
+        blf.draw(font_id, "Equipment Type:")
+        content_y -= 30
+
+        # Show first few equipment types + "All Types" option
+        all_types_selected = len(self.alert_view.filter_equipment_types) == len(EQUIPMENT_TYPES)
+        checkbox = '[✓]' if all_types_selected else '[ ]'
+        color = (0.95, 0.95, 0.95, 1.0) if all_types_selected else (0.6, 0.6, 0.6, 1.0)
+
+        blf.size(font_id, 13)
+        blf.color(font_id, *color)
+        blf.position(font_id, panel_x + 35, content_y, 0)
+        blf.draw(font_id, f"{checkbox} All Types")
+        content_y -= 30
+
+        # Separator
+        sep_vertices = [
+            (panel_x + 20, content_y),
+            (panel_x + self.panel_width - 20, content_y)
+        ]
+        batch = batch_for_shader(shader, 'LINES', {"pos": sep_vertices})
+        shader.uniform_float("color", (0.4, 0.4, 0.4, 0.8))
+        gpu.state.line_width_set(2.0)
+        batch.draw(shader)
+        gpu.state.line_width_set(1.0)
+        content_y -= 25
+
+        # Summary section
+        markers = self.alert_view.get_filtered_markers()
+
+        # Count by zone
+        zone_counts = {'ZONE_I_EAST': 0, 'ZONE_II_MIDDLE': 0, 'ZONE_III_WEST': 0}
+        status_counts = {'REPAIR': 0, 'FOLLOW_SOP': 0, 'PM_ACTION': 0, 'INSPECTION': 0}
+
+        for marker in markers:
+            if marker['river_section'] in zone_counts:
+                zone_counts[marker['river_section']] += 1
+            if marker['status'] in status_counts:
+                status_counts[marker['status']] += 1
+
+        blf.size(font_id, 16)
+        blf.color(font_id, 0.9, 0.7, 0.2, 1.0)  # Yellow for alert
+        blf.position(font_id, panel_x + 20, content_y, 0)
+        blf.draw(font_id, f"⚠️ Showing: {len(markers)} beacons")
+        content_y -= 30
+
+        blf.size(font_id, 13)
+        blf.color(font_id, 0.85, 0.85, 0.85, 1.0)
+        blf.position(font_id, panel_x + 35, content_y, 0)
+        blf.draw(font_id, f"Zone I: {zone_counts['ZONE_I_EAST']}   Zone II: {zone_counts['ZONE_II_MIDDLE']}   Zone III: {zone_counts['ZONE_III_WEST']}")
+        content_y -= 25
+
+        blf.position(font_id, panel_x + 35, content_y, 0)
+        blf.draw(font_id, f"🔴 {status_counts['REPAIR']} REPAIR  🟠 {status_counts['FOLLOW_SOP']} FOLLOW SOP  🟡 {status_counts['PM_ACTION']} PM")
+        content_y -= 30
+
+        # Instructions
+        blf.size(font_id, 12)
+        blf.color(font_id, 0.6, 0.6, 0.6, 0.9)
+        blf.position(font_id, panel_x + 20, panel_y + 35, 0)
+        blf.draw(font_id, "Press ESC to exit")
+        blf.position(font_id, panel_x + 20, panel_y + 15, 0)
+        blf.draw(font_id, "Click marker → Select → Dashboard to view sensors")
+
+        gpu.state.blend_set('NONE')
+
+
+class MarkerSensorView:
+    """Manages 7-day sensor bar chart rendering for a single marker"""
+
+    def __init__(self, marker_id, equipment_name, db_path):
+        self.marker_id = marker_id
+        self.equipment_name = equipment_name
+        self.db_path = db_path
+        self.sensor_data = []
+        self.animation_time = 0.0
+        self.cycle_duration = 6.0  # 6 seconds for Day 1-6
+        self.linger_duration = 2.0  # 2 second linger on Day 7
+
+    def load_sensor_data(self):
+        """Load 7-day sensor readings from database"""
+        import sqlite3
+
+        try:
+            conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
 
             # Get sensors
@@ -918,21 +1350,18 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
                 FROM sensors
                 WHERE equipment_marker_id = ?
                 ORDER BY sensor_type
-            """, (self._marker_id,))
+            """, (self.marker_id,))
 
             sensors = cursor.fetchall()
 
             if not sensors:
-                LOGGER.log(f"WARNING: No sensors found for equipment {self._marker_id}", error=True)
-                self.report({'WARNING'}, "No sensors for this equipment")
                 conn.close()
-                return {'CANCELLED'}
+                return False
 
-            LOGGER.log(f"Found {len(sensors)} sensors")
+            LOGGER.log(f"Found {len(sensors)} sensors for marker {self.marker_id}")
 
-            self._sensor_data = []
+            self.sensor_data = []
 
-            # Use centralized color mapping for sensors
             for sensor_id, sensor_name, sensor_type, unit, threshold_max in sensors:
                 # Get 7-day readings
                 cursor.execute("""
@@ -954,7 +1383,7 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
                             break
 
                 if len(day_values) == 7:
-                    self._sensor_data.append({
+                    self.sensor_data.append({
                         'name': sensor_name,
                         'type': sensor_type,
                         'threshold': threshold_max if threshold_max else max(day_values) * 0.9,
@@ -965,27 +1394,112 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
 
             conn.close()
 
-            if not self._sensor_data:
-                LOGGER.log("WARNING: No sensor data available", error=True)
-                self.report({'WARNING'}, "No sensor data available")
-                return {'CANCELLED'}
+            if not self.sensor_data:
+                return False
 
-            LOGGER.log(f"✓ Loaded {len(self._sensor_data)} sensors with data")
+            LOGGER.log(f"✓ Loaded {len(self.sensor_data)} sensors with data")
+            return True
 
-            # Set up GPU draw handler
+        except Exception as e:
+            LOGGER.log(f"ERROR loading sensor data: {e}", error=True)
+            return False
+
+    def update_animation(self, delta_time):
+        """Update animation timer"""
+        self.animation_time += delta_time
+        total_cycle = self.cycle_duration + self.linger_duration
+        if self.animation_time > total_cycle:
+            self.animation_time -= total_cycle
+
+    def draw_sensor_chart_2d(self, context):
+        """
+        Render 7-day sensor bar chart (existing dashboard visualization)
+        Called from modal operator's 2D draw handler
+
+        NOTE: This is the existing chart rendering code, kept intact for compatibility
+        """
+        # This method will contain the existing draw_callback_px code
+        # For now, we'll keep it as a placeholder and integrate the existing code
+        pass
+
+
+class BIM_OT_equipment_view_sensor_dashboard(Operator):
+    """View sensor dashboard - dual mode: Global Alert View or Marker Sensor View"""
+    bl_idname = "bim.equipment_view_sensor_dashboard"
+    bl_label = "View Sensor Dashboard"
+    bl_options = {'REGISTER'}
+
+    # Class-level singleton instance tracker
+    _active_instance = None
+
+    _is_running = False  # Flag to prevent stale draw calls
+    _draw_handler_2d = None
+    _draw_handler_3d = None
+    _timer = None
+
+    # Mode tracking
+    _mode = None  # 'GLOBAL_ALERTS' or 'MARKER_SENSORS'
+
+    # Marker sensor view (old behavior)
+    _sensor_data = []
+    _equipment_name = ""
+    _marker_id = 0
+    _animation_time = 0.0
+    _cycle_duration = 6.0  # 6 seconds for Day 1-6 (1 sec per day, smoother)
+    _linger_duration = 2.0  # 2 second linger on Day 7
+    _marker_sensor_view = None
+
+    # Global alert view (new behavior)
+    _global_alert_view = None
+    _filter_panel_ui = None
+
+    def invoke(self, context, event):
+        from pathlib import Path
+
+        # Close any existing dashboard instance first
+        if BIM_OT_equipment_view_sensor_dashboard._active_instance is not None:
+            old_instance = BIM_OT_equipment_view_sensor_dashboard._active_instance
+            LOGGER.log("Closing previous dashboard instance...")
+            old_instance.cleanup(context)
+            BIM_OT_equipment_view_sensor_dashboard._active_instance = None
+
+        LOGGER.section("SENSOR DASHBOARD OPENING (GPU OVERLAY)")
+
+        # Database path
+        db_path = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER/klang_river_perfect.db")
+        if not db_path.exists():
+            LOGGER.log(f"ERROR: Database not found: {db_path}", error=True)
+            self.report({'ERROR'}, "Database not found")
+            return {'CANCELLED'}
+
+        # Determine mode based on selection
+        is_equipment = False
+        if context.active_object:
+            # Check if object name matches equipment pattern
+            obj = context.active_object
+            equipment_patterns = [eq_type.upper() + '_' for eq_type in EQUIPMENT_TYPES.keys()]
+            is_equipment = any(obj.name.upper().startswith(p) for p in equipment_patterns)
+
+        if not context.active_object or not is_equipment:
+            # GLOBAL MODE - No marker selected or non-equipment selected
+            self._mode = 'GLOBAL_ALERTS'
+            LOGGER.log("Opening dashboard in GLOBAL ALERT mode (no equipment selected)")
+
+            # Initialize global alert view
+            self._global_alert_view = GlobalAlertView(str(db_path))
+            self._filter_panel_ui = FilterPanelUI(self._global_alert_view)
+
+            # Set up GPU draw handlers (2D for panel, 3D for beacons)
             import bpy
-            import blf
-            import gpu
-            from gpu_extras.batch import batch_for_shader
-
-            args = (self, context)
-            self._draw_handler = bpy.types.SpaceView3D.draw_handler_add(
-                self.draw_callback_px, args, 'WINDOW', 'POST_PIXEL'
+            self._draw_handler_2d = bpy.types.SpaceView3D.draw_handler_add(
+                self.draw_callback_global_2d, (context,), 'WINDOW', 'POST_PIXEL'
+            )
+            self._draw_handler_3d = bpy.types.SpaceView3D.draw_handler_add(
+                self.draw_callback_global_3d, (context,), 'WINDOW', 'POST_VIEW'
             )
 
-            # Set up timer for animation
-            self._timer = context.window_manager.event_timer_add(0.033, window=context.window)  # ~30fps
-            self._animation_time = 0.0
+            # Set up timer for refreshing
+            self._timer = context.window_manager.event_timer_add(0.1, window=context.window)
 
             context.window_manager.modal_handler_add(self)
 
@@ -993,15 +1507,138 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             BIM_OT_equipment_view_sensor_dashboard._active_instance = self
             self._is_running = True
 
-            LOGGER.log("✓ GPU overlay enabled, animation started")
+            LOGGER.log("✓ Global Alert View enabled")
             return {'RUNNING_MODAL'}
 
-        except Exception as e:
-            LOGGER.log(f"ERROR loading sensor data: {e}", error=True)
-            import traceback
-            traceback.print_exc()
-            self.report({'ERROR'}, f"Failed: {str(e)}")
-            return {'CANCELLED'}
+        else:
+            # MARKER MODE - Equipment marker selected
+            self._mode = 'MARKER_SENSORS'
+            obj = context.active_object
+
+            # Try to find marker in PLACED_EQUIPMENT first
+            global PLACED_EQUIPMENT
+            found_marker = None
+            for eq_type, items in PLACED_EQUIPMENT.items():
+                for item in items:
+                    if item['object_name'] == obj.name:
+                        found_marker = item
+                        break
+                if found_marker:
+                    break
+
+            if not found_marker:
+                # Fallback: extract marker ID from object name (e.g., "BOOM_TRAP_12" -> 12)
+                LOGGER.log("WARNING: Object not in PLACED_EQUIPMENT, extracting ID from name")
+                try:
+                    # Split by underscore and get last part as number
+                    name_parts = obj.name.split('_')
+                    marker_id = int(name_parts[-1])
+                    found_marker = {'marker_id': marker_id, 'number': marker_id}
+                    LOGGER.log(f"Extracted marker ID: {marker_id} from name: {obj.name}")
+                except (ValueError, IndexError):
+                    LOGGER.log("ERROR: Could not extract marker ID from object name", error=True)
+                    self.report({'WARNING'}, "Invalid equipment name format")
+                    return {'CANCELLED'}
+
+            # Use actual database marker_id (not sequential count)
+            self._marker_id = found_marker.get('marker_id', found_marker['number'])
+            self._equipment_name = obj.name
+            LOGGER.log(f"Opening dashboard in MARKER SENSOR mode")
+            LOGGER.log(f"Equipment: {obj.name}, Database Marker ID: {self._marker_id}")
+
+            try:
+                # Load sensor data using existing logic (keep compatibility)
+                import sqlite3
+                LOGGER.log("Loading sensor data from database...")
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+
+                # Get sensors
+                cursor.execute("""
+                    SELECT sensor_id, sensor_name, sensor_type, unit, threshold_max
+                    FROM sensors
+                    WHERE equipment_marker_id = ?
+                    ORDER BY sensor_type
+                """, (self._marker_id,))
+
+                sensors = cursor.fetchall()
+
+                if not sensors:
+                    LOGGER.log(f"WARNING: No sensors found for equipment {self._marker_id}", error=True)
+                    self.report({'WARNING'}, "No sensors for this equipment")
+                    conn.close()
+                    return {'CANCELLED'}
+
+                LOGGER.log(f"Found {len(sensors)} sensors")
+
+                self._sensor_data = []
+
+                # Use centralized color mapping for sensors
+                for sensor_id, sensor_name, sensor_type, unit, threshold_max in sensors:
+                    # Get 7-day readings
+                    cursor.execute("""
+                        SELECT timestamp, value
+                        FROM sensor_readings
+                        WHERE sensor_id = ?
+                        ORDER BY timestamp ASC
+                    """, (sensor_id,))
+
+                    readings = cursor.fetchall()
+
+                    # Extract Day 1-7 values
+                    day_values = []
+                    for day in range(1, 8):
+                        day_label = f'Day {day}'
+                        for timestamp, value in readings:
+                            if timestamp.startswith(day_label):
+                                day_values.append(float(value))
+                                break
+
+                    if len(day_values) == 7:
+                        self._sensor_data.append({
+                            'name': sensor_name,
+                            'type': sensor_type,
+                            'threshold': threshold_max if threshold_max else max(day_values) * 0.9,
+                            'values': day_values,
+                            'color': SENSOR_TYPE_COLORS.get(sensor_type, (0.5, 0.5, 0.5))
+                        })
+                        LOGGER.log(f"  Loaded: {sensor_name} ({sensor_type})")
+
+                conn.close()
+
+                if not self._sensor_data:
+                    LOGGER.log("WARNING: No sensor data available", error=True)
+                    self.report({'WARNING'}, "No sensor data available")
+                    return {'CANCELLED'}
+
+                LOGGER.log(f"✓ Loaded {len(self._sensor_data)} sensors with data")
+
+                # Set up GPU draw handler (existing 2D chart)
+                import bpy
+                args = (self, context)
+                self._draw_handler_2d = bpy.types.SpaceView3D.draw_handler_add(
+                    self.draw_callback_px, args, 'WINDOW', 'POST_PIXEL'
+                )
+
+                # Set up timer for animation
+                self._timer = context.window_manager.event_timer_add(0.033, window=context.window)  # ~30fps
+                self._animation_time = 0.0
+
+                context.window_manager.modal_handler_add(self)
+
+                # Register this instance as the active one and mark as running
+                BIM_OT_equipment_view_sensor_dashboard._active_instance = self
+                self._is_running = True
+
+                LOGGER.log("✓ GPU overlay enabled, animation started")
+                return {'RUNNING_MODAL'}
+
+            except Exception as e:
+                LOGGER.log(f"ERROR loading sensor data: {e}", error=True)
+                import traceback
+                traceback.print_exc()
+                self.report({'ERROR'}, f"Failed: {str(e)}")
+                return {'CANCELLED'}
 
     def modal(self, context, event):
         if event.type in {'ESC'}:
@@ -1014,11 +1651,12 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             return {'CANCELLED'}
 
         if event.type == 'TIMER':
-            # Update animation time
-            self._animation_time += 0.033
-            total_cycle = self._cycle_duration + self._linger_duration
-            if self._animation_time > total_cycle:
-                self._animation_time -= total_cycle
+            if self._mode == 'MARKER_SENSORS':
+                # Update animation time for marker sensor view
+                self._animation_time += 0.033
+                total_cycle = self._cycle_duration + self._linger_duration
+                if self._animation_time > total_cycle:
+                    self._animation_time -= total_cycle
 
             # Redraw viewport
             context.area.tag_redraw()
@@ -1038,17 +1676,52 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
                 pass
             self._timer = None
 
-        if self._draw_handler:
+        if self._draw_handler_2d:
             try:
-                bpy.types.SpaceView3D.draw_handler_remove(self._draw_handler, 'WINDOW')
+                bpy.types.SpaceView3D.draw_handler_remove(self._draw_handler_2d, 'WINDOW')
             except:
                 pass
-            self._draw_handler = None
+            self._draw_handler_2d = None
+
+        if self._draw_handler_3d:
+            try:
+                bpy.types.SpaceView3D.draw_handler_remove(self._draw_handler_3d, 'WINDOW')
+            except:
+                pass
+            self._draw_handler_3d = None
 
         # Force redraw to clear artifacts
         for area in context.screen.areas:
             if area.type == 'VIEW_3D':
                 area.tag_redraw()
+
+    # =============================================================================
+    # DRAW CALLBACKS - GLOBAL ALERT VIEW
+    # =============================================================================
+
+    def draw_callback_global_2d(self, context):
+        """Draw filter panel UI for global alert view"""
+        try:
+            if not self._is_running or self._mode != 'GLOBAL_ALERTS':
+                return
+            if self._filter_panel_ui:
+                self._filter_panel_ui.draw_panel_2d(context)
+        except (ReferenceError, AttributeError):
+            return
+
+    def draw_callback_global_3d(self, context):
+        """Draw 3D beacons for global alert view"""
+        try:
+            if not self._is_running or self._mode != 'GLOBAL_ALERTS':
+                return
+            if self._global_alert_view:
+                self._global_alert_view.draw_beacons_3d(context)
+        except (ReferenceError, AttributeError):
+            return
+
+    # =============================================================================
+    # DRAW CALLBACKS - MARKER SENSOR VIEW (Existing Code)
+    # =============================================================================
 
     @staticmethod
     def draw_callback_px(operator_self, context):
@@ -1889,6 +2562,24 @@ class BIM_PT_river_equipment_placement(Panel):
 
         layout.separator()
 
+        # Sensor Dashboard - Always available (dual-mode)
+        dashboard_box = layout.box()
+        dashboard_box.label(text="Dashboard:", icon='GRAPH')
+
+        # Show mode hint based on selection
+        if context.active_object:
+            patterns = [eq_type.upper() + '_' for eq_type in EQUIPMENT_TYPES.keys()]
+            if any(context.active_object.name.upper().startswith(p) for p in patterns):
+                dashboard_box.label(text="Mode: Marker Sensors", icon='DOT')
+        else:
+            dashboard_box.label(text="Mode: Global Alerts", icon='WORLD')
+
+        row = dashboard_box.row(align=True)
+        row.scale_y = 1.4
+        row.operator("bim.equipment_view_sensor_dashboard", text="📊 Sensor Dashboard", icon='GRAPH')
+
+        layout.separator()
+
         # View Details (if equipment selected)
         if context.active_object:
             patterns = [eq_type.upper() + '_' for eq_type in EQUIPMENT_TYPES.keys()]
@@ -1896,11 +2587,6 @@ class BIM_PT_river_equipment_placement(Panel):
                 detail_box = layout.box()
                 detail_box.label(text="Selected Equipment:", icon='OUTLINER_OB_EMPTY')
                 detail_box.label(text=f"  {context.active_object.name}")
-
-                row = detail_box.row(align=True)
-                row.scale_y = 1.2
-                row.operator("bim.equipment_view_sensor_dashboard", text="📊 Sensor Dashboard", icon='GRAPH')
-
                 detail_box.operator("bim.equipment_view_properties", text="View Details", icon='VIEWZOOM')
                 layout.separator()
 
