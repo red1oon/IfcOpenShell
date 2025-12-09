@@ -3292,13 +3292,15 @@ class BIM_PT_river_equipment_placement(Panel):
         op.waterway_type = 'river'
 
         # Convert and Save buttons (for selected curve)
-        if context.active_object and context.active_object.type == 'CURVE':
+        if context.active_object and context.active_object.type == 'CURVE' and "gps_coordinates" in context.active_object:
+            map_box.separator()
             row = map_box.row(align=True)
             row.operator("object.convert", text="Convert to Mesh", icon='MESH_DATA').target = 'MESH'
-            if "gps_coordinates" in context.active_object:
-                row.operator("bim.river_save_to_database", text="Save to DB", icon='DATABASE')
+            row.operator("bim.river_save_to_database", text="Save to DB", icon='DATABASE')
 
-        map_box.label(text="Select curve then Convert/Save", icon='INFO')
+        # Marker realignment tool
+        map_box.separator()
+        map_box.operator("bim.river_realign_markers", text="Realign Markers", icon='ORIENTATION_CURSOR')
 
         layout.separator()
 

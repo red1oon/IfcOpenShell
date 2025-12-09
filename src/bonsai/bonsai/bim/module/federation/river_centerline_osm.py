@@ -531,3 +531,74 @@ class BIM_OT_river_save_to_database(Operator):
             return {'CANCELLED'}
 
         return {'FINISHED'}
+
+
+# =============================================================================
+# MARKER REALIGNMENT TOOL
+# =============================================================================
+
+class BIM_OT_river_realign_markers(bpy.types.Operator):
+    """Realign equipment markers to new river centerline"""
+    bl_idname = "bim.river_realign_markers"
+    bl_label = "Realign Markers to River"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    offset_x: bpy.props.FloatProperty(
+        name="X Offset",
+        description="Horizontal offset to apply (meters)",
+        default=0.0
+    )
+
+    offset_y: bpy.props.FloatProperty(
+        name="Y Offset",
+        description="Vertical offset to apply (meters)",  
+        default=0.0
+    )
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def execute(self, context):
+        db_path = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER/klang_river_perfect.db")
+
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+
+            # Get all markers
+            cursor.execute("SELECT id, blender_x, blender_y, blender_z FROM equipment_markers")
+            markers = cursor.fetchall()
+
+            if not markers:
+                self.report({'WARNING'}, "No markers found in database")
+                return {'CANCELLED'}
+
+            # Apply offset
+            updated = 0
+            for marker_id, x, y, z in markers:
+                new_x = x + self.offset_x
+                new_y = y + self.offset_y
+
+                cursor.execute("""
+                    UPDATE equipment_markers
+                    SET blender_x = ?, blender_y = ?
+                    WHERE id = ?
+                """, (new_x, new_y, marker_id))
+                updated += 1
+
+            conn.commit()
+            conn.close()
+
+            print(f"\n✅ Updated {updated} marker positions")
+            print(f"   Offset: X={self.offset_x:.1f}m, Y={self.offset_y:.1f}m")
+            print(f"   Reload markers to see changes")
+
+            self.report({'INFO'}, f"Updated {updated} markers. Reload to see changes.")
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Database error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
