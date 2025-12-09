@@ -1275,28 +1275,105 @@ class FilterPanelUI:
         blf.size(font_id, 13)
         for mode_key, mode_label in alert_modes:
             selected = (self.alert_view.alert_mode == mode_key)
-            radio_symbol = '(•)' if selected else '( )'
-            color = (0.95, 0.95, 0.95, 1.0) if selected else (0.6, 0.6, 0.6, 1.0)
 
-            blf.color(font_id, *color)
-            text_x = panel_x + 35
-            text_y = content_y
+            # Draw button background
+            button_x = panel_x + 30
+            button_y = content_y - 3
+            button_width = self.panel_width - 60
+            button_height = 22
+
+            # Button background color
+            if selected:
+                bg_color = (0.2, 0.5, 0.8, 0.8)  # Blue highlight for selected
+            else:
+                bg_color = (0.15, 0.15, 0.15, 0.6)  # Dark gray for unselected
+
+            # Draw button background
+            button_verts = [
+                (button_x, button_y),
+                (button_x + button_width, button_y),
+                (button_x + button_width, button_y + button_height),
+                (button_x, button_y + button_height)
+            ]
+            batch = batch_for_shader(shader, 'TRIS', {"pos": button_verts}, indices=indices)
+            shader.uniform_float("color", bg_color)
+            batch.draw(shader)
+
+            # Draw button border
+            border_verts = [
+                (button_x, button_y),
+                (button_x + button_width, button_y),
+                (button_x + button_width, button_y + button_height),
+                (button_x, button_y + button_height),
+                (button_x, button_y)  # Close the loop
+            ]
+            batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": border_verts})
+            border_color = (0.4, 0.6, 0.9, 1.0) if selected else (0.3, 0.3, 0.3, 0.8)
+            shader.uniform_float("color", border_color)
+            gpu.state.line_width_set(2.0)
+            batch.draw(shader)
+            gpu.state.line_width_set(1.0)
+
+            # Draw radio circle
+            circle_x = button_x + 10
+            circle_y = button_y + button_height / 2
+            circle_radius = 5
+
+            # Outer circle
+            circle_verts = []
+            num_segments = 12
+            import math
+            for i in range(num_segments + 1):
+                angle = 2.0 * math.pi * i / num_segments
+                cx = circle_x + circle_radius * math.cos(angle)
+                cy = circle_y + circle_radius * math.sin(angle)
+                circle_verts.append((cx, cy))
+
+            batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": circle_verts})
+            shader.uniform_float("color", (0.8, 0.8, 0.8, 1.0))
+            gpu.state.line_width_set(1.5)
+            batch.draw(shader)
+            gpu.state.line_width_set(1.0)
+
+            # Inner filled circle if selected
+            if selected:
+                inner_circle_verts = []
+                inner_radius = 3
+                for i in range(num_segments):
+                    angle = 2.0 * math.pi * i / num_segments
+                    cx = circle_x + inner_radius * math.cos(angle)
+                    cy = circle_y + inner_radius * math.sin(angle)
+                    inner_circle_verts.append((cx, cy))
+
+                # Create triangles for filled circle
+                inner_indices = []
+                for i in range(1, num_segments - 1):
+                    inner_indices.append((0, i, i + 1))
+
+                batch = batch_for_shader(shader, 'TRIS', {"pos": inner_circle_verts}, indices=inner_indices)
+                shader.uniform_float("color", (0.9, 0.9, 0.9, 1.0))
+                batch.draw(shader)
+
+            # Draw text
+            text_color = (0.95, 0.95, 0.95, 1.0) if selected else (0.7, 0.7, 0.7, 1.0)
+            blf.color(font_id, *text_color)
+            text_x = button_x + 25
+            text_y = button_y + 5
             blf.position(font_id, text_x, text_y, 0)
-            blf.draw(font_id, f"{radio_symbol} {mode_label}")
+            blf.draw(font_id, mode_label)
 
             # Register clickable region
-            text_width = blf.dimensions(font_id, mode_label)[0] + 60  # Include radio symbol
             self.clickable_regions.append({
-                'x1': text_x,
-                'y1': text_y - 5,
-                'x2': text_x + text_width,
-                'y2': text_y + 18,
+                'x1': button_x,
+                'y1': button_y,
+                'x2': button_x + button_width,
+                'y2': button_y + button_height,
                 'action': 'set_alert_mode',
                 'value': mode_key,
                 'label': mode_label
             })
 
-            content_y -= 24
+            content_y -= 26
 
         # Separator
         content_y -= 15
@@ -1327,28 +1404,97 @@ class FilterPanelUI:
         blf.size(font_id, 13)
         for zone_key, zone_label in zones:
             checked = zone_key in self.alert_view.filter_zones
-            checkbox = '[✓]' if checked else '[ ]'
-            color = (0.95, 0.95, 0.95, 1.0) if checked else (0.6, 0.6, 0.6, 1.0)
 
-            blf.color(font_id, *color)
-            text_x = panel_x + 35
-            text_y = content_y
+            # Draw button/checkbox background
+            button_x = panel_x + 30
+            button_y = content_y - 3
+            button_width = self.panel_width - 60
+            button_height = 22
+
+            # Button background color
+            if checked:
+                bg_color = (0.2, 0.6, 0.3, 0.7)  # Green for checked
+            else:
+                bg_color = (0.15, 0.15, 0.15, 0.6)  # Dark gray for unchecked
+
+            # Draw button background
+            button_verts = [
+                (button_x, button_y),
+                (button_x + button_width, button_y),
+                (button_x + button_width, button_y + button_height),
+                (button_x, button_y + button_height)
+            ]
+            batch = batch_for_shader(shader, 'TRIS', {"pos": button_verts}, indices=indices)
+            shader.uniform_float("color", bg_color)
+            batch.draw(shader)
+
+            # Draw button border
+            border_verts = [
+                (button_x, button_y),
+                (button_x + button_width, button_y),
+                (button_x + button_width, button_y + button_height),
+                (button_x, button_y + button_height),
+                (button_x, button_y)
+            ]
+            batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": border_verts})
+            border_color = (0.3, 0.7, 0.4, 1.0) if checked else (0.3, 0.3, 0.3, 0.8)
+            shader.uniform_float("color", border_color)
+            gpu.state.line_width_set(2.0)
+            batch.draw(shader)
+            gpu.state.line_width_set(1.0)
+
+            # Draw checkbox square
+            checkbox_x = button_x + 8
+            checkbox_y = button_y + 6
+            checkbox_size = 10
+
+            # Checkbox border
+            checkbox_verts = [
+                (checkbox_x, checkbox_y),
+                (checkbox_x + checkbox_size, checkbox_y),
+                (checkbox_x + checkbox_size, checkbox_y + checkbox_size),
+                (checkbox_x, checkbox_y + checkbox_size),
+                (checkbox_x, checkbox_y)
+            ]
+            batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": checkbox_verts})
+            shader.uniform_float("color", (0.8, 0.8, 0.8, 1.0))
+            gpu.state.line_width_set(1.5)
+            batch.draw(shader)
+            gpu.state.line_width_set(1.0)
+
+            # Checkmark if checked
+            if checked:
+                check_verts = [
+                    (checkbox_x + 2, checkbox_y + 5),
+                    (checkbox_x + 4, checkbox_y + 2),
+                    (checkbox_x + 8, checkbox_y + 8)
+                ]
+                batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": check_verts})
+                shader.uniform_float("color", (0.2, 0.9, 0.2, 1.0))
+                gpu.state.line_width_set(2.5)
+                batch.draw(shader)
+                gpu.state.line_width_set(1.0)
+
+            # Draw text
+            text_color = (0.95, 0.95, 0.95, 1.0) if checked else (0.7, 0.7, 0.7, 1.0)
+            blf.color(font_id, *text_color)
+            text_x = button_x + 25
+            text_y = button_y + 5
             blf.position(font_id, text_x, text_y, 0)
-            blf.draw(font_id, f"{checkbox} {zone_label}")
+            blf.draw(font_id, zone_label)
 
             # Register clickable region
-            text_width = blf.dimensions(font_id, zone_label)[0] + 50
             self.clickable_regions.append({
-                'x1': text_x,
-                'y1': text_y - 5,
-                'x2': text_x + text_width,
-                'y2': text_y + 18,
+                'x1': button_x,
+                'y1': button_y,
+                'x2': button_x + button_width,
+                'y2': button_y + button_height,
                 'action': 'toggle_zone',
                 'value': zone_key,
                 'label': zone_label
             })
 
-            content_y -= 24
+            content_y -= 26
 
         # Equipment Type section
         content_y -= 15
@@ -1360,24 +1506,93 @@ class FilterPanelUI:
 
         # Show first few equipment types + "All Types" option
         all_types_selected = len(self.alert_view.filter_equipment_types) == len(EQUIPMENT_TYPES)
-        checkbox = '[✓]' if all_types_selected else '[ ]'
-        color = (0.95, 0.95, 0.95, 1.0) if all_types_selected else (0.6, 0.6, 0.6, 1.0)
-
-        blf.size(font_id, 13)
-        blf.color(font_id, *color)
-        text_x = panel_x + 35
-        text_y = content_y
-        blf.position(font_id, text_x, text_y, 0)
         all_types_label = "All Types"
-        blf.draw(font_id, f"{checkbox} {all_types_label}")
+
+        # Draw button/checkbox background
+        button_x = panel_x + 30
+        button_y = content_y - 3
+        button_width = self.panel_width - 60
+        button_height = 22
+
+        # Button background color
+        if all_types_selected:
+            bg_color = (0.2, 0.6, 0.3, 0.7)  # Green for checked
+        else:
+            bg_color = (0.15, 0.15, 0.15, 0.6)  # Dark gray for unchecked
+
+        # Draw button background
+        button_verts = [
+            (button_x, button_y),
+            (button_x + button_width, button_y),
+            (button_x + button_width, button_y + button_height),
+            (button_x, button_y + button_height)
+        ]
+        batch = batch_for_shader(shader, 'TRIS', {"pos": button_verts}, indices=indices)
+        shader.uniform_float("color", bg_color)
+        batch.draw(shader)
+
+        # Draw button border
+        border_verts = [
+            (button_x, button_y),
+            (button_x + button_width, button_y),
+            (button_x + button_width, button_y + button_height),
+            (button_x, button_y + button_height),
+            (button_x, button_y)
+        ]
+        batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": border_verts})
+        border_color = (0.3, 0.7, 0.4, 1.0) if all_types_selected else (0.3, 0.3, 0.3, 0.8)
+        shader.uniform_float("color", border_color)
+        gpu.state.line_width_set(2.0)
+        batch.draw(shader)
+        gpu.state.line_width_set(1.0)
+
+        # Draw checkbox square
+        checkbox_x = button_x + 8
+        checkbox_y = button_y + 6
+        checkbox_size = 10
+
+        # Checkbox border
+        checkbox_verts = [
+            (checkbox_x, checkbox_y),
+            (checkbox_x + checkbox_size, checkbox_y),
+            (checkbox_x + checkbox_size, checkbox_y + checkbox_size),
+            (checkbox_x, checkbox_y + checkbox_size),
+            (checkbox_x, checkbox_y)
+        ]
+        batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": checkbox_verts})
+        shader.uniform_float("color", (0.8, 0.8, 0.8, 1.0))
+        gpu.state.line_width_set(1.5)
+        batch.draw(shader)
+        gpu.state.line_width_set(1.0)
+
+        # Checkmark if checked
+        if all_types_selected:
+            check_verts = [
+                (checkbox_x + 2, checkbox_y + 5),
+                (checkbox_x + 4, checkbox_y + 2),
+                (checkbox_x + 8, checkbox_y + 8)
+            ]
+            batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": check_verts})
+            shader.uniform_float("color", (0.2, 0.9, 0.2, 1.0))
+            gpu.state.line_width_set(2.5)
+            batch.draw(shader)
+            gpu.state.line_width_set(1.0)
+
+        # Draw text
+        blf.size(font_id, 13)
+        text_color = (0.95, 0.95, 0.95, 1.0) if all_types_selected else (0.7, 0.7, 0.7, 1.0)
+        blf.color(font_id, *text_color)
+        text_x = button_x + 25
+        text_y = button_y + 5
+        blf.position(font_id, text_x, text_y, 0)
+        blf.draw(font_id, all_types_label)
 
         # Register clickable region
-        text_width = blf.dimensions(font_id, all_types_label)[0] + 50
         self.clickable_regions.append({
-            'x1': text_x,
-            'y1': text_y - 5,
-            'x2': text_x + text_width,
-            'y2': text_y + 18,
+            'x1': button_x,
+            'y1': button_y,
+            'x2': button_x + button_width,
+            'y2': button_y + button_height,
             'action': 'toggle_all_types',
             'value': None,
             'label': all_types_label

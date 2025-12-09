@@ -372,6 +372,7 @@ def restore_equipment_on_load(dummy):
                         river_equipment_placement.PLACED_EQUIPMENT[eq_type].append({
                             'id': obj.name,
                             'number': number,
+                            'marker_id': obj.get("marker_id", number),  # Read from object custom property
                             'x': obj.location.x,
                             'y': obj.location.y,
                             'z': obj.location.z,
