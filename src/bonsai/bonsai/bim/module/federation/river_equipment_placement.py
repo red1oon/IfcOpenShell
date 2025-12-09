@@ -3290,7 +3290,15 @@ class BIM_PT_river_equipment_placement(Panel):
         row = map_box.row(align=True)
         op = row.operator("bim.river_import_osm_centerline", text="Import from OSM", icon='IMPORT')
         op.waterway_type = 'river'
-        map_box.label(text="Free vector data from OpenStreetMap", icon='INFO')
+
+        # Convert and Save buttons (for selected curve)
+        if context.active_object and context.active_object.type == 'CURVE':
+            row = map_box.row(align=True)
+            row.operator("object.convert", text="Convert to Mesh", icon='MESH_DATA').target = 'MESH'
+            if "gps_coordinates" in context.active_object:
+                row.operator("bim.river_save_to_database", text="Save to DB", icon='DATABASE')
+
+        map_box.label(text="Select curve then Convert/Save", icon='INFO')
 
         layout.separator()
 
