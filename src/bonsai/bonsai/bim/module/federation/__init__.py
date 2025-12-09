@@ -348,11 +348,10 @@ def restore_equipment_on_load(dummy):
         for equipment_type in river_equipment_placement.EQUIPMENT_TYPES.keys():
             river_equipment_placement.PLACED_EQUIPMENT[equipment_type] = []
 
-        # Equipment name patterns to scan for
+        # Equipment name patterns to scan for - dynamically built from EQUIPMENT_TYPES
         equipment_map = {
-            'BOOM_TRAP_': 'boom_trap',
-            'WATER_QUALITY_': 'water_quality',
-            'BIODIVERSITY_': 'biodiversity'
+            f'{eq_type.upper()}_': eq_type
+            for eq_type in river_equipment_placement.EQUIPMENT_TYPES.keys()
         }
 
         # Scan scene for equipment Empty objects

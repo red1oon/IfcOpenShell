@@ -1667,21 +1667,24 @@ class FilterPanelUI:
 
                 if action == 'set_alert_mode':
                     self.alert_view.alert_mode = value
+                    self.alert_view._cache_valid = False  # Invalidate cache
                     return True
 
                 elif action == 'toggle_zone':
                     if value in self.alert_view.filter_zones:
                         self.alert_view.filter_zones.remove(value)
                     else:
-                        self.alert_view.filter_zones.add(value)
+                        self.alert_view.filter_zones.append(value)
+                    self.alert_view._cache_valid = False  # Invalidate cache
                     return True
 
                 elif action == 'toggle_all_types':
                     # Toggle between all types and no types
                     if len(self.alert_view.filter_equipment_types) == len(EQUIPMENT_TYPES):
-                        self.alert_view.filter_equipment_types = set()
+                        self.alert_view.filter_equipment_types = []
                     else:
-                        self.alert_view.filter_equipment_types = set(EQUIPMENT_TYPES.keys())
+                        self.alert_view.filter_equipment_types = list(EQUIPMENT_TYPES.keys())
+                    self.alert_view._cache_valid = False  # Invalidate cache
                     return True
 
         return False  # Click not on any filter
