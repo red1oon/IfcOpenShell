@@ -195,6 +195,8 @@ classes = (
     river_centerline_osm.BIM_OT_river_simplify_centerline,
     river_centerline_osm.BIM_OT_river_save_to_database,
     river_centerline_osm.BIM_OT_river_realign_markers,
+    river_centerline_osm.BIM_OT_river_apply_width_material,
+    river_centerline_osm.BIM_OT_river_snap_markers_to_mesh,
 
     # 7D Maintenance - Right-click Context Menu
     river_equipment_placement.BIM_MT_equipment_context_menu,

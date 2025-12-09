@@ -602,3 +602,246 @@ class BIM_OT_river_realign_markers(bpy.types.Operator):
             return {'CANCELLED'}
 
         return {'FINISHED'}
+
+
+# =============================================================================
+# RIVER STYLING TOOL
+# =============================================================================
+
+class BIM_OT_river_apply_width_material(bpy.types.Operator):
+    """Apply width and water material to river mesh"""
+    bl_idname = "bim.river_apply_width_material"
+    bl_label = "Style River Mesh"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    river_width: bpy.props.FloatProperty(
+        name="River Width",
+        description="Width of river in meters",
+        default=50.0,
+        min=1.0,
+        max=500.0
+    )
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return obj and obj.type == 'MESH'
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def execute(self, context):
+        obj = context.active_object
+
+        if obj.type != 'MESH':
+            self.report({'ERROR'}, "Select a mesh object")
+            return {'CANCELLED'}
+
+        print(f"\n{'='*70}")
+        print(f"🎨 STYLING RIVER MESH: {obj.name}")
+        print(f"{'='*70}")
+
+        # Add Solidify modifier for width
+        solidify = None
+        for mod in obj.modifiers:
+            if mod.type == 'SOLIDIFY':
+                solidify = mod
+                break
+
+        if not solidify:
+            solidify = obj.modifiers.new(name="River Width", type='SOLIDIFY')
+
+        solidify.thickness = self.river_width
+        solidify.offset = 0.0  # Centered
+        print(f"✅ Solidify modifier: {self.river_width}m width")
+
+        # Create blue water material
+        mat_name = "RiverWater_Blue"
+        mat = bpy.data.materials.get(mat_name)
+
+        if not mat:
+            mat = bpy.data.materials.new(name=mat_name)
+            mat.use_nodes = True
+            nodes = mat.node_tree.nodes
+            nodes.clear()
+
+            # Shader nodes for water
+            node_bsdf = nodes.new('ShaderNodeBsdfPrincipled')
+            node_output = nodes.new('ShaderNodeOutputMaterial')
+
+            # Water properties
+            node_bsdf.inputs['Base Color'].default_value = (0.1, 0.3, 0.6, 1.0)  # Blue
+            node_bsdf.inputs['Metallic'].default_value = 0.8
+            node_bsdf.inputs['Roughness'].default_value = 0.2
+            node_bsdf.inputs['IOR'].default_value = 1.333  # Water IOR
+            node_bsdf.inputs['Transmission'].default_value = 0.7  # Semi-transparent
+            node_bsdf.inputs['Alpha'].default_value = 0.8
+
+            # Connect
+            mat.node_tree.links.new(node_bsdf.outputs['BSDF'], node_output.inputs['Surface'])
+
+            # Enable transparency
+            mat.blend_method = 'BLEND'
+            mat.show_transparent_back = False
+
+            print(f"✅ Created water material: {mat_name}")
+        else:
+            print(f"✅ Using existing material: {mat_name}")
+
+        # Apply material
+        if obj.data.materials:
+            obj.data.materials[0] = mat
+        else:
+            obj.data.materials.append(mat)
+
+        # Optional: Add Subdivision Surface for smooth curves
+        subsurf = None
+        for mod in obj.modifiers:
+            if mod.type == 'SUBSURF':
+                subsurf = mod
+                break
+
+        if not subsurf:
+            subsurf = obj.modifiers.new(name="Smooth", type='SUBSURF')
+            subsurf.levels = 1
+            subsurf.render_levels = 2
+            print(f"✅ Subdivision modifier: smoothing enabled")
+
+        print(f"\n✅ River styled successfully!")
+        print(f"   Width: {self.river_width}m")
+        print(f"   Material: Blue water with transparency")
+        print(f"   Modifiers: Solidify + Subdivision")
+        print(f"{'='*70}\n")
+
+        self.report({'INFO'}, f"River styled: {self.river_width}m width")
+        return {'FINISHED'}
+
+
+# =============================================================================
+# SNAP MARKERS TO RIVER TOOL
+# =============================================================================
+
+class BIM_OT_river_snap_markers_to_mesh(bpy.types.Operator):
+    """Snap equipment markers to river mesh surface"""
+    bl_idname = "bim.river_snap_markers_to_mesh"
+    bl_label = "Snap Markers to River"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    max_distance: bpy.props.FloatProperty(
+        name="Max Distance",
+        description="Maximum search distance (meters)",
+        default=1000.0,
+        min=10.0,
+        max=10000.0
+    )
+
+    z_offset: bpy.props.FloatProperty(
+        name="Z Offset",
+        description="Height above river surface (meters)",
+        default=2.0,
+        min=0.0,
+        max=100.0
+    )
+
+    @classmethod  
+    def poll(cls, context):
+        obj = context.active_object
+        return obj and obj.type == 'MESH'
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def execute(self, context):
+        import mathutils
+        from mathutils.bvhtree import BVHTree
+
+        river_obj = context.active_object
+
+        if river_obj.type != 'MESH':
+            self.report({'ERROR'}, "Select river mesh object")
+            return {'CANCELLED'}
+
+        db_path = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER/klang_river_perfect.db")
+
+        print(f"\n{'='*70}")
+        print(f"📍 SNAPPING MARKERS TO RIVER MESH: {river_obj.name}")
+        print(f"{'='*70}")
+
+        try:
+            # Build BVH tree for fast closest-point queries
+            bm = None
+            depsgraph = context.evaluated_depsgraph_get()
+            eval_obj = river_obj.evaluated_get(depsgraph)
+            mesh = eval_obj.to_mesh()
+            
+            # Transform to world space
+            mesh.transform(river_obj.matrix_world)
+            
+            bvh = BVHTree.FromPolygons([v.co for v in mesh.vertices], 
+                                       [p.vertices for p in mesh.polygons])
+
+            print(f"✅ Built BVH tree: {len(mesh.vertices)} vertices, {len(mesh.polygons)} faces")
+
+            # Get markers from database
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT id, blender_x, blender_y, blender_z, equipment_type FROM equipment_markers")
+            markers = cursor.fetchall()
+
+            if not markers:
+                self.report({'WARNING'}, "No markers found in database")
+                return {'CANCELLED'}
+
+            print(f"📌 Found {len(markers)} markers to snap")
+
+            # Snap each marker
+            updated = 0
+            skipped = 0
+
+            for marker_id, x, y, z, eq_type in markers:
+                marker_pos = mathutils.Vector((x, y, z))
+
+                # Find closest point on river mesh
+                location, normal, index, distance = bvh.find_nearest(marker_pos, self.max_distance)
+
+                if location:
+                    # Place marker on surface + Z offset
+                    new_x = location.x
+                    new_y = location.y
+                    new_z = location.z + self.z_offset
+
+                    cursor.execute("""
+                        UPDATE equipment_markers
+                        SET blender_x = ?, blender_y = ?, blender_z = ?
+                        WHERE id = ?
+                    """, (new_x, new_y, new_z, marker_id))
+
+                    updated += 1
+                    print(f"   ✅ Marker {marker_id} ({eq_type}): snapped {distance:.1f}m → river surface")
+                else:
+                    skipped += 1
+                    print(f"   ⚠️ Marker {marker_id} ({eq_type}): too far (>{self.max_distance}m)")
+
+            conn.commit()
+            conn.close()
+
+            # Cleanup
+            eval_obj.to_mesh_clear()
+
+            print(f"\n✅ Snapping complete:")
+            print(f"   Updated: {updated} markers")
+            print(f"   Skipped: {skipped} markers (too far)")
+            print(f"   Z Offset: {self.z_offset}m above surface")
+            print(f"   💡 Reload markers to see changes")
+            print(f"{'='*70}\n")
+
+            self.report({'INFO'}, f"Snapped {updated} markers. Reload to see changes.")
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {'CANCELLED'}
+
+        return {'FINISHED'}

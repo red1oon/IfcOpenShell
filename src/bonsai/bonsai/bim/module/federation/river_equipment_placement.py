@@ -3298,9 +3298,16 @@ class BIM_PT_river_equipment_placement(Panel):
             row.operator("object.convert", text="Convert to Mesh", icon='MESH_DATA').target = 'MESH'
             row.operator("bim.river_save_to_database", text="Save to DB", icon='DATABASE')
 
+        # River mesh styling (for converted mesh)
+        if context.active_object and context.active_object.type == 'MESH':
+            map_box.separator()
+            row = map_box.row(align=True)
+            row.operator("bim.river_apply_width_material", text="Apply Width & Color", icon='MATERIAL')
+            row.operator("bim.river_snap_markers_to_mesh", text="Snap Markers", icon='SNAP_ON')
+
         # Marker realignment tool
         map_box.separator()
-        map_box.operator("bim.river_realign_markers", text="Realign Markers", icon='ORIENTATION_CURSOR')
+        map_box.operator("bim.river_realign_markers", text="Batch Move Markers", icon='ORIENTATION_CURSOR')
 
         layout.separator()
 
