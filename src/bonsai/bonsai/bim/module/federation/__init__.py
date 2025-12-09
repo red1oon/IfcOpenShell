@@ -193,6 +193,7 @@ classes = (
     # River Centerline - OpenStreetMap Integration
     river_centerline_osm.BIM_OT_river_import_osm_centerline,
     river_centerline_osm.BIM_OT_river_simplify_centerline,
+    river_centerline_osm.BIM_OT_river_save_to_database,
 
     # 7D Maintenance - Right-click Context Menu
     river_equipment_placement.BIM_MT_equipment_context_menu,

@@ -234,13 +234,15 @@ class BIM_OT_river_import_osm_centerline(Operator):
 
                 print(f"\n🔨 Creating curve: {name} ({len(geometry)} points)")
 
-                # Convert GPS to Blender coords
+                # Convert GPS to Blender coords and store GPS data
                 blender_points = []
+                gps_coords = []  # Store original GPS for each point
                 for node in geometry:
                     lon = node['lon']
                     lat = node['lat']
                     point = converter.gps_to_blender(lon, lat, self.z_offset)
                     blender_points.append(point)
+                    gps_coords.append((lon, lat))
 
                 # Create Blender curve
                 curve_data = bpy.data.curves.new(name=f"{name}_curve", type='CURVE')
@@ -256,6 +258,17 @@ class BIM_OT_river_import_osm_centerline(Operator):
                 # Create object
                 curve_obj = bpy.data.objects.new(name, curve_data)
                 context.scene.collection.objects.link(curve_obj)
+
+                # Store GPS coordinates as custom properties
+                # Format: "lon1,lat1;lon2,lat2;lon3,lat3;..."
+                gps_string = ";".join([f"{lon:.6f},{lat:.6f}" for lon, lat in gps_coords])
+                curve_obj["gps_coordinates"] = gps_string
+                curve_obj["gps_lon_min"] = min(lon for lon, lat in gps_coords)
+                curve_obj["gps_lon_max"] = max(lon for lon, lat in gps_coords)
+                curve_obj["gps_lat_min"] = min(lat for lon, lat in gps_coords)
+                curve_obj["gps_lat_max"] = max(lat for lon, lat in gps_coords)
+                curve_obj["osm_id"] = way['id']
+                curve_obj["osm_waterway_type"] = waterway_type
 
                 # Style curve
                 curve_data.bevel_depth = 5.0  # 5m width for visibility
@@ -275,8 +288,12 @@ class BIM_OT_river_import_osm_centerline(Operator):
 
                 created_curves.append(curve_obj)
                 print(f"   ✅ Curve created: {name}")
-                print(f"      Bounds: {min(p.x for p in blender_points):.1f} - {max(p.x for p in blender_points):.1f} (X)")
-                print(f"              {min(p.y for p in blender_points):.1f} - {max(p.y for p in blender_points):.1f} (Y)")
+                print(f"      Blender Bounds: X {min(p.x for p in blender_points):.1f} - {max(p.x for p in blender_points):.1f}")
+                print(f"                      Y {min(p.y for p in blender_points):.1f} - {max(p.y for p in blender_points):.1f}")
+                print(f"      GPS Bounds: Lon {curve_obj['gps_lon_min']:.6f} - {curve_obj['gps_lon_max']:.6f}")
+                print(f"                  Lat {curve_obj['gps_lat_min']:.6f} - {curve_obj['gps_lat_max']:.6f}")
+                print(f"      OSM ID: {curve_obj['osm_id']}")
+                print(f"      Points: {len(gps_coords)} vertices with GPS coords")
 
             # Add to collection
             collection_name = "River Centerlines (OSM)"
@@ -336,5 +353,181 @@ class BIM_OT_river_simplify_centerline(Operator):
 
         # Use Edit mode decimate (manual approach)
         self.report({'INFO'}, f"Original: {original_points} points. Use Edit Mode > Curve > Simplify for reduction")
+
+        return {'FINISHED'}
+
+
+# =============================================================================
+# GPS UTILITY FUNCTIONS
+# =============================================================================
+
+def get_gps_bounds_from_object(obj):
+    """
+    Get GPS bounds from a curve/mesh object with stored GPS coordinates
+
+    Args:
+        obj: Blender object with GPS custom properties
+
+    Returns:
+        dict: {'lon_min', 'lon_max', 'lat_min', 'lat_max'} or None
+    """
+    if not obj:
+        return None
+
+    # Check if GPS bounds are stored as custom properties
+    if all(key in obj for key in ['gps_lon_min', 'gps_lon_max', 'gps_lat_min', 'gps_lat_max']):
+        return {
+            'lon_min': obj['gps_lon_min'],
+            'lon_max': obj['gps_lon_max'],
+            'lat_min': obj['gps_lat_min'],
+            'lat_max': obj['gps_lat_max']
+        }
+
+    return None
+
+
+def get_gps_coordinates_from_object(obj):
+    """
+    Parse GPS coordinates string from object custom properties
+
+    Args:
+        obj: Blender object with gps_coordinates property
+
+    Returns:
+        list: [(lon, lat), (lon, lat), ...] or None
+    """
+    if not obj or "gps_coordinates" not in obj:
+        return None
+
+    gps_string = obj["gps_coordinates"]
+    coords = []
+
+    for pair in gps_string.split(";"):
+        if pair.strip():
+            lon_str, lat_str = pair.split(",")
+            coords.append((float(lon_str), float(lat_str)))
+
+    return coords
+
+
+def get_tile_bounds_for_object(obj, padding_percent=10):
+    """
+    Get GPS bounds with padding for map tile fetching
+
+    Args:
+        obj: Blender object with GPS bounds
+        padding_percent: Add N% padding around bounds
+
+    Returns:
+        dict: Padded GPS bounds for tile queries
+    """
+    bounds = get_gps_bounds_from_object(obj)
+    if not bounds:
+        return None
+
+    # Calculate padding
+    lon_range = bounds['lon_max'] - bounds['lon_min']
+    lat_range = bounds['lat_max'] - bounds['lat_min']
+
+    lon_padding = lon_range * (padding_percent / 100.0)
+    lat_padding = lat_range * (padding_percent / 100.0)
+
+    return {
+        'lon_min': bounds['lon_min'] - lon_padding,
+        'lon_max': bounds['lon_max'] + lon_padding,
+        'lat_min': bounds['lat_min'] - lat_padding,
+        'lat_max': bounds['lat_max'] + lat_padding,
+        'center_lon': (bounds['lon_min'] + bounds['lon_max']) / 2,
+        'center_lat': (bounds['lat_min'] + bounds['lat_max']) / 2
+    }
+
+
+# =============================================================================
+# DATABASE STORAGE OPERATOR
+# =============================================================================
+
+class BIM_OT_river_save_to_database(Operator):
+    """Save OSM river curve to database with GPS metadata"""
+    bl_idname = "bim.river_save_to_database"
+    bl_label = "Save River to Database"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return obj and "gps_coordinates" in obj
+
+    def execute(self, context):
+        obj = context.active_object
+
+        if "gps_coordinates" not in obj:
+            self.report({'ERROR'}, "Selected object has no GPS data")
+            return {'CANCELLED'}
+
+        db_path = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER/klang_river_perfect.db")
+
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+
+            # Create table if not exists
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS osm_river_centerlines (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    osm_id INTEGER,
+                    waterway_type TEXT,
+                    gps_lon_min REAL,
+                    gps_lon_max REAL,
+                    gps_lat_min REAL,
+                    gps_lat_max REAL,
+                    gps_coordinates TEXT,
+                    point_count INTEGER,
+                    blender_object_name TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    notes TEXT
+                )
+            """)
+
+            # Insert river data
+            gps_coords_string = obj.get("gps_coordinates", "")
+            point_count = len(gps_coords_string.split(";")) if gps_coords_string else 0
+
+            cursor.execute("""
+                INSERT INTO osm_river_centerlines
+                (name, osm_id, waterway_type, gps_lon_min, gps_lon_max, gps_lat_min, gps_lat_max,
+                 gps_coordinates, point_count, blender_object_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                obj.name,
+                obj.get("osm_id"),
+                obj.get("osm_waterway_type", "river"),
+                obj.get("gps_lon_min"),
+                obj.get("gps_lon_max"),
+                obj.get("gps_lat_min"),
+                obj.get("gps_lat_max"),
+                gps_coords_string,
+                point_count,
+                obj.name
+            ))
+
+            conn.commit()
+            row_id = cursor.lastrowid
+            conn.close()
+
+            print(f"\n✅ Saved river to database:")
+            print(f"   Name: {obj.name}")
+            print(f"   Database ID: {row_id}")
+            print(f"   Points: {point_count}")
+            print(f"   GPS Bounds: {obj['gps_lon_min']:.6f},{obj['gps_lat_min']:.6f} - "
+                  f"{obj['gps_lon_max']:.6f},{obj['gps_lat_max']:.6f}")
+
+            self.report({'INFO'}, f"Saved {obj.name} to database (ID: {row_id})")
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Database error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {'CANCELLED'}
 
         return {'FINISHED'}
