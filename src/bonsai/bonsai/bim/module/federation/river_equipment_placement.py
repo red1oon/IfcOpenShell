@@ -788,6 +788,9 @@ class BIM_OT_equipment_load_from_db(Operator):
                 empty.color = (*color, 1.0)
                 empty.show_in_front = True
 
+                # Store marker_id as custom property for sensor lookup
+                empty["marker_id"] = marker_id
+
                 # Link to type-specific collection
                 equipment_collections[marker_type].objects.link(empty)
 
@@ -1558,13 +1561,16 @@ class BIM_OT_equipment_view_properties(Operator):
             self.report({'WARNING'}, "Selected object is not equipment marker")
             return {'CANCELLED'}
 
-        # Extract marker ID from name
-        try:
-            num_str = obj.name.split('_')[-1]
-            marker_id = int(num_str)
-        except:
-            self.report({'ERROR'}, "Could not parse equipment ID")
-            return {'CANCELLED'}
+        # Extract marker ID from custom property (preferred) or name (fallback)
+        if "marker_id" in obj:
+            marker_id = obj["marker_id"]
+        else:
+            try:
+                num_str = obj.name.split('_')[-1]
+                marker_id = int(num_str)
+            except:
+                self.report({'ERROR'}, "Could not parse equipment ID")
+                return {'CANCELLED'}
 
         self.equipment_name = obj.name
         self.equipment_type = equipment_type

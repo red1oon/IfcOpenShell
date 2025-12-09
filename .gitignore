@@ -96,3 +96,12 @@ src/bonsai/bonsai-0.0.0/
 src/ifcopenshell-python/ifcopenshell/express/*.exp
 src/ifcopenshell-python/ifcopenshell/express/*.exp.cache.dat
 WORK_DIR/RIVER/
+
+# River equipment output/test files
+src/bonsai/bonsai/bim/module/federation/output/
+src/bonsai/bonsai/bim/module/federation/river_ui/data/
+src/bonsai/bonsai/bim/module/federation/river_ui/output/
+src/bonsai/bonsai/bim/module/federation/river_ui/viewer_realOLD.js
+src/bonsai/bonsai/bim/module/federation/river_ui/viewer_real_freeplay.js
+src/bonsai/bonsai/bim/module/federation/river_ecosystem_ui.py
+src/bonsai/bonsai/bim/module/federation/river_ecosystem_ui_simple.py
