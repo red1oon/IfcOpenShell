@@ -1263,11 +1263,144 @@ class FilterPanelUI:
 
         font_id = 0
 
-        # Title
+        # Title (shortened)
         blf.size(font_id, 24)
         blf.color(font_id, 0.95, 0.95, 0.95, 1.0)
         blf.position(font_id, panel_x + 20, panel_y + self.panel_height - 40, 0)
-        blf.draw(font_id, "RIVER ALERT OVERVIEW - KLANG RIVER")
+        blf.draw(font_id, "RIVER ALERT OVERVIEW")
+
+        # North indicator icon (⬆ N)
+        header_right_x = panel_x + self.panel_width - 100
+        header_y = panel_y + self.panel_height - 40
+
+        # Draw compass circle background
+        import math
+        compass_center_x = header_right_x + 25
+        compass_center_y = header_y + 8
+        compass_radius = 18
+
+        # Compass circle
+        circle_verts = []
+        num_segments = 24
+        for i in range(num_segments + 1):
+            angle = 2.0 * math.pi * i / num_segments
+            cx = compass_center_x + compass_radius * math.cos(angle)
+            cy = compass_center_y + compass_radius * math.sin(angle)
+            circle_verts.append((cx, cy))
+
+        batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": circle_verts})
+        shader.uniform_float("color", (0.9, 0.9, 0.9, 0.8))
+        gpu.state.line_width_set(2.0)
+        batch.draw(shader)
+        gpu.state.line_width_set(1.0)
+
+        # North arrow (triangle pointing up)
+        arrow_verts = [
+            (compass_center_x, compass_center_y + 10),  # Top
+            (compass_center_x - 5, compass_center_y - 3),  # Bottom left
+            (compass_center_x + 5, compass_center_y - 3),  # Bottom right
+        ]
+        arrow_indices = [(0, 1, 2)]
+        batch = batch_for_shader(shader, 'TRIS', {"pos": arrow_verts}, indices=arrow_indices)
+        shader.uniform_float("color", (0.9, 0.2, 0.2, 0.9))  # Red for North
+        batch.draw(shader)
+
+        # "N" text
+        blf.size(font_id, 14)
+        blf.color(font_id, 0.95, 0.95, 0.95, 1.0)
+        blf.position(font_id, compass_center_x - 5, compass_center_y - 10, 0)
+        blf.draw(font_id, "N")
+
+        # Zoom/Frame All button (target icon)
+        zoom_button_x = header_right_x + 60
+        zoom_button_y = header_y
+        zoom_button_size = 36
+
+        # Button background
+        zoom_bg_verts = [
+            (zoom_button_x, zoom_button_y),
+            (zoom_button_x + zoom_button_size, zoom_button_y),
+            (zoom_button_x + zoom_button_size, zoom_button_y + zoom_button_size),
+            (zoom_button_x, zoom_button_y + zoom_button_size)
+        ]
+        batch = batch_for_shader(shader, 'TRIS', {"pos": zoom_bg_verts}, indices=indices)
+        shader.uniform_float("color", (0.3, 0.5, 0.7, 0.8))
+        batch.draw(shader)
+
+        # Button border
+        zoom_border_verts = [
+            (zoom_button_x, zoom_button_y),
+            (zoom_button_x + zoom_button_size, zoom_button_y),
+            (zoom_button_x + zoom_button_size, zoom_button_y + zoom_button_size),
+            (zoom_button_x, zoom_button_y + zoom_button_size),
+            (zoom_button_x, zoom_button_y)
+        ]
+        batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": zoom_border_verts})
+        shader.uniform_float("color", (0.5, 0.7, 0.9, 1.0))
+        gpu.state.line_width_set(2.0)
+        batch.draw(shader)
+        gpu.state.line_width_set(1.0)
+
+        # Target icon (concentric circles with crosshair)
+        target_center_x = zoom_button_x + zoom_button_size / 2
+        target_center_y = zoom_button_y + zoom_button_size / 2
+
+        # Outer circle
+        outer_circle_verts = []
+        for i in range(num_segments + 1):
+            angle = 2.0 * math.pi * i / num_segments
+            cx = target_center_x + 12 * math.cos(angle)
+            cy = target_center_y + 12 * math.sin(angle)
+            outer_circle_verts.append((cx, cy))
+
+        batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": outer_circle_verts})
+        shader.uniform_float("color", (0.95, 0.95, 0.95, 1.0))
+        gpu.state.line_width_set(2.0)
+        batch.draw(shader)
+
+        # Inner circle
+        inner_circle_verts = []
+        for i in range(num_segments + 1):
+            angle = 2.0 * math.pi * i / num_segments
+            cx = target_center_x + 6 * math.cos(angle)
+            cy = target_center_y + 6 * math.sin(angle)
+            inner_circle_verts.append((cx, cy))
+
+        batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": inner_circle_verts})
+        shader.uniform_float("color", (0.95, 0.95, 0.95, 1.0))
+        gpu.state.line_width_set(1.5)
+        batch.draw(shader)
+
+        # Crosshair
+        crosshair_verts = [
+            (target_center_x - 14, target_center_y),
+            (target_center_x + 14, target_center_y)
+        ]
+        batch = batch_for_shader(shader, 'LINES', {"pos": crosshair_verts})
+        shader.uniform_float("color", (0.95, 0.95, 0.95, 1.0))
+        gpu.state.line_width_set(1.5)
+        batch.draw(shader)
+
+        crosshair_verts = [
+            (target_center_x, target_center_y - 14),
+            (target_center_x, target_center_y + 14)
+        ]
+        batch = batch_for_shader(shader, 'LINES', {"pos": crosshair_verts})
+        shader.uniform_float("color", (0.95, 0.95, 0.95, 1.0))
+        gpu.state.line_width_set(1.5)
+        batch.draw(shader)
+        gpu.state.line_width_set(1.0)
+
+        # Register zoom button as clickable
+        self.clickable_regions.append({
+            'x1': zoom_button_x,
+            'y1': zoom_button_y,
+            'x2': zoom_button_x + zoom_button_size,
+            'y2': zoom_button_y + zoom_button_size,
+            'action': 'frame_all_beacons',
+            'value': None,
+            'label': 'Frame All Beacons'
+        })
 
         # Content area with better spacing
         content_y = panel_y + self.panel_height - 90
@@ -1810,7 +1943,79 @@ class FilterPanelUI:
                     self.alert_view._cache_valid = False  # Invalidate cache
                     return True
 
+                elif action == 'frame_all_beacons':
+                    # Frame all beacons in viewport
+                    self.frame_all_beacons()
+                    return True
+
         return False  # Click not on any filter
+
+    def frame_all_beacons(self):
+        """Frame camera to show all alert beacons"""
+        import bpy
+
+        # Get all beacon objects
+        beacon_objects = []
+        for obj in bpy.data.objects:
+            if obj.get("beacon_type") == "alert_beacon":
+                beacon_objects.append(obj)
+
+        if not beacon_objects:
+            LOGGER.log("No beacons to frame")
+            return
+
+        # Calculate bounding box of all beacons
+        min_x = min_y = min_z = float('inf')
+        max_x = max_y = max_z = float('-inf')
+
+        for obj in beacon_objects:
+            x, y, z = obj.location
+            # Account for beacon radius (200m)
+            radius = 200.0
+            min_x = min(min_x, x - radius)
+            max_x = max(max_x, x + radius)
+            min_y = min(min_y, y - radius)
+            max_y = max(max_y, y + radius)
+            min_z = min(min_z, z - radius)
+            max_z = max(max_z, z + radius)
+
+        # Calculate center and size
+        center_x = (min_x + max_x) / 2
+        center_y = (min_y + max_y) / 2
+        center_z = (min_z + max_z) / 2
+
+        # Get the active 3D view
+        for area in bpy.context.screen.areas:
+            if area.type == 'VIEW_3D':
+                for space in area.spaces:
+                    if space.type == 'VIEW_3D':
+                        # Set view to look from above (top-down)
+                        region_3d = space.region_3d
+
+                        # Calculate distance to fit all beacons
+                        span_x = max_x - min_x
+                        span_y = max_y - min_y
+                        max_span = max(span_x, span_y)
+
+                        # Distance calculation (empirical formula for perspective view)
+                        distance = max_span * 1.5
+
+                        # Set view location (center of all beacons)
+                        region_3d.view_location = (center_x, center_y, center_z)
+
+                        # Set view distance
+                        region_3d.view_distance = distance
+
+                        # Set view to top-down (quaternion for looking down Z axis)
+                        import mathutils
+                        region_3d.view_rotation = mathutils.Quaternion((1.0, 0.0, 0.0, 0.0))
+
+                        area.tag_redraw()
+
+                        LOGGER.log(f"✓ Framed {len(beacon_objects)} beacons in viewport")
+                        return
+
+        LOGGER.log("No 3D viewport found")
 
 
 class MarkerSensorView:
