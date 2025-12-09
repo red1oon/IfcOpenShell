@@ -1212,7 +1212,7 @@ class FilterPanelUI:
     def __init__(self, global_alert_view):
         self.alert_view = global_alert_view
         self.panel_width = 550
-        self.panel_height = 520
+        self.panel_height = 700  # Increased from 520 to show all content
 
         # Track clickable regions for interaction
         self.clickable_regions = []  # List of (x1, y1, x2, y2, callback, label)
@@ -1614,9 +1614,107 @@ class FilterPanelUI:
             'label': all_types_label
         })
 
-        content_y -= 30
+        content_y -= 8
+
+        # Individual equipment type checkboxes
+        blf.size(font_id, 13)
+        for eq_type, eq_info in EQUIPMENT_TYPES.items():
+            checked = eq_type in self.alert_view.filter_equipment_types
+            eq_label = eq_info['name']
+
+            # Draw button/checkbox background
+            button_x = panel_x + 50  # Indent more to show it's under "All Types"
+            button_y = content_y - 3
+            button_width = self.panel_width - 80
+            button_height = 20
+
+            # Button background color
+            if checked:
+                bg_color = (0.2, 0.6, 0.3, 0.6)  # Green for checked (slightly dimmer)
+            else:
+                bg_color = (0.15, 0.15, 0.15, 0.5)  # Dark gray for unchecked
+
+            # Draw button background
+            button_verts = [
+                (button_x, button_y),
+                (button_x + button_width, button_y),
+                (button_x + button_width, button_y + button_height),
+                (button_x, button_y + button_height)
+            ]
+            batch = batch_for_shader(shader, 'TRIS', {"pos": button_verts}, indices=indices)
+            shader.uniform_float("color", bg_color)
+            batch.draw(shader)
+
+            # Draw button border
+            border_verts = [
+                (button_x, button_y),
+                (button_x + button_width, button_y),
+                (button_x + button_width, button_y + button_height),
+                (button_x, button_y + button_height),
+                (button_x, button_y)
+            ]
+            batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": border_verts})
+            border_color = (0.3, 0.7, 0.4, 0.8) if checked else (0.25, 0.25, 0.25, 0.6)
+            shader.uniform_float("color", border_color)
+            gpu.state.line_width_set(1.5)
+            batch.draw(shader)
+            gpu.state.line_width_set(1.0)
+
+            # Draw checkbox square (smaller for individual items)
+            checkbox_x = button_x + 6
+            checkbox_y = button_y + 5
+            checkbox_size = 8
+
+            # Checkbox border
+            checkbox_verts = [
+                (checkbox_x, checkbox_y),
+                (checkbox_x + checkbox_size, checkbox_y),
+                (checkbox_x + checkbox_size, checkbox_y + checkbox_size),
+                (checkbox_x, checkbox_y + checkbox_size),
+                (checkbox_x, checkbox_y)
+            ]
+            batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": checkbox_verts})
+            shader.uniform_float("color", (0.7, 0.7, 0.7, 1.0))
+            gpu.state.line_width_set(1.0)
+            batch.draw(shader)
+
+            # Checkmark if checked
+            if checked:
+                check_verts = [
+                    (checkbox_x + 1, checkbox_y + 4),
+                    (checkbox_x + 3, checkbox_y + 1),
+                    (checkbox_x + 7, checkbox_y + 7)
+                ]
+                batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": check_verts})
+                shader.uniform_float("color", (0.2, 0.9, 0.2, 1.0))
+                gpu.state.line_width_set(2.0)
+                batch.draw(shader)
+                gpu.state.line_width_set(1.0)
+
+            # Draw text (smaller font)
+            blf.size(font_id, 11)
+            text_color = (0.9, 0.9, 0.9, 1.0) if checked else (0.6, 0.6, 0.6, 1.0)
+            blf.color(font_id, *text_color)
+            text_x = button_x + 20
+            text_y = button_y + 4
+            blf.position(font_id, text_x, text_y, 0)
+            blf.draw(font_id, eq_label)
+
+            # Register clickable region
+            self.clickable_regions.append({
+                'x1': button_x,
+                'y1': button_y,
+                'x2': button_x + button_width,
+                'y2': button_y + button_height,
+                'action': 'toggle_equipment_type',
+                'value': eq_type,
+                'label': eq_label
+            })
+
+            content_y -= 22
 
         # Separator
+        content_y -= 10
         sep_vertices = [
             (panel_x + 20, content_y),
             (panel_x + self.panel_width - 20, content_y)
@@ -1700,6 +1798,15 @@ class FilterPanelUI:
                         self.alert_view.filter_equipment_types = []
                     else:
                         self.alert_view.filter_equipment_types = list(EQUIPMENT_TYPES.keys())
+                    self.alert_view._cache_valid = False  # Invalidate cache
+                    return True
+
+                elif action == 'toggle_equipment_type':
+                    # Toggle individual equipment type
+                    if value in self.alert_view.filter_equipment_types:
+                        self.alert_view.filter_equipment_types.remove(value)
+                    else:
+                        self.alert_view.filter_equipment_types.append(value)
                     self.alert_view._cache_valid = False  # Invalidate cache
                     return True
 
@@ -2066,6 +2173,33 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
 
         # Mark as not running first to prevent draw callbacks
         self._is_running = False
+
+        # Clean up beacon objects from outliner
+        if self._mode == 'GLOBAL_ALERTS':
+            beacon_collection_name = "River_Alert_Beacons"
+
+            # Remove all beacon objects
+            objects_to_remove = []
+            for obj in bpy.data.objects:
+                if obj.get("beacon_type") == "alert_beacon":
+                    objects_to_remove.append(obj)
+
+            for obj in objects_to_remove:
+                bpy.data.objects.remove(obj, do_unlink=True)
+
+            # Remove beacon collection
+            if beacon_collection_name in bpy.data.collections:
+                old_collection = bpy.data.collections[beacon_collection_name]
+
+                # Unlink from all scenes
+                for scene in bpy.data.scenes:
+                    if old_collection.name in scene.collection.children:
+                        scene.collection.children.unlink(old_collection)
+
+                # Remove the collection
+                bpy.data.collections.remove(old_collection)
+
+            LOGGER.log("✓ Cleaned up beacon objects from outliner")
 
         if self._timer:
             try:
