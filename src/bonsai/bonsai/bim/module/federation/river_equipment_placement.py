@@ -1071,7 +1071,8 @@ class GlobalAlertView:
 
             # Create beacon empty
             status = marker['status']
-            beacon_name = f"BEACON_{status}_{marker['equipment_name']}"
+            equipment_type = marker['equipment_type']
+            beacon_name = f"BEACON_{status}_{equipment_type}_{marker_id}"
             beacon = bpy.data.objects.new(beacon_name, None)
             beacon.location = (x, y, z)
             beacon.empty_display_type = 'SPHERE'
@@ -1085,7 +1086,7 @@ class GlobalAlertView:
             beacon["beacon_type"] = "alert_beacon"
             beacon["marker_id"] = marker_id
             beacon["status"] = status
-            beacon["equipment_name"] = marker['equipment_name']
+            beacon["equipment_type"] = equipment_type
 
             # Add to collection
             beacon_collection.objects.link(beacon)
