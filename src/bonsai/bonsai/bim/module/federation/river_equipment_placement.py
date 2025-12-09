@@ -1212,7 +1212,7 @@ class FilterPanelUI:
     def __init__(self, global_alert_view):
         self.alert_view = global_alert_view
         self.panel_width = 550
-        self.panel_height = 700  # Increased from 520 to show all content
+        self.panel_height = 780  # Increased to cover all equipment types + bottom text
 
         # Track clickable regions for interaction
         self.clickable_regions = []  # List of (x1, y1, x2, y2, callback, label)
@@ -1614,7 +1614,7 @@ class FilterPanelUI:
             'label': all_types_label
         })
 
-        content_y -= 8
+        content_y -= 18  # Increased spacing to separate "All Types" from individual types
 
         # Individual equipment type checkboxes
         blf.size(font_id, 13)
