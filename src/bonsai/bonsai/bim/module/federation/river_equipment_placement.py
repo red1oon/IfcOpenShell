@@ -21,6 +21,9 @@ from mathutils import Vector
 from pathlib import Path
 from datetime import datetime
 
+# Import Google Maps operators from separate module
+from . import river_map_background
+
 # =============================================================================
 # CONSOLE LOGGER
 # =============================================================================
@@ -3272,6 +3275,18 @@ class BIM_PT_river_equipment_placement(Panel):
 
         layout.separator()
 
+        # Map Background
+        map_box = layout.box()
+        map_box.label(text="🗺️ Map Background:", icon='WORLD')
+        row = map_box.row(align=True)
+        op = row.operator("bim.river_load_map_background", text="Satellite", icon='IMAGE_DATA')
+        op.layer_type = 'satellite'
+        op = row.operator("bim.river_load_map_background", text="Terrain", icon='RNDCURVE')
+        op.layer_type = 'terrain'
+        map_box.label(text="Toggle layers in Outliner", icon='OUTLINER')
+
+        layout.separator()
+
         # Counts
         box = layout.box()
         box.label(text="Placed Equipment:", icon='CHECKMARK')
@@ -3715,6 +3730,12 @@ class BIM_OT_equipment_create_work_order(Operator):
             return {'CANCELLED'}
 
         return {'FINISHED'}
+
+
+# =============================================================================
+# GOOGLE MAPS INTEGRATION - Imported from river_map_background.py
+# =============================================================================
+# Map background operators are in separate module for maintainability
 
 
 # Register context menu to appear on right-click
