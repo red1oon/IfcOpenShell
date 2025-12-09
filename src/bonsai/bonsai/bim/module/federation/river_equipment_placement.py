@@ -3275,7 +3275,7 @@ class BIM_PT_river_equipment_placement(Panel):
 
         layout.separator()
 
-        # Map Background
+        # Map Background & River Centerline
         map_box = layout.box()
         map_box.label(text="🗺️ Map Background:", icon='WORLD')
         row = map_box.row(align=True)
@@ -3283,7 +3283,14 @@ class BIM_PT_river_equipment_placement(Panel):
         op.layer_type = 'satellite'
         op = row.operator("bim.river_load_map_background", text="Terrain", icon='RNDCURVE')
         op.layer_type = 'terrain'
-        map_box.label(text="Toggle layers in Outliner", icon='OUTLINER')
+
+        # River Centerline from OSM
+        map_box.separator()
+        map_box.label(text="🌊 River Centerline (OSM):", icon='CURVE_DATA')
+        row = map_box.row(align=True)
+        op = row.operator("bim.river_import_osm_centerline", text="Import from OSM", icon='IMPORT')
+        op.waterway_type = 'river'
+        map_box.label(text="Free vector data from OpenStreetMap", icon='INFO')
 
         layout.separator()
 

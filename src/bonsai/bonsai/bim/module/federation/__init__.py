@@ -46,6 +46,7 @@ from . import ui_federation_project  # Clean enterprise layout under Project Ove
 from . import river_equipment_placement  # River Equipment Placement - Item 11 (Phase 1 POC)
 from . import river_equipment_gizmo  # Equipment Gizmo visualization
 from . import river_map_background  # Google Maps background layers for river
+from . import river_centerline_osm  # OSM river centerline import
 # from . import equipment_placement  # Equipment Placement Tool - Item 12 (ARCHIVED - rebuilding POC)
 from .loading.unified_progressive_loader import GlassOutlineLoader
 from .clash import gizmo
@@ -188,6 +189,10 @@ classes = (
     # River Map Background - Google Maps Integration
     river_map_background.BIM_OT_river_load_map_background,
     river_map_background.BIM_OT_river_view_api_usage,
+
+    # River Centerline - OpenStreetMap Integration
+    river_centerline_osm.BIM_OT_river_import_osm_centerline,
+    river_centerline_osm.BIM_OT_river_simplify_centerline,
 
     # 7D Maintenance - Right-click Context Menu
     river_equipment_placement.BIM_MT_equipment_context_menu,
