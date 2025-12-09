@@ -706,14 +706,10 @@ class BIM_OT_equipment_load_from_db(Operator):
 
             LOGGER.section("LOADING FROM DATABASE")
 
-            # Get mesh object transform (same as mesh baking uses)
-            # Mesh baking sets obj.location = element_transforms offset
-            # Apply same offset to equipment for alignment
-            cursor.execute("SELECT center_x, center_y, center_z FROM element_transforms LIMIT 1")
-            transform_row = cursor.fetchone()
-            mesh_offset = transform_row if transform_row else (0.0, 0.0, 0.0)
-            LOGGER.log(f"Mesh object offset: ({mesh_offset[0]:.2f}, {mesh_offset[1]:.2f}, {mesh_offset[2]:.2f})")
-            LOGGER.log("Applying same offset to equipment (display time, not stored)")
+            # River markers and meshes are in world coordinates (no offset needed)
+            # River objects are at origin with transforms applied to geometry
+            mesh_offset = (0.0, 0.0, 0.0)
+            LOGGER.log(f"River equipment uses world coordinates (no offset applied)")
 
             # Query equipment markers (all types) - MUST include marker_id for sensor lookup
             marker_types = ', '.join([f"'{mt}'" for mt in EQUIPMENT_TYPES.keys()])
@@ -738,31 +734,43 @@ class BIM_OT_equipment_load_from_db(Operator):
             for equipment_type in EQUIPMENT_TYPES.keys():
                 PLACED_EQUIPMENT[equipment_type] = []
 
-            # Create/get parent collection for all equipment
+            # Remove ALL old equipment objects and collections
             parent_collection_name = "River Equipment"
             if parent_collection_name in bpy.data.collections:
-                parent_collection = bpy.data.collections[parent_collection_name]
-            else:
-                parent_collection = bpy.data.collections.new(parent_collection_name)
-                context.scene.collection.children.link(parent_collection)
-                LOGGER.log(f"Created parent collection: {parent_collection_name}")
+                old_parent = bpy.data.collections[parent_collection_name]
+                LOGGER.log(f"Clearing old parent collection: {parent_collection_name}")
 
-            # Create collections for each equipment type
+                # Recursively delete all child collections and their objects
+                for child_coll in list(old_parent.children):
+                    # Delete all objects in child collection
+                    for obj in list(child_coll.objects):
+                        bpy.data.objects.remove(obj, do_unlink=True)
+                    # Unlink and remove child collection
+                    old_parent.children.unlink(child_coll)
+                    bpy.data.collections.remove(child_coll)
+
+                # Delete any objects directly in parent
+                for obj in list(old_parent.objects):
+                    bpy.data.objects.remove(obj, do_unlink=True)
+
+                # Unlink parent from scene
+                context.scene.collection.children.unlink(old_parent)
+                # Remove parent collection
+                bpy.data.collections.remove(old_parent)
+                LOGGER.log("  All old equipment cleared")
+
+            # Create fresh parent collection
+            parent_collection = bpy.data.collections.new(parent_collection_name)
+            context.scene.collection.children.link(parent_collection)
+            LOGGER.log(f"Created fresh parent collection: {parent_collection_name}")
+
+            # Create fresh collections for each equipment type
             equipment_collections = {}
             for eq_type in EQUIPMENT_TYPES.keys():
                 eq_info = EQUIPMENT_TYPES[eq_type]
                 collection_name = eq_info['name'] + 's'  # Plural
 
-                # Remove old collection if exists
-                if collection_name in bpy.data.collections:
-                    old_coll = bpy.data.collections[collection_name]
-                    # Unlink all objects
-                    for obj in list(old_coll.objects):
-                        old_coll.objects.unlink(obj)
-                    # Remove collection
-                    bpy.data.collections.remove(old_coll)
-
-                # Create new collection
+                # Create new collection (old ones already cleared above)
                 eq_collection = bpy.data.collections.new(collection_name)
                 parent_collection.children.link(eq_collection)
                 equipment_collections[eq_type] = eq_collection
@@ -976,7 +984,7 @@ class GlobalAlertView:
             equipment_placeholders = ','.join('?' * len(self.filter_equipment_types))
 
             query = f"""
-                SELECT marker_id, marker_type, location_x, location_y, location_z, river_section
+                SELECT id, marker_type, location_x, location_y, location_z, river_section
                 FROM project_markers
                 WHERE river_section IN ({zone_placeholders})
                   AND marker_type IN ({equipment_placeholders})
@@ -2237,7 +2245,7 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
                 for sensor_id, sensor_name, sensor_type, unit, threshold_max in sensors:
                     # Get 7-day readings
                     cursor.execute("""
-                        SELECT timestamp, value
+                        SELECT day_label, value
                         FROM sensor_readings
                         WHERE sensor_id = ?
                         ORDER BY timestamp ASC
@@ -2249,8 +2257,8 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
                     day_values = []
                     for day in range(1, 8):
                         day_label = f'Day {day}'
-                        for timestamp, value in readings:
-                            if timestamp.startswith(day_label):
+                        for reading_day_label, value in readings:
+                            if reading_day_label == day_label:
                                 day_values.append(float(value))
                                 break
 
@@ -3012,7 +3020,7 @@ class BIM_OT_equipment_view_properties(Operator):
                        gps_accuracy_m, gps_measured_date, gps_measured_by,
                        position_source, priority, status, installation_date
                 FROM project_markers
-                WHERE marker_id = ?
+                WHERE id = ?
             """, (self.marker_id,))
 
             marker_row = cursor.fetchone()
@@ -3302,8 +3310,9 @@ class BIM_PT_river_equipment_placement(Panel):
         if context.active_object and context.active_object.type == 'MESH':
             map_box.separator()
             row = map_box.row(align=True)
-            row.operator("bim.river_apply_width_material", text="Apply Width & Color", icon='MATERIAL')
+            row.operator("bim.river_apply_width_material", text="Apply Width (50m)", icon='MOD_SOLIDIFY')
             row.operator("bim.river_snap_markers_to_mesh", text="Snap Markers", icon='SNAP_ON')
+            map_box.label(text="Use colorize tool for river color", icon='INFO')
 
         # Marker realignment tool
         map_box.separator()

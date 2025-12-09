@@ -270,6 +270,10 @@ class BIM_OT_river_import_osm_centerline(Operator):
                 curve_obj["osm_id"] = way['id']
                 curve_obj["osm_waterway_type"] = waterway_type
 
+                # Set IFC type for Federation colorize tool
+                curve_obj["ifc_type"] = "IfcGeographicElement"
+                curve_obj["ifc_class"] = "RIVER"
+
                 # Style curve
                 curve_data.bevel_depth = 5.0  # 5m width for visibility
                 curve_data.bevel_resolution = 4
@@ -609,9 +613,9 @@ class BIM_OT_river_realign_markers(bpy.types.Operator):
 # =============================================================================
 
 class BIM_OT_river_apply_width_material(bpy.types.Operator):
-    """Apply width and water material to river mesh"""
+    """Apply width to river mesh (use Federation colorize tool for color)"""
     bl_idname = "bim.river_apply_width_material"
-    bl_label = "Style River Mesh"
+    bl_label = "Apply River Width"
     bl_options = {'REGISTER', 'UNDO'}
 
     river_width: bpy.props.FloatProperty(
@@ -638,7 +642,7 @@ class BIM_OT_river_apply_width_material(bpy.types.Operator):
             return {'CANCELLED'}
 
         print(f"\n{'='*70}")
-        print(f"🎨 STYLING RIVER MESH: {obj.name}")
+        print(f"📏 APPLYING RIVER WIDTH: {obj.name}")
         print(f"{'='*70}")
 
         # Add Solidify modifier for width
@@ -655,45 +659,6 @@ class BIM_OT_river_apply_width_material(bpy.types.Operator):
         solidify.offset = 0.0  # Centered
         print(f"✅ Solidify modifier: {self.river_width}m width")
 
-        # Create blue water material
-        mat_name = "RiverWater_Blue"
-        mat = bpy.data.materials.get(mat_name)
-
-        if not mat:
-            mat = bpy.data.materials.new(name=mat_name)
-            mat.use_nodes = True
-            nodes = mat.node_tree.nodes
-            nodes.clear()
-
-            # Shader nodes for water
-            node_bsdf = nodes.new('ShaderNodeBsdfPrincipled')
-            node_output = nodes.new('ShaderNodeOutputMaterial')
-
-            # Water properties
-            node_bsdf.inputs['Base Color'].default_value = (0.1, 0.3, 0.6, 1.0)  # Blue
-            node_bsdf.inputs['Metallic'].default_value = 0.8
-            node_bsdf.inputs['Roughness'].default_value = 0.2
-            node_bsdf.inputs['IOR'].default_value = 1.333  # Water IOR
-            node_bsdf.inputs['Transmission'].default_value = 0.7  # Semi-transparent
-            node_bsdf.inputs['Alpha'].default_value = 0.8
-
-            # Connect
-            mat.node_tree.links.new(node_bsdf.outputs['BSDF'], node_output.inputs['Surface'])
-
-            # Enable transparency
-            mat.blend_method = 'BLEND'
-            mat.show_transparent_back = False
-
-            print(f"✅ Created water material: {mat_name}")
-        else:
-            print(f"✅ Using existing material: {mat_name}")
-
-        # Apply material
-        if obj.data.materials:
-            obj.data.materials[0] = mat
-        else:
-            obj.data.materials.append(mat)
-
         # Optional: Add Subdivision Surface for smooth curves
         subsurf = None
         for mod in obj.modifiers:
@@ -707,13 +672,13 @@ class BIM_OT_river_apply_width_material(bpy.types.Operator):
             subsurf.render_levels = 2
             print(f"✅ Subdivision modifier: smoothing enabled")
 
-        print(f"\n✅ River styled successfully!")
+        print(f"\n✅ River width applied!")
         print(f"   Width: {self.river_width}m")
-        print(f"   Material: Blue water with transparency")
         print(f"   Modifiers: Solidify + Subdivision")
+        print(f"   💡 Use Federation colorize tool for color")
         print(f"{'='*70}\n")
 
-        self.report({'INFO'}, f"River styled: {self.river_width}m width")
+        self.report({'INFO'}, f"River width: {self.river_width}m. Use colorize tool for color.")
         return {'FINISHED'}
 
 
@@ -730,8 +695,8 @@ class BIM_OT_river_snap_markers_to_mesh(bpy.types.Operator):
     max_distance: bpy.props.FloatProperty(
         name="Max Distance",
         description="Maximum search distance (meters)",
-        default=1000.0,
-        min=10.0,
+        default=50.0,
+        min=5.0,
         max=10000.0
     )
 
