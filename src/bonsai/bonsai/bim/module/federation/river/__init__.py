@@ -19,6 +19,14 @@ from . import equipment_placement
 from . import equipment_gizmo
 from . import centerline_osm
 
+# Expose data structures that may be accessed from outside
+from .equipment_placement import (
+    EQUIPMENT_TYPES,
+    PLACED_EQUIPMENT,
+    SENSOR_TYPE_ICONS,
+    SENSOR_TYPE_COLORS,
+)
+
 # Expose classes for registration in federation module
 classes = (
     # Equipment Placement UI Panel
