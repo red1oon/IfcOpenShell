@@ -324,16 +324,16 @@ def restore_equipment_on_load(dummy):
 
     try:
         # Import equipment placement module to access PLACED_EQUIPMENT
-        from . import river_equipment_placement
+        from .river import equipment_placement
 
         # Clear existing data
-        for equipment_type in river_equipment_placement.EQUIPMENT_TYPES.keys():
-            river_equipment_placement.PLACED_EQUIPMENT[equipment_type] = []
+        for equipment_type in equipment_placement.EQUIPMENT_TYPES.keys():
+            equipment_placement.PLACED_EQUIPMENT[equipment_type] = []
 
         # Equipment name patterns to scan for - dynamically built from EQUIPMENT_TYPES
         equipment_map = {
             f'{eq_type.upper()}_': eq_type
-            for eq_type in river_equipment_placement.EQUIPMENT_TYPES.keys()
+            for eq_type in equipment_placement.EQUIPMENT_TYPES.keys()
         }
 
         # Scan scene for equipment Empty objects
@@ -347,10 +347,10 @@ def restore_equipment_on_load(dummy):
                             num_str = obj.name.replace(prefix, '')
                             number = int(num_str)
                         except:
-                            number = len(river_equipment_placement.PLACED_EQUIPMENT[eq_type]) + 1
+                            number = len(equipment_placement.PLACED_EQUIPMENT[eq_type]) + 1
 
                         # Add to PLACED_EQUIPMENT dictionary
-                        river_equipment_placement.PLACED_EQUIPMENT[eq_type].append({
+                        equipment_placement.PLACED_EQUIPMENT[eq_type].append({
                             'id': obj.name,
                             'number': number,
                             'marker_id': obj.get("marker_id", number),  # Read from object custom property
@@ -367,9 +367,9 @@ def restore_equipment_on_load(dummy):
             print(f"✓ River Equipment: Restored {total_restored} equipment markers from scene")
 
             # Log details per type
-            for eq_type, items in river_equipment_placement.PLACED_EQUIPMENT.items():
+            for eq_type, items in equipment_placement.PLACED_EQUIPMENT.items():
                 if items:
-                    eq_name = river_equipment_placement.EQUIPMENT_TYPES[eq_type]['name']
+                    eq_name = equipment_placement.EQUIPMENT_TYPES[eq_type]['name']
                     print(f"  • {eq_name}: {len(items)} markers")
 
             # Force gizmo refresh
@@ -440,7 +440,7 @@ def register():
         bpy.app.handlers.load_post.append(restore_equipment_on_load)
 
     # Register equipment context menu (right-click on equipment)
-    bpy.types.VIEW3D_MT_object_context_menu.append(river_equipment_placement.menu_func)
+    bpy.types.VIEW3D_MT_object_context_menu.append(river.equipment_placement.menu_func)
 
     # Equipment Placement properties (ARCHIVED - rebuilding POC)
     # equipment_placement.register()
@@ -456,7 +456,7 @@ def unregister():
         bpy.app.handlers.load_post.remove(restore_equipment_on_load)
 
     # Remove equipment context menu
-    bpy.types.VIEW3D_MT_object_context_menu.remove(river_equipment_placement.menu_func)
+    bpy.types.VIEW3D_MT_object_context_menu.remove(river.equipment_placement.menu_func)
 
     # Unregister federation analysis properties from BIMClashProperties
     prop.unregister_federation_properties()
