@@ -42,10 +42,7 @@ from pathlib import Path
 from . import ui, prop, operator, discipline_legend, cache_monitor, color_palette, crud_operators
 # from . import ui_federation_tab  # Old experimental sandbox - replaced by ui_federation_project
 from . import ui_federation_project  # Clean enterprise layout under Project Overview
-# from . import river_ecosystem_ui  # River Ecosystem Model - Item 11 (ARCHIVED - rebuilding from scratch)
-from . import river_equipment_placement  # River Equipment Placement - Item 11 (Phase 1 POC)
-from . import river_equipment_gizmo  # Equipment Gizmo visualization
-from . import river_centerline_osm  # OSM river centerline import
+from . import river  # River Equipment Monitoring - Item 11
 # from . import equipment_placement  # Equipment Placement Tool - Item 12 (ARCHIVED - rebuilding POC)
 from .loading.unified_progressive_loader import GlassOutlineLoader
 from .clash import gizmo
@@ -175,33 +172,8 @@ classes = (
     ui_federation_project.BIM_PT_nlp_query,
     ui_federation_project.BIM_PT_visualization_settings,     # #10 - parent for Color
 
-    # River Equipment Placement - Item 11 (Phase 1 POC)
-    river_equipment_placement.BIM_PT_river_equipment_placement,
-    river_equipment_placement.BIM_OT_equipment_select_type,
-    river_equipment_placement.BIM_OT_equipment_place_marker,
-    river_equipment_placement.BIM_OT_equipment_load_from_db,
-    river_equipment_placement.BIM_OT_equipment_view_properties,
-    river_equipment_placement.BIM_OT_equipment_open_google_maps,
-    river_equipment_placement.BIM_OT_equipment_view_sensor_dashboard,
-    river_equipment_placement.BIM_OT_equipment_clear_all,
-
-    # River Centerline - OpenStreetMap Integration
-    river_centerline_osm.BIM_OT_river_import_osm_centerline,
-    river_centerline_osm.BIM_OT_river_simplify_centerline,
-    river_centerline_osm.BIM_OT_river_save_to_database,
-    river_centerline_osm.BIM_OT_river_realign_markers,
-    river_centerline_osm.BIM_OT_river_apply_width_material,
-    river_centerline_osm.BIM_OT_river_snap_markers_to_mesh,
-
-    # 7D Maintenance - Right-click Context Menu
-    river_equipment_placement.BIM_MT_equipment_context_menu,
-    river_equipment_placement.BIM_OT_equipment_view_pm_schedule,
-    river_equipment_placement.BIM_OT_equipment_log_breakdown,
-    river_equipment_placement.BIM_OT_equipment_create_work_order,
-
-    # Equipment Gizmos (GPU-drawn spheres)
-    river_equipment_gizmo.EquipmentMarkerGizmo,
-    river_equipment_gizmo.EquipmentMarkerGizmoGroup,
+    # River Equipment Monitoring - Item 11
+    *river.classes,
 
     # Equipment Placement - Item 12 (ARCHIVED - rebuilding POC)
     # equipment_placement.BIM_PT_equipment_placement,
