@@ -155,11 +155,16 @@ SENSOR_TYPE_ICONS = {
     'turbidity': '☁️',
     'heavymetals': '☢️',
     'ph': '🧪',
+    'ph_sensor': '🧪',  # Alias for database naming
     'dissolvedoxygen': '💧',
+    'dissolved_oxygen': '💧',  # Alias for database naming
     'temperature': '🌡️',
     'conductivity': '⚡',
     'nitrate': '🧬',
     'phosphate': '💎',
+    'depth_gauge': '📏',  # Alias for database naming
+    'flow_meter': '🌊',  # Alias for database naming
+    'water_quality': '💧',  # Alias for database naming
 
     # Biodiversity sensors
     'aicamera': '📷',
@@ -226,11 +231,16 @@ SENSOR_TYPE_COLORS = {
     'turbidity': (0.6, 0.4, 0.2),          # Brown
     'heavymetals': (1.0, 0.0, 0.0),        # Red
     'ph': (0.75, 1.0, 0.0),                # Lime
+    'ph_sensor': (0.75, 1.0, 0.0),         # Alias for database naming
     'dissolvedoxygen': (0.0, 1.0, 1.0),    # Cyan
+    'dissolved_oxygen': (0.0, 1.0, 1.0),   # Alias for database naming
     'temperature': (1.0, 0.27, 0.0),       # Orange-Red
     'conductivity': (0.93, 0.51, 0.93),    # Violet
     'nitrate': (0.0, 0.8, 0.0),            # Green
     'phosphate': (0.8, 1.0, 0.0),          # Yellow-Green
+    'depth_gauge': (0.53, 0.81, 0.92),     # Light Blue
+    'flow_meter': (0.0, 0.8, 0.8),         # Teal
+    'water_quality': (0.0, 1.0, 1.0),      # Cyan
 
     # Biodiversity sensors
     'aicamera': (0.90, 0.70, 1.0),         # Lavender
