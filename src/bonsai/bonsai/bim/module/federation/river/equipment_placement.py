@@ -854,10 +854,10 @@ class BIM_OT_equipment_load_from_db(Operator):
 # =============================================================================
 # SENSOR DASHBOARD - Extracted to river_equipment_sensor.py
 # =============================================================================
-from . import river_equipment_sensor
+from . import equipment_sensor
 
 # Initialize sensor module with shared data
-river_equipment_sensor.init_module(EQUIPMENT_TYPES, PLACED_EQUIPMENT, LOGGER, SENSOR_TYPE_COLORS)
+equipment_sensor.init_module(EQUIPMENT_TYPES, PLACED_EQUIPMENT, LOGGER, SENSOR_TYPE_COLORS)
 
 class BIM_OT_equipment_view_sensor_dashboard(Operator):
     """View sensor dashboard - dual mode: Global Alert View or Marker Sensor View"""
@@ -922,8 +922,8 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
             LOGGER.log("Opening dashboard in GLOBAL ALERT mode (no equipment selected)")
 
             # Initialize global alert view
-            self._global_alert_view = river_equipment_sensor.GlobalAlertView(str(db_path))
-            self._filter_panel_ui = river_equipment_sensor.FilterPanelUI(self._global_alert_view)
+            self._global_alert_view = equipment_sensor.GlobalAlertView(str(db_path))
+            self._filter_panel_ui = equipment_sensor.FilterPanelUI(self._global_alert_view)
 
             # Create beacon objects in the outliner
             self._global_alert_view.create_beacon_objects(context)
@@ -1958,7 +1958,7 @@ class BIM_OT_equipment_clear_all(Operator):
         # Force gizmo group refresh by recreating it
         try:
             # Unregister and re-register gizmo group to force refresh
-            from . import river_equipment_gizmo
+            from . import equipment_gizmo
 
             # Find all 3D view areas and refresh gizmos
             for window in bpy.context.window_manager.windows:
