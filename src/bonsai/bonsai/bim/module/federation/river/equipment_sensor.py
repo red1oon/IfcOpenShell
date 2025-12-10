@@ -102,24 +102,33 @@ class SensorStatusCalculator:
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
 
+            # Get most recent sensor readings for this marker
             cursor.execute("""
                 SELECT s.sensor_type, sr.value, s.threshold_min, s.threshold_max
                 FROM sensors s
                 LEFT JOIN sensor_readings sr ON s.sensor_id = sr.sensor_id
                 WHERE s.equipment_marker_id = ?
-                  AND sr.timestamp LIKE 'Day 7%'
-                ORDER BY s.sensor_type
+                  AND sr.timestamp IS NOT NULL
+                ORDER BY sr.timestamp DESC
             """, (marker_id,))
 
-            results = cursor.fetchall()
-            if not results:
+            # Get unique sensors (most recent reading per sensor type)
+            seen_types = set()
+            filtered_results = []
+            for row in cursor.fetchall():
+                sensor_type = row[0]
+                if sensor_type not in seen_types:
+                    seen_types.add(sensor_type)
+                    filtered_results.append(row)
+
+            if not filtered_results:
                 # No sensor data for this marker
                 conn.close()
                 return 'OK'
 
             worst_status = 'OK'
 
-            for sensor_type, value, tmin, tmax in results:
+            for sensor_type, value, tmin, tmax in filtered_results:
                 status = SensorStatusCalculator.calculate_sensor_status(value, tmin, tmax)
                 if SensorStatusCalculator.STATUS_PRIORITY[status] > SensorStatusCalculator.STATUS_PRIORITY[worst_status]:
                     worst_status = status
@@ -159,18 +168,32 @@ class GlobalAlertView:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
 
-            # Build zone filter
-            zone_placeholders = ','.join('?' * len(self.filter_zones))
-            equipment_placeholders = ','.join('?' * len(self.filter_equipment_types))
+            # Build WHERE clauses dynamically (handle empty filter lists)
+            where_clauses = []
+            params = []
 
-            query = f"""
+            # Zone filter
+            if self.filter_zones:
+                zone_placeholders = ','.join('?' * len(self.filter_zones))
+                where_clauses.append(f"river_section IN ({zone_placeholders})")
+                params.extend(self.filter_zones)
+
+            # Equipment type filter
+            if self.filter_equipment_types:
+                equipment_placeholders = ','.join('?' * len(self.filter_equipment_types))
+                where_clauses.append(f"marker_type IN ({equipment_placeholders})")
+                params.extend(self.filter_equipment_types)
+
+            # Build final query
+            query = """
                 SELECT id, marker_type, location_x, location_y, location_z, river_section
                 FROM project_markers
-                WHERE river_section IN ({zone_placeholders})
-                  AND marker_type IN ({equipment_placeholders})
             """
 
-            cursor.execute(query, self.filter_zones + self.filter_equipment_types)
+            if where_clauses:
+                query += " WHERE " + " AND ".join(where_clauses)
+
+            cursor.execute(query, params)
             raw_results = cursor.fetchall()
 
             markers = []
@@ -193,8 +216,17 @@ class GlobalAlertView:
             # Sort by priority (worst first)
             markers.sort(key=lambda m: SensorStatusCalculator.STATUS_PRIORITY[m['status']], reverse=True)
 
+            # Log status breakdown for debugging
+            status_breakdown = {}
+            for m in markers:
+                status_breakdown[m['status']] = status_breakdown.get(m['status'], 0) + 1
+
+            LOGGER.log(f"Filter: alert_mode={self.alert_mode}, zones={len(self.filter_zones)}, types={len(self.filter_equipment_types)}, markers_found={len(markers)}")
+            LOGGER.log(f"Status breakdown: {status_breakdown}")
+
             # Apply AUTO limit (max 20)
             if self.alert_mode == 'AUTO' and len(markers) > 20:
+                LOGGER.log(f"AUTO mode: limiting {len(markers)} markers to 20")
                 markers = markers[:20]
 
             # Cache the results
@@ -220,6 +252,8 @@ class GlobalAlertView:
             return status == 'FOLLOW_SOP'
         elif self.alert_mode == 'PM_ACTION_ONLY':
             return status == 'PM_ACTION'
+        elif self.alert_mode == 'INSPECTION_ONLY':
+            return status == 'INSPECTION'
         else:
             return True
 
@@ -570,6 +604,7 @@ class FilterPanelUI:
             ('REPAIR_ONLY', 'REPAIR ONLY'),
             ('FOLLOW_SOP_ONLY', 'FOLLOW SOP ONLY'),
             ('PM_ACTION_ONLY', 'PM ACTION ONLY'),
+            ('INSPECTION_ONLY', 'INSPECTION ONLY'),
         ]
 
         blf.size(font_id, 13)
