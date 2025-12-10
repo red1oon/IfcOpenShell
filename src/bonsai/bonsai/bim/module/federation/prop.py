@@ -135,7 +135,7 @@ class BIMFederationProperties(PropertyGroup):
     office_address: StringProperty(
         name="Address",
         description="Office or depot address for navigation to equipment sites.\n"
-                    "Used as starting point for Google Maps directions.\n"
+                    "Used as starting point for web map directions.\n"
                     "Example: '123 Main St, Kuala Lumpur, Malaysia'",
         default=""
     )
