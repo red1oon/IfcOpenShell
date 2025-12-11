@@ -24,6 +24,10 @@ class RealRiverViewer {
         this.lastMouseX = 0;
         this.lastMouseY = 0;
 
+        // Separate river transform (independent from markers)
+        this.riverBaseOffsetX = 0;
+        this.riverBaseOffsetY = 0;
+
         // ================================================================
         // ========== BACKGROUND IMAGE ALIGNMENT - ADJUST HERE ===========
         // ================================================================
@@ -32,11 +36,11 @@ class RealRiverViewer {
         this.bgImageSrc = 'map_klang_valley.png';  // ← Your image file
         
         // POSITION: Move image left/right, up/down (in pixels)
-        this.bgOffsetX = 0;    // ← Positive = move image RIGHT
-        this.bgOffsetY = 0;    // ← Positive = move image DOWN
+        this.bgOffsetX = -10;    // ← Positive = move image RIGHT
+        this.bgOffsetY = +5;    // ← Positive = move image DOWN
         
         // SCALE: Make image bigger/smaller (1.0 = original size)
-        this.bgScale = 0.7;    // ← 1.2 = 20% bigger, 0.8 = 20% smaller
+        this.bgScale = 0.65;    // ← 1.2 = 20% bigger, 0.8 = 20% smaller
         
         // ================================================================
         
@@ -49,12 +53,17 @@ class RealRiverViewer {
         this.selectedMarker = null;
 
         // Display options
-        this.showRiver = true;
+        this.showRiver = true;  // Disabled - background map shows actual river
         this.showMarkers = true;
         this.showBackground = true;
 
-        // Overlay scale multiplier (make river/sensors 2x larger)
-        this.overlayScale = 2.0;
+        // Overlay scale multipliers (separate control for river vs markers)
+        this.overlayScale = 2.1;     // For markers
+        this.riverScale = 8.2;       // For river line (adjust independently)
+
+        // River position offset (relative to markers)
+        this.riverOffsetX = 1080;       // Positive = move river RIGHT
+        this.riverOffsetY = -330;       // Positive = move river DOWN
 
         // Marker type visibility
         this.markerTypeVisibility = {
@@ -101,15 +110,30 @@ class RealRiverViewer {
 
     async loadData() {
         try {
+            console.log('🔄 Loading river data...');
+
             // Load river geometry from Blender database
-            const riverResponse = await fetch('../output/geojson/river_from_blender.geojson');
+            const riverResponse = await fetch('output/geojson/river_from_blender.geojson?v=' + Date.now());
+            console.log('  River response status:', riverResponse.status);
             const riverData = await riverResponse.json();
             this.processRiverData(riverData);
+            console.log('  ✓ River geometry loaded');
 
             // Load project markers
-            const markersResponse = await fetch('../output/geojson/project_markers.geojson');
+            console.log('🔄 Loading markers...');
+            const markersResponse = await fetch('output/geojson/project_markers.geojson?v=' + Date.now());
+            console.log('  Markers response status:', markersResponse.status);
             const markersData = await markersResponse.json();
+            console.log('  Markers data features:', markersData.features ? markersData.features.length : 'NONE');
+
             this.processMarkers(markersData);
+            console.log('  ✓ Processed markers:', this.markers.length);
+
+            // Log first marker for verification
+            if (this.markers.length > 0) {
+                const m = this.markers[0];
+                console.log('  First marker:', m.name, 'at', m.lon, m.lat, 'color:', m.color, 'sensors:', m.sensor_count);
+            }
 
             // Calculate bounds
             this.calculateBounds();
@@ -125,7 +149,8 @@ class RealRiverViewer {
             console.log(`  Markers: ${this.markers.length}`);
 
         } catch (error) {
-            console.error('Error loading data:', error);
+            console.error('❌ Error loading data:', error);
+            console.error('Error stack:', error.stack);
         }
     }
 
@@ -142,6 +167,10 @@ class RealRiverViewer {
                 }
             }
         }
+        console.log('  River polygons loaded:', this.riverGeometry.length);
+        if (this.riverGeometry.length > 0 && this.riverGeometry[0][0]) {
+            console.log('  First river point:', this.riverGeometry[0][0][0]);
+        }
     }
 
     processMarkers(geojson) {
@@ -153,17 +182,59 @@ class RealRiverViewer {
             color: feature.properties.color,
             pulse_rate: feature.properties.pulse_rate || 3.0,
             description: feature.properties.description || '',
+            sensor_count: feature.properties.sensor_count || 0,
+            sensor_summary: feature.properties.sensor_summary || '',
+            sensors: feature.properties.sensors || [],
             lon: feature.geometry.coordinates[0],
             lat: feature.geometry.coordinates[1]
         }));
+
+        // Update legend counts dynamically
+        this.updateLegendCounts();
+    }
+
+    updateLegendCounts() {
+        // Count markers by type
+        const counts = {};
+        this.markers.forEach(marker => {
+            counts[marker.type] = (counts[marker.type] || 0) + 1;
+        });
+
+        // Update legend labels - handle both naming conventions
+        const typeMap = {
+            'boom_trap': 'boom_trap',
+            'water_quality': 'water_quality',
+            'pollutant_sensor': 'pollutant_sensor',
+            'wildlife_camera': 'wildlife_camera',
+            'flood_monitor': 'flood_monitor',
+            'biochar': 'biochar_facility',
+            'biochar_facility': 'biochar_facility',
+            'mrf': 'mrf_site',
+            'mrf_site': 'mrf_site',
+            'biodiversity': 'wildlife_camera'
+        };
+
+        // Update each legend item
+        Object.keys(counts).forEach(type => {
+            const legendType = typeMap[type] || type;
+            const checkbox = document.getElementById(`toggle_${legendType}`);
+            if (checkbox && checkbox.parentElement) {
+                const label = checkbox.parentElement.querySelector('span:last-child');
+                if (label) {
+                    const name = label.textContent.split('(')[0].trim();
+                    label.textContent = `${name} (${counts[type]})`;
+                }
+            }
+        });
     }
 
     calculateBounds() {
-        // Actual river extent from database
-        this.bounds.lon_min = 101.309;
-        this.bounds.lon_max = 101.589;
-        this.bounds.lat_min = 2.987;
-        this.bounds.lat_max = 3.096;
+        // Updated to match exported Blender GPS range (with 5% padding)
+        // Exported markers range: Lon 101.309-102.624, Lat 2.881-3.543
+        this.bounds.lon_min = 101.243;
+        this.bounds.lon_max = 102.690;
+        this.bounds.lat_min = 2.848;
+        this.bounds.lat_max = 3.576;
         this.fitToView();
     }
 
@@ -173,14 +244,18 @@ class RealRiverViewer {
 
         const scaleX = this.width / lon_range;
         const scaleY = this.height / lat_range;
-        this.scale = Math.min(scaleX, scaleY) * 0.47;  // Keep original zoom level
+        this.scale = Math.min(scaleX, scaleY) * 0.5;  // Keep original zoom level
 
         // Center the river, shifted up
         const centerLon = this.bounds.lon_min + lon_range / 2;
         const centerLat = this.bounds.lat_min + lat_range / 2;
 
-        this.offsetX = this.width / 2 - centerLon * this.scale;
-        this.offsetY = (this.height / 2 - 30) + centerLat * this.scale;  // +120 shifts up more
+        this.offsetX = this.width / 2 - centerLon * this.scale + 4; // move right
+        this.offsetY = (this.height / 2 - 10) + centerLat * this.scale;  // +120 shifts up more
+
+        // Initialize river base offset to match markers (they start together)
+        this.riverBaseOffsetX = this.offsetX;
+        this.riverBaseOffsetY = this.offsetY;
     }
 
     zoomTowardsCenter(zoomFactor) {
@@ -196,17 +271,23 @@ class RealRiverViewer {
         }
     }
 
-    latLonToScreen(lon, lat, applyOverlayScale = false) {
-        const x = this.offsetX + lon * this.scale;
-        const y = this.offsetY - lat * this.scale;
+    latLonToScreen(lon, lat, customScale = null, useRiverOffset = false) {
+        // Choose base offset: river has independent positioning
+        const baseOffsetX = useRiverOffset ? this.riverBaseOffsetX : this.offsetX;
+        const baseOffsetY = useRiverOffset ? this.riverBaseOffsetY : this.offsetY;
 
-        // If overlay scale requested, scale around canvas center
-        if (applyOverlayScale) {
+        const x = baseOffsetX + lon * this.scale;
+        const y = baseOffsetY - lat * this.scale;
+
+        // If custom scale requested, scale around canvas center
+        if (customScale !== null) {
             const centerX = this.width / 2;
             const centerY = this.height / 2;
+            const additionalOffsetX = useRiverOffset ? this.riverOffsetX : 0;
+            const additionalOffsetY = useRiverOffset ? this.riverOffsetY : 0;
             return [
-                centerX + (x - centerX) * this.overlayScale,
-                centerY + (y - centerY) * this.overlayScale
+                centerX + (x - centerX) * customScale + additionalOffsetX,
+                centerY + (y - centerY) * customScale + additionalOffsetY
             ];
         }
 
@@ -238,12 +319,13 @@ class RealRiverViewer {
             const mouseY = (e.clientY - rect.top) * scaleY;
 
             if (this.isDragging) {
-                const dx = mouseX - this.lastMouseX;
-                const dy = mouseY - this.lastMouseY;
-                this.offsetX += dx;
-                this.offsetY += dy;
-                this.lastMouseX = mouseX;
-                this.lastMouseY = mouseY;
+                // Dragging disabled - markers stay fixed
+                // const dx = mouseX - this.lastMouseX;
+                // const dy = mouseY - this.lastMouseY;
+                // this.offsetX += dx;
+                // this.offsetY += dy;
+                // this.lastMouseX = mouseX;
+                // this.lastMouseY = mouseY;
             } else {
                 this.checkMarkerHover(mouseX, mouseY);
             }
@@ -308,7 +390,7 @@ class RealRiverViewer {
     checkMarkerHover(mouseX, mouseY) {
         for (let marker of this.markers) {
             if (!this.markerTypeVisibility[marker.type]) continue;
-            const [x, y] = this.latLonToScreen(marker.lon, marker.lat, true);
+            const [x, y] = this.latLonToScreen(marker.lon, marker.lat, this.overlayScale);
             const dist = Math.sqrt((mouseX - x) ** 2 + (mouseY - y) ** 2);
             if (dist < 15) {
                 this.canvas.style.cursor = 'pointer';
@@ -321,7 +403,7 @@ class RealRiverViewer {
     handleMarkerClick(mouseX, mouseY) {
         for (let marker of this.markers) {
             if (!this.markerTypeVisibility[marker.type]) continue;
-            const [x, y] = this.latLonToScreen(marker.lon, marker.lat, true);
+            const [x, y] = this.latLonToScreen(marker.lon, marker.lat, this.overlayScale);
             const dist = Math.sqrt((mouseX - x) ** 2 + (mouseY - y) ** 2);
             if (dist < 15) {
                 this.selectedMarker = marker;
@@ -339,6 +421,45 @@ class RealRiverViewer {
         if (!panel) return;
 
         title.textContent = marker.name;
+
+        // Build sensor details HTML
+        let sensorDetailsHTML = '';
+        if (marker.sensor_count && marker.sensor_count > 0) {
+            const sensorRows = marker.sensors.map(s => `
+                <div class="sensor-row">
+                    <span class="sensor-type">${s.type.replace(/_/g, ' ')}</span>
+                    <span class="sensor-value">${s.value !== null ? s.value + ' ' + s.unit : 'N/A'}</span>
+                </div>
+            `).join('');
+
+            sensorDetailsHTML = `
+            <div class="result-item">
+                <span class="label">Marker ID:</span>
+                <span class="value">${marker.id}</span>
+            </div>
+            <div class="result-item">
+                <span class="label">Sensors:</span>
+                <span class="value">${marker.sensor_count} active</span>
+            </div>
+            <div class="sensor-summary">
+                <h4 style="margin: 10px 0 5px 0; font-size: 13px; color: #666;">Sensor Readings:</h4>
+                <div class="sensor-list" style="max-height: 200px; overflow-y: auto;">
+                    ${sensorRows}
+                </div>
+            </div>
+            `;
+        } else {
+            sensorDetailsHTML = `
+            <div class="result-item">
+                <span class="label">Marker ID:</span>
+                <span class="value">${marker.id}</span>
+            </div>
+            <div class="result-item">
+                <span class="label">Sensors:</span>
+                <span class="value">No sensors attached</span>
+            </div>
+            `;
+        }
 
         const html = `
             <div class="result-item">
@@ -363,6 +484,7 @@ class RealRiverViewer {
                 <span class="value">${marker.description}</span>
             </div>
             ` : ''}
+            ${sensorDetailsHTML}
         `;
 
         content.innerHTML = html;
@@ -397,7 +519,7 @@ class RealRiverViewer {
         this.ctx.restore();
 
         // Draw scale indicator
-        this.drawScale();
+       // this.drawScale();
 
         // Continue animation
         this.animationFrame = requestAnimationFrame(() => this.render());
@@ -409,30 +531,43 @@ class RealRiverViewer {
     drawBackground() {
         const imgWidth = this.bgImage.width * this.bgScale;
         const imgHeight = this.bgImage.height * this.bgScale;
-        
-        // Draw image with offsets applied
+
+        // Center the image on canvas
+        const centerX = (this.width - imgWidth) / 2;
+        const centerY = (this.height - imgHeight) / 2;
+
+        // Draw image centered with offsets applied
         this.ctx.drawImage(
             this.bgImage,
-            this.bgOffsetX,           // ← X position (adjust at top of file)
-            this.bgOffsetY,           // ← Y position (adjust at top of file)
-            imgWidth,                 // ← Width (controlled by bgScale)
-            imgHeight                 // ← Height (controlled by bgScale)
+            centerX + this.bgOffsetX,  // ← X position (centered + your offset)
+            centerY + this.bgOffsetY,  // ← Y position (centered + your offset)
+            imgWidth,                  // ← Width (controlled by bgScale)
+            imgHeight                  // ← Height (controlled by bgScale)
         );
     }
 
     drawRiver() {
+        if (!this.riverGeometry || this.riverGeometry.length === 0) {
+            console.log('No river geometry to draw');
+            return;
+        }
+
+        console.log('Drawing river, polygons:', this.riverGeometry.length);
+        const centerX = this.width / 2;
+        const centerY = this.height / 2;
+
         for (let polygon of this.riverGeometry) {
             for (let ring of polygon) {
                 if (ring.length < 3) continue;
 
                 this.ctx.beginPath();
                 const [lon0, lat0] = ring[0];
-                const [x0, y0] = this.latLonToScreen(lon0, lat0, true);
+                const [x0, y0] = this.latLonToScreen(lon0, lat0, this.riverScale, true);
                 this.ctx.moveTo(x0, y0);
 
                 for (let i = 1; i < ring.length; i++) {
                     const [lon, lat] = ring[i];
-                    const [x, y] = this.latLonToScreen(lon, lat, true);
+                    const [x, y] = this.latLonToScreen(lon, lat, this.riverScale, true);
                     this.ctx.lineTo(x, y);
                 }
 
@@ -441,7 +576,7 @@ class RealRiverViewer {
                 this.ctx.fill();
 
                 this.ctx.strokeStyle = '#2196F3';
-                this.ctx.lineWidth = 1 / this.scale * 1000;
+                this.ctx.lineWidth = 2;
                 this.ctx.stroke();
             }
         }
@@ -456,7 +591,7 @@ class RealRiverViewer {
     }
 
     drawMarker(marker) {
-        const [x, y] = this.latLonToScreen(marker.lon, marker.lat, true);
+        const [x, y] = this.latLonToScreen(marker.lon, marker.lat, this.overlayScale);
 
         let baseSize = 8;
         if (marker.priority === 'HIGH') baseSize = 10;
@@ -524,9 +659,11 @@ class RealRiverViewer {
 let realRiverViewer = null;
 
 function initRealViewer() {
+    console.log('🚀 initRealViewer() called - NEW VERSION LOADED');
     realRiverViewer = new RealRiverViewer('riverMap');
 
     document.getElementById('closeProperty')?.addEventListener('click', () => {
         document.getElementById('propertyPanel')?.classList.add('hidden');
     });
 }
+/* Updated: Thu Dec 11 09:08:34 AM +08 2025 */

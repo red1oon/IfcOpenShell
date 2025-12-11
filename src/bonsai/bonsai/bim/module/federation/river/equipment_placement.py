@@ -1726,6 +1726,135 @@ class BIM_OT_equipment_open_google_maps(Operator):
         return {'FINISHED'}
 
 
+class BIM_OT_equipment_export_and_launch_html(Operator):
+    """Export equipment GPS from Blender and launch HTML viewer"""
+    bl_idname = "bim.equipment_export_and_launch_html"
+    bl_label = "Export & Launch HTML Map"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        import json
+        import webbrowser
+        from pathlib import Path
+
+        # Paths
+        script_dir = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER")
+        output_path = script_dir / "output/geojson/project_markers.geojson"
+        html_path = script_dir / "RiverUI/index.html"
+
+        # Get all equipment objects
+        equipment_objects = [obj for obj in bpy.data.objects
+                            if obj.name.startswith(('BOOM_TRAP_', 'WATER_QUALITY_',
+                                                   'BIODIVERSITY_', 'WILDLIFE_',
+                                                   'BIOCHAR_', 'MRF_',
+                                                   'POLLUTANT_', 'FLOOD_MONITOR_'))]
+
+        if not equipment_objects:
+            self.report({'WARNING'}, "No equipment objects found in scene")
+            return {'CANCELLED'}
+
+        # Equipment type colors
+        equipment_colors = {
+            'boom_trap': '#FF6B35',
+            'water_quality': '#4ECDC4',
+            'biodiversity': '#00FF00',
+            'wildlife_camera': '#00FF00',
+            'biochar_facility': '#99EDD9',
+            'mrf_site': '#FFBFCC',
+            'pollutant_sensor': '#AB96D7',
+            'flood_monitor': '#5D9DD5'
+        }
+
+        def get_equipment_type(obj_name):
+            name_lower = obj_name.lower()
+            if 'boom_trap' in name_lower:
+                return 'boom_trap'
+            elif 'water_quality' in name_lower:
+                return 'water_quality'
+            elif 'biodiversity' in name_lower:
+                return 'biodiversity'
+            elif 'wildlife' in name_lower:
+                return 'wildlife_camera'
+            elif 'biochar' in name_lower:
+                return 'biochar_facility'
+            elif 'mrf' in name_lower:
+                return 'mrf_site'
+            elif 'pollutant' in name_lower:
+                return 'pollutant_sensor'
+            elif 'flood' in name_lower:
+                return 'flood_monitor'
+            return 'boom_trap'
+
+        features = []
+        exported = 0
+        skipped = 0
+
+        for obj in equipment_objects:
+            lat = obj.get('latitude')
+            lon = obj.get('longitude')
+
+            if lat is None or lon is None:
+                skipped += 1
+                continue
+
+            eq_type = get_equipment_type(obj.name)
+            color = equipment_colors.get(eq_type, '#FF6B35')
+
+            feature = {
+                "type": "Feature",
+                "properties": {
+                    "id": obj.name,
+                    "name": obj.name,
+                    "type": eq_type,
+                    "color": color,
+                    "priority": "MEDIUM",
+                    "status": "ACTIVE",
+                    "pulse_rate": 3.0,
+                    "description": f"{eq_type.replace('_', ' ').title()}",
+                    "sensor_count": 0,
+                    "sensor_summary": "",
+                    "sensors": []
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [lon, lat]
+                }
+            }
+
+            features.append(feature)
+            exported += 1
+
+        # Create GeoJSON
+        geojson = {
+            "type": "FeatureCollection",
+            "features": features
+        }
+
+        # Write to file
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, 'w') as f:
+            json.dump(geojson, f, indent=2)
+
+        LOGGER.log(f"Exported {exported} equipment markers to GeoJSON")
+        LOGGER.log(f"Skipped {skipped} markers (missing GPS)")
+
+        # Log GPS bounds for debugging
+        if features:
+            lats = [f["geometry"]["coordinates"][1] for f in features]
+            lons = [f["geometry"]["coordinates"][0] for f in features]
+            LOGGER.log(f"GPS Bounds: Lat [{min(lats):.6f}, {max(lats):.6f}], Lon [{min(lons):.6f}, {max(lons):.6f}]")
+
+        # Launch HTML
+        if html_path.exists():
+            webbrowser.open(f"file://{html_path}")
+            self.report({'INFO'}, f"Exported {exported} markers and launched HTML viewer")
+            LOGGER.log(f"Launched HTML viewer: {html_path}")
+        else:
+            self.report({'WARNING'}, f"Exported {exported} markers but HTML not found at {html_path}")
+
+        return {'FINISHED'}
+
+
 class BIM_OT_equipment_view_properties(Operator):
     """View equipment properties and sensor details"""
     bl_idname = "bim.equipment_view_properties"
@@ -2089,6 +2218,13 @@ class BIM_PT_river_equipment_placement(Panel):
         # Marker realignment tool
         map_box.separator()
         map_box.operator("bim.river_realign_markers", text="Batch Move Markers", icon='ORIENTATION_CURSOR')
+
+        layout.separator()
+
+        # Export and Launch HTML
+        html_box = layout.box()
+        html_box.label(text="🗺️ HTML Map Viewer:", icon='WORLD')
+        html_box.operator("bim.equipment_export_and_launch_html", text="Export & Launch HTML", icon='URL')
 
         layout.separator()
 

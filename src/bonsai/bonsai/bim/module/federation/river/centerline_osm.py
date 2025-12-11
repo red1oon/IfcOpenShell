@@ -88,6 +88,21 @@ class GeoConverter:
 
         return Vector((x, y, z))
 
+    def blender_to_gps(self, x, y, z=0.0):
+        """Convert Blender (x, y, z) to GPS (lat, lon) coordinates"""
+        # Remove mesh offset first
+        x -= self.mesh_offset[0]
+        y -= self.mesh_offset[1]
+
+        # Inverse linear interpolation
+        lon = self.gps_lon_min + (x - self.blender_x_min) / (self.blender_x_max - self.blender_x_min) * \
+            (self.gps_lon_max - self.gps_lon_min)
+
+        lat = self.gps_lat_min + (y - self.blender_y_min) / (self.blender_y_max - self.blender_y_min) * \
+            (self.gps_lat_max - self.gps_lat_min)
+
+        return (lat, lon)
+
 
 # =============================================================================
 # OSM OVERPASS API

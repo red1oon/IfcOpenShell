@@ -38,6 +38,7 @@ classes = (
     equipment_placement.BIM_OT_equipment_load_from_db,
     equipment_placement.BIM_OT_equipment_view_properties,
     equipment_placement.BIM_OT_equipment_open_google_maps,
+    equipment_placement.BIM_OT_equipment_export_and_launch_html,
     equipment_placement.BIM_OT_equipment_view_sensor_dashboard,
     equipment_placement.BIM_OT_equipment_clear_all,
 
