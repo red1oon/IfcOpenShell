@@ -1735,12 +1735,14 @@ class BIM_OT_equipment_export_and_launch_html(Operator):
     def execute(self, context):
         import json
         import webbrowser
+        import sqlite3
         from pathlib import Path
 
         # Paths
         script_dir = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER")
         output_path = script_dir / "output/geojson/project_markers.geojson"
         html_path = script_dir / "RiverUI/index.html"
+        db_path = script_dir / "klang_river_perfect.db"
 
         # Get all equipment objects
         equipment_objects = [obj for obj in bpy.data.objects
@@ -1785,6 +1787,13 @@ class BIM_OT_equipment_export_and_launch_html(Operator):
                 return 'flood_monitor'
             return 'boom_trap'
 
+        # Connect to database for sensor data
+        conn = None
+        try:
+            conn = sqlite3.connect(str(db_path))
+        except Exception as e:
+            LOGGER.log(f"Warning: Could not connect to database: {e}")
+
         features = []
         exported = 0
         skipped = 0
@@ -1800,6 +1809,55 @@ class BIM_OT_equipment_export_and_launch_html(Operator):
             eq_type = get_equipment_type(obj.name)
             color = equipment_colors.get(eq_type, '#FF6B35')
 
+            # Get sensor data from database
+            sensor_count = 0
+            sensor_summary = ""
+            sensors = []
+
+            if conn:
+                try:
+                    cursor = conn.cursor()
+
+                    # First get marker ID from project_markers table by name
+                    cursor.execute("SELECT id FROM project_markers WHERE name = ?", (obj.name,))
+                    marker_row = cursor.fetchone()
+
+                    if marker_row:
+                        marker_id = marker_row[0]
+
+                        # Now get sensors using the numeric ID
+                        cursor.execute("""
+                            SELECT sensor_name, sensor_type, unit, last_reading, status
+                            FROM sensors
+                            WHERE equipment_marker_id = ?
+                            AND UPPER(status) = 'ACTIVE'
+                            ORDER BY sensor_type
+                        """, (marker_id,))
+
+                        sensor_rows = cursor.fetchall()
+                        sensor_count = len(sensor_rows)
+
+                        for sensor_name, sensor_type, unit, last_reading, status in sensor_rows:
+                            sensors.append({
+                                'name': sensor_name,
+                                'type': sensor_type,
+                                'unit': unit or '',
+                                'value': round(last_reading, 2) if last_reading else None,
+                                'status': status
+                            })
+
+                        # Create summary (first 3 sensors)
+                        summary_parts = []
+                        for s in sensors[:3]:
+                            if s['value'] is not None:
+                                summary_parts.append(f"{s['type']}: {s['value']}{s['unit']}")
+                        if len(sensors) > 3:
+                            summary_parts.append(f"(+{len(sensors)-3} more)")
+                        sensor_summary = ", ".join(summary_parts)
+
+                except Exception as e:
+                    LOGGER.log(f"Warning: Could not fetch sensors for {obj.name}: {e}")
+
             feature = {
                 "type": "Feature",
                 "properties": {
@@ -1811,9 +1869,9 @@ class BIM_OT_equipment_export_and_launch_html(Operator):
                     "status": "ACTIVE",
                     "pulse_rate": 3.0,
                     "description": f"{eq_type.replace('_', ' ').title()}",
-                    "sensor_count": 0,
-                    "sensor_summary": "",
-                    "sensors": []
+                    "sensor_count": sensor_count,
+                    "sensor_summary": sensor_summary,
+                    "sensors": sensors
                 },
                 "geometry": {
                     "type": "Point",
@@ -1830,6 +1888,10 @@ class BIM_OT_equipment_export_and_launch_html(Operator):
             "features": features
         }
 
+        # Close database connection
+        if conn:
+            conn.close()
+
         # Write to file
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, 'w') as f:
@@ -1844,11 +1906,38 @@ class BIM_OT_equipment_export_and_launch_html(Operator):
             lons = [f["geometry"]["coordinates"][0] for f in features]
             LOGGER.log(f"GPS Bounds: Lat [{min(lats):.6f}, {max(lats):.6f}], Lon [{min(lons):.6f}, {max(lons):.6f}]")
 
-        # Launch HTML
+        # Launch HTML with local server
         if html_path.exists():
-            webbrowser.open(f"file://{html_path}")
-            self.report({'INFO'}, f"Exported {exported} markers and launched HTML viewer")
-            LOGGER.log(f"Launched HTML viewer: {html_path}")
+            import subprocess
+            import time
+            from pathlib import Path
+
+            server_port = 8000
+            # Always use WORK_DIR
+            server_dir = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER/RiverUI")
+
+            try:
+                # Check if server already running
+                check = subprocess.run(['lsof', '-ti', f':{server_port}'],
+                                     capture_output=True, text=True)
+
+                if not check.stdout.strip():
+                    # No server running, start one
+                    subprocess.Popen(
+                        ['python3', '-m', 'http.server', str(server_port)],
+                        cwd=str(server_dir),
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                    time.sleep(1)
+
+                # Open in browser
+                url = f"http://localhost:{server_port}/index.html"
+                webbrowser.open(url)
+                self.report({'INFO'}, f"Exported {exported} markers and launched at {url}")
+            except Exception as e:
+                webbrowser.open(f"file://{html_path}")
+                self.report({'INFO'}, f"Exported {exported} markers (using file://)")
         else:
             self.report({'WARNING'}, f"Exported {exported} markers but HTML not found at {html_path}")
 

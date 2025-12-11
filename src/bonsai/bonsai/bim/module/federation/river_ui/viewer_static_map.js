@@ -59,11 +59,11 @@ class RealRiverViewer {
 
         // Overlay scale multipliers (separate control for river vs markers)
         this.overlayScale = 2.1;     // For markers
-        this.riverScale = 8.2;       // For river line (adjust independently)
+        this.riverScale = 7.8;       // For river line (adjust independently)
 
         // River position offset (relative to markers)
         this.riverOffsetX = 1080;       // Positive = move river RIGHT
-        this.riverOffsetY = -330;       // Positive = move river DOWN
+        this.riverOffsetY = -300;       // Positive = move river DOWN
 
         // Marker type visibility
         this.markerTypeVisibility = {
@@ -250,12 +250,12 @@ class RealRiverViewer {
         const centerLon = this.bounds.lon_min + lon_range / 2;
         const centerLat = this.bounds.lat_min + lat_range / 2;
 
-        this.offsetX = this.width / 2 - centerLon * this.scale + 4; // move right
-        this.offsetY = (this.height / 2 - 10) + centerLat * this.scale;  // +120 shifts up more
+        this.offsetX = this.width / 2 - centerLon * this.scale - 6; // move right
+        this.offsetY = (this.height / 2 - 21) + centerLat * this.scale;  // +120 shifts up more
 
-        // Initialize river base offset to match markers (they start together)
-        this.riverBaseOffsetX = this.offsetX;
-        this.riverBaseOffsetY = this.offsetY;
+        // River base offset (independent - adjust these values to reposition river base)
+        this.riverBaseOffsetX = this.width / 2 - centerLon * this.scale - 3.5;
+        this.riverBaseOffsetY = (this.height / 2 - 11) + centerLat * this.scale;
     }
 
     zoomTowardsCenter(zoomFactor) {
@@ -320,12 +320,12 @@ class RealRiverViewer {
 
             if (this.isDragging) {
                 // Dragging disabled - markers stay fixed
-                // const dx = mouseX - this.lastMouseX;
-                // const dy = mouseY - this.lastMouseY;
-                // this.offsetX += dx;
-                // this.offsetY += dy;
-                // this.lastMouseX = mouseX;
-                // this.lastMouseY = mouseY;
+                //const dx = mouseX - this.lastMouseX;
+                //const dy = mouseY - this.lastMouseY;
+                //this.offsetX += dx;
+                //this.offsetY += dy;
+                //this.lastMouseX = mouseX;
+                //this.lastMouseY = mouseY;
             } else {
                 this.checkMarkerHover(mouseX, mouseY);
             }
