@@ -522,3 +522,74 @@ body {
         right: auto;
     }
 }
+
+/* Sensor Display in Property Panel */
+.sensor-summary {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #e0e0e0;
+}
+
+.sensor-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 8px;
+    margin-bottom: 4px;
+    background: #f8f8f8;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.sensor-row:nth-child(even) {
+    background: #f0f0f0;
+}
+
+.sensor-type {
+    color: #555;
+    font-weight: 500;
+    text-transform: capitalize;
+    flex: 1;
+}
+
+.sensor-value {
+    color: #2196F3;
+    font-weight: 600;
+    font-family: 'Courier New', monospace;
+    text-align: right;
+}
+
+/* 7-Day Animated Sensor Bars */
+.sensor-row-animated {
+    display: flex;
+    align-items: center;
+    padding: 8px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.sensor-row-animated:nth-child(even) {
+    background: #f8f8f8;
+}
+
+.sensor-bar-container {
+    flex: 2;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sensor-bar {
+    height: 6px;
+    min-width: 2px;
+    border-radius: 3px;
+    transition: width 0.3s ease;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.sensor-bar-value {
+    font-size: 11px;
+    font-weight: 600;
+    color: #2196F3;
+    font-family: 'Courier New', monospace;
+    white-space: nowrap;
+}

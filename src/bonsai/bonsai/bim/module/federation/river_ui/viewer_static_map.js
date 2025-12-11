@@ -350,11 +350,11 @@ class RealRiverViewer {
         });
 
         // Zoom
-        this.canvas.addEventListener('wheel', (e) => {
-            e.preventDefault();
-            const zoomFactor = e.deltaY > 0 ? 0.995 : 1.005;
-            this.zoomTowardsCenter(zoomFactor);
-        });
+      //  this.canvas.addEventListener('wheel', (e) => {
+       //     e.preventDefault();
+        //    const zoomFactor = e.deltaY > 0 ? 0.995 : 1.005;
+         //   this.zoomTowardsCenter(zoomFactor);
+       // });
 
         // Reset view button
         document.getElementById('resetView')?.addEventListener('click', () => {
@@ -422,15 +422,22 @@ class RealRiverViewer {
 
         title.textContent = marker.name;
 
-        // Build sensor details HTML
+        // Build sensor details HTML with 7-day animation
         let sensorDetailsHTML = '';
         if (marker.sensor_count && marker.sensor_count > 0) {
-            const sensorRows = marker.sensors.map(s => `
-                <div class="sensor-row">
-                    <span class="sensor-type">${s.type.replace(/_/g, ' ')}</span>
-                    <span class="sensor-value">${s.value !== null ? s.value + ' ' + s.unit : 'N/A'}</span>
+            const sensorRows = marker.sensors.map((s, idx) => {
+                const hasHistory = s.history && s.history.length > 0;
+                const icon = this.getSensorIcon(s.type);
+                return `
+                <div class="sensor-row-animated" data-sensor-idx="${idx}" style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #e0e0e0;">
+                    <span class="sensor-icon" style="font-size: 16px; margin-right: 6px;">${icon}</span>
+                    <span class="sensor-type" style="flex: 0 0 120px; font-size: 12px; color: #555;">${s.type.replace(/_/g, ' ')}</span>
+                    <div class="sensor-bar-container" style="flex: 1; display: flex; align-items: center; gap: 8px; position: relative; height: 20px;">
+                        <div class="sensor-bar" data-sensor="${idx}" style="position: absolute; left: 0; height: 6px; border-radius: 3px; background: #999; min-width: 2px;"></div>
+                        <span class="sensor-bar-value" style="position: absolute; right: 0; font-size: 11px; font-weight: 600; color: #2196F3; font-family: 'Courier New', monospace;">${s.value !== null ? s.value + ' ' + s.unit : 'N/A'}</span>
+                    </div>
                 </div>
-            `).join('');
+            `}).join('');
 
             sensorDetailsHTML = `
             <div class="result-item">
@@ -439,11 +446,11 @@ class RealRiverViewer {
             </div>
             <div class="result-item">
                 <span class="label">Sensors:</span>
-                <span class="value">${marker.sensor_count} active</span>
+                <span class="value">${marker.sensor_count} active (7-day history)</span>
             </div>
             <div class="sensor-summary">
                 <h4 style="margin: 10px 0 5px 0; font-size: 13px; color: #666;">Sensor Readings:</h4>
-                <div class="sensor-list" style="max-height: 200px; overflow-y: auto;">
+                <div class="sensor-list" style="max-height: 300px; overflow-y: auto;">
                     ${sensorRows}
                 </div>
             </div>
@@ -489,6 +496,115 @@ class RealRiverViewer {
 
         content.innerHTML = html;
         panel.classList.remove('hidden');
+
+        // Start 7-day animation for sensors
+        if (marker.sensor_count && marker.sensor_count > 0) {
+            this.animate7DaySensors(marker.sensors);
+        }
+    }
+
+    animate7DaySensors(sensors) {
+        const dayDuration = 400; // ms per day
+        const lastDayPause = 1000; // pause on last day
+
+        sensors.forEach((sensor, sensorIdx) => {
+            if (!sensor.history || sensor.history.length === 0) return;
+
+            const barElement = document.querySelector(`.sensor-bar[data-sensor="${sensorIdx}"]`);
+            const valueElement = barElement?.nextElementSibling;
+            if (!barElement) return;
+
+            // Get max value for scaling
+            const maxVal = Math.max(...sensor.history.map(h => h.value || 0));
+
+            let currentDay = 0;
+
+            const animateDay = () => {
+                if (currentDay >= sensor.history.length) {
+                    // Loop back to day 0
+                    currentDay = 0;
+                    setTimeout(animateDay, lastDayPause);
+                    return;
+                }
+
+                const dayData = sensor.history[currentDay];
+                const value = dayData.value || 0;
+                const widthPercent = maxVal > 0 ? (value / maxVal) * 100 : 0;
+
+                // Get sensor color
+                const sensorColor = this.getSensorColor(sensor.type);
+                barElement.style.width = widthPercent + '%';
+                barElement.style.backgroundColor = sensorColor;
+                barElement.style.transition = 'width 0.3s ease';
+
+                if (valueElement) {
+                    valueElement.textContent = `${value} ${sensor.unit}`;
+                }
+
+                currentDay++;
+                const delay = (currentDay === sensor.history.length) ? lastDayPause : dayDuration;
+                setTimeout(animateDay, delay);
+            };
+
+            animateDay();
+        });
+    }
+
+    getSensorIcon(sensorType) {
+        const icons = {
+            // Boom Trap sensors
+            'loadcell': '⚖️',
+            'integrity': '🔧',
+            'waterlevel': '🌊',
+            'flowvelocity': '💨',
+            'camera': '📹',
+            'vibration': '📳',
+            'gps_drift': '🛰️',
+            'powerusage': '🔋',
+            // Water Quality sensors
+            'turbidity': '☁️',
+            'heavymetals': '☢️',
+            'ph': '🧪',
+            'ph_sensor': '🧪',
+            'dissolvedoxygen': '💧',
+            'dissolved_oxygen': '💧',
+            'temperature': '🌡️',
+            'conductivity': '⚡',
+            'nitrate': '🧬',
+            'phosphate': '💎',
+            'depth_gauge': '📏',
+            'flow_meter': '🌊',
+            'water_quality': '💧',
+            // Biodiversity sensors
+            'aicamera': '📷',
+            'pirmotion': '👁️',
+            'thermalcamera': '🔥',
+            'audiorecorder': '🎤',
+            'ultrasonic': '🦇',
+            'ndvi': '🌿',
+            'soilmoisture': '🌱',
+            'canopy_height': '🌳',
+            // Biochar Facility sensors
+            'feedstock_mass': '🪵',
+            'biochar_yield': '⚫',
+            'pyrolysis_temp': '🔥',
+            'carbon_content': '💨'
+        };
+        return icons[sensorType] || '📊';
+    }
+
+    getSensorColor(sensorType) {
+        const colors = {
+            'conductivity': '#4ECDC4',
+            'depth_gauge': '#4FC3F7',
+            'dissolved_oxygen': '#44AAFF',
+            'flow_meter': '#2196F3',
+            'ph_sensor': '#FF9944',
+            'temperature': '#FF6B35',
+            'turbidity': '#95E1D3',
+            'water_quality': '#44FF44'
+        };
+        return colors[sensorType] || '#999';
     }
 
     render() {

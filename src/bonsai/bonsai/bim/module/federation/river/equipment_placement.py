@@ -1827,7 +1827,7 @@ class BIM_OT_equipment_export_and_launch_html(Operator):
 
                         # Now get sensors using the numeric ID
                         cursor.execute("""
-                            SELECT sensor_name, sensor_type, unit, last_reading, status
+                            SELECT id, sensor_name, sensor_type, unit, last_reading, status
                             FROM sensors
                             WHERE equipment_marker_id = ?
                             AND UPPER(status) = 'ACTIVE'
@@ -1837,13 +1837,27 @@ class BIM_OT_equipment_export_and_launch_html(Operator):
                         sensor_rows = cursor.fetchall()
                         sensor_count = len(sensor_rows)
 
-                        for sensor_name, sensor_type, unit, last_reading, status in sensor_rows:
+                        for sensor_id, sensor_name, sensor_type, unit, last_reading, status in sensor_rows:
+                            # Get 7-day historical readings
+                            cursor.execute("""
+                                SELECT value, day_label
+                                FROM sensor_readings
+                                WHERE sensor_id = ?
+                                ORDER BY timestamp
+                                LIMIT 7
+                            """, (sensor_id,))
+
+                            history_rows = cursor.fetchall()
+                            history = [{'value': round(val, 2) if val else None, 'day': day}
+                                      for val, day in history_rows]
+
                             sensors.append({
                                 'name': sensor_name,
                                 'type': sensor_type,
                                 'unit': unit or '',
                                 'value': round(last_reading, 2) if last_reading else None,
-                                'status': status
+                                'status': status,
+                                'history': history
                             })
 
                         # Create summary (first 3 sensors)
