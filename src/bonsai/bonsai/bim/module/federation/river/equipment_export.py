@@ -87,47 +87,50 @@ class BIM_OT_equipment_export_and_launch_html(Operator):
 
         from . import river_utils
 
-        # Get all equipment objects
-        equipment_objects = river_utils.get_all_equipment_objects()
-
-        if not equipment_objects:
-            self.report({'WARNING'}, "No equipment objects found in scene")
-            return {'CANCELLED'}
-
-        # Connect to database for sensor data
+        # Connect to database (GPS source of truth)
         conn = None
         try:
             conn = sqlite3.connect(str(db_path))
         except Exception as e:
-            LOGGER.log(f"Warning: Could not connect to database: {e}")
+            self.report({'ERROR'}, f"Could not connect to database: {e}")
+            return {'CANCELLED'}
+
+        cursor = conn.cursor()
+
+        # Get all markers from database
+        cursor.execute("""
+            SELECT id, name, marker_type, latitude, longitude
+            FROM project_markers
+            WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+            ORDER BY name
+        """)
+
+        markers = cursor.fetchall()
+
+        if not markers:
+            self.report({'WARNING'}, "No markers with GPS found in database")
+            conn.close()
+            return {'CANCELLED'}
 
         features = []
         exported = 0
         skipped = 0
 
-        for obj in equipment_objects:
-            lat = obj.get('latitude')
-            lon = obj.get('longitude')
-
-            if lat is None or lon is None:
-                skipped += 1
-                continue
-
-            eq_type = river_utils.get_equipment_type(obj.name)
+        for marker_id, name, marker_type, lat, lon in markers:
+            eq_type = marker_type
             color = river_utils.EQUIPMENT_COLORS_HEX.get(eq_type, '#FF6B35')
 
             # Get sensor data from database
             sensors = []
-            if conn:
-                try:
-                    sensors = river_utils.fetch_sensor_data_from_db(conn.cursor(), obj.name)
-                except Exception as e:
-                    LOGGER.log(f"Warning: Could not fetch sensors for {obj.name}: {e}")
+            try:
+                sensors = river_utils.fetch_sensor_data_from_db(cursor, name)
+            except Exception as e:
+                LOGGER.log(f"Warning: Could not fetch sensors for {name}: {e}")
 
             sensor_count = len(sensors)
             sensor_summary = river_utils.create_sensor_summary(sensors)
 
-            feature = river_utils.create_geojson_feature(obj.name, eq_type, color, lat, lon, sensors)
+            feature = river_utils.create_geojson_feature(name, eq_type, color, lat, lon, sensors)
             features.append(feature)
             exported += 1
 
@@ -361,19 +364,30 @@ class BIM_OT_equipment_export_kml(Operator):
         script_dir = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER")
         db_path = script_dir / "klang_river_perfect.db"
 
-        # Get equipment objects
-        equipment_objects = river_utils.get_all_equipment_objects()
-
-        if not equipment_objects:
-            self.report({'WARNING'}, "No equipment objects found in scene")
-            return {'CANCELLED'}
-
-        # Connect to database
+        # Connect to database (GPS source of truth)
         conn = None
         try:
             conn = sqlite3.connect(str(db_path))
         except Exception as e:
-            LOGGER.log(f"Warning: Could not connect to database: {e}")
+            self.report({'ERROR'}, f"Could not connect to database: {e}")
+            return {'CANCELLED'}
+
+        cursor = conn.cursor()
+
+        # Get all markers from database
+        cursor.execute("""
+            SELECT id, name, marker_type, latitude, longitude
+            FROM project_markers
+            WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+            ORDER BY name
+        """)
+
+        markers = cursor.fetchall()
+
+        if not markers:
+            self.report({'WARNING'}, "No markers with GPS found in database")
+            conn.close()
+            return {'CANCELLED'}
 
         # Build KML structure
         kml = ET.Element('kml', xmlns="http://www.opengis.net/kml/2.2")
@@ -388,16 +402,32 @@ class BIM_OT_equipment_export_kml(Operator):
         exported = 0
         skipped = 0
 
-        for obj in equipment_objects:
-            lat = obj.get('latitude')
-            lon = obj.get('longitude')
+        # Track GPS bounds for debugging
+        lats = []
+        lons = []
+
+        for marker_id, name, marker_type, lat, lon in markers:
+            # DEBUG: Check BOOM_TRAP_040 specifically
+            if name == "BOOM_TRAP_040":
+                LOGGER.log(f"🔍 DEBUG BOOM_TRAP_040:")
+                LOGGER.log(f"    name = {name}")
+                LOGGER.log(f"    lat from DB = {lat}")
+                LOGGER.log(f"    lon from DB = {lon}")
 
             if lat is None or lon is None:
+                LOGGER.log(f"Skipping {name}: missing GPS (lat={lat}, lon={lon})")
                 skipped += 1
                 continue
 
-            eq_type = river_utils.get_equipment_type(obj.name)
-            sensor_html = self.fetch_sensor_data(conn, obj.name) if conn else ""
+            # Log first 3 markers for debugging
+            if exported < 3:
+                LOGGER.log(f"KML Export: {name} → lat={lat:.6f}, lon={lon:.6f}")
+
+            lats.append(lat)
+            lons.append(lon)
+
+            eq_type = marker_type
+            sensor_html = self.fetch_sensor_data(conn, name) if conn else ""
 
             # Create placemark
             placemark = ET.SubElement(document, 'Placemark')
@@ -406,17 +436,29 @@ class BIM_OT_equipment_export_kml(Operator):
 
             # Add description with sensor data
             description_elem = ET.SubElement(placemark, 'description')
-            description_html = self.generate_description_html(obj.name, eq_type, lat, lon, sensor_html)
+            description_html = self.generate_description_html(name, eq_type, lat, lon, sensor_html)
             description_elem.text = f"<![CDATA[{description_html}]]>"
 
             # Add point coordinates
             point = ET.SubElement(placemark, 'Point')
-            ET.SubElement(point, 'coordinates').text = f'{lon},{lat},0'
+            coord_string = f'{lon},{lat},0'
+            ET.SubElement(point, 'coordinates').text = coord_string
+
+            # DEBUG: Log anything east of BOOM_TRAP_040 + 10km (lon=101.771064 + ~0.09° ≈ 101.86)
+            # 10km east ≈ 0.09° longitude at this latitude
+            if lon > 101.86:
+                LOGGER.log(f"⚠️  >10KM EAST OF BOOM_TRAP_040: {name} writing to KML: {coord_string}")
+                LOGGER.log(f"    Read from DB: lat={lat}, lon={lon}")
 
             exported += 1
 
         if conn:
             conn.close()
+
+        # Log GPS bounds for debugging
+        if lats and lons:
+            LOGGER.log(f"KML GPS Bounds: Lat [{min(lats):.6f}, {max(lats):.6f}], Lon [{min(lons):.6f}, {max(lons):.6f}]")
+            LOGGER.log(f"Expected: Klang River area ~Lat [2.97, 3.26], Lon [101.37, 101.77]")
 
         # Write KML file with CDATA handling
         tree = ET.ElementTree(kml)

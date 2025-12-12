@@ -173,3 +173,4 @@ class BIM_PT_river_equipment_placement(Panel):
         debug_box.label(text="Debug Info:", icon='INFO')
         debug_box.label(text=f"Log: ~/Documents/bonsai/consolelogs/")
         debug_box.label(text="river_equipment_placement.txt")
+        debug_box.operator("bim.equipment_dump_gps", text="Dump GPS to File", icon='EXPORT')

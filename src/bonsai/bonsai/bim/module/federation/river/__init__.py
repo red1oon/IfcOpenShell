@@ -51,6 +51,7 @@ classes = (
     equipment_operators.BIM_OT_equipment_view_properties,
     equipment_operators.BIM_OT_equipment_view_sensor_dashboard,
     equipment_operators.BIM_OT_equipment_clear_all,
+    equipment_operators.BIM_OT_equipment_dump_gps,
 
     # Equipment Export Operators
     equipment_export.BIM_OT_equipment_open_google_maps,
