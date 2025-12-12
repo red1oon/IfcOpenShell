@@ -16,10 +16,15 @@ import bpy
 from bpy.types import Operator
 from pathlib import Path
 from datetime import datetime
+import os
 
 # Import shared configuration
 from .equipment_logger import LOGGER
 from .equipment_config import EQUIPMENT_TYPES
+
+# Get river_ui directory relative to this module
+RIVER_MODULE_DIR = Path(__file__).parent
+RIVER_UI_DIR = RIVER_MODULE_DIR / "river_ui"
 
 
 # =============================================================================
@@ -79,10 +84,10 @@ class BIM_OT_equipment_export_and_launch_html(Operator):
         import sqlite3
         from pathlib import Path
 
-        # Paths
+        # Paths - Use WORK_DIR for data, module dir for HTML
         script_dir = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER")
         output_path = script_dir / "output/geojson/project_markers.geojson"
-        html_path = script_dir / "RiverUI/index.html"
+        html_path = RIVER_UI_DIR / "index.html"
         db_path = script_dir / "klang_river_perfect.db"
 
         from . import river_utils
@@ -162,8 +167,8 @@ class BIM_OT_equipment_export_and_launch_html(Operator):
             from pathlib import Path
 
             server_port = 8000
-            # Always use WORK_DIR
-            server_dir = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER/RiverUI")
+            # Serve from module's river_ui directory
+            server_dir = RIVER_UI_DIR
 
             try:
                 # Check if server already running
@@ -541,7 +546,7 @@ class BIM_OT_equipment_export_mobile_html(Operator):
         # Paths
         script_dir = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER")
         db_path = script_dir / "klang_river_perfect.db"
-        river_ui_path = script_dir / "RiverUI"
+        river_ui_path = RIVER_UI_DIR
 
         # Read source files
         try:
@@ -645,7 +650,7 @@ class BIM_OT_equipment_export_mobile_html(Operator):
 
         # Embed background image as base64
         bg_image_base64 = ""
-        bg_image_path = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER/RiverUI/map_klang_valley.png")
+        bg_image_path = RIVER_UI_DIR / "map_klang_valley.png"
         if bg_image_path.exists():
             try:
                 with open(bg_image_path, 'rb') as img_file:

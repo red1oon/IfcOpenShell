@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Klang River - Project Monitoring Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1>Coastal Oasis Sungai Klang</h1>
+                <p class="subtitle">5D/7D BIM Integration - River Restoration & Circular Economy</p>
+            </div>
+            <div class="header-stats">
+                <div class="stat-box">
+                    <span class="stat-label">River Length</span>
+                    <span class="stat-value">56 km</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-label">Boom Sites</span>
+                    <span class="stat-value">40</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-label">Daily Capacity</span>
+                    <span class="stat-value">2,500 MT</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content Grid -->
+        <div class="main-grid">
+            <!-- Left Panel: Map View -->
+            <div class="panel map-panel">
+                <div class="panel-header">
+                    <h2>River Corridor Map</h2>
+                    <label style="color: white;">
+                        <input type="checkbox" id="toggleRiver" checked style="margin-right: 4px;">
+                        Show River
+                    </label>
+                </div>
+                <div class="panel-content">
+                    <canvas id="riverMap" width="800" height="530"></canvas>
+                </div>
+                <div class="map-legend">
+                    <div class="legend-item">
+                        <input type="checkbox" id="toggle_boom_trap" checked>
+                        <span class="marker-dot" style="background: #FF4444;"></span>
+                        <span>Boom Traps (40)</span>
+                    </div>
+                    <div class="legend-item">
+                        <input type="checkbox" id="toggle_water_quality" checked>
+                        <span class="marker-dot" style="background: #44AAFF;"></span>
+                        <span>Water Quality (15)</span>
+                    </div>
+                    <div class="legend-item">
+                        <input type="checkbox" id="toggle_pollutant_sensor" checked>
+                        <span class="marker-dot" style="background: #FF9944;"></span>
+                        <span>Pollutant Sensors (10)</span>
+                    </div>
+                    <div class="legend-item">
+                        <input type="checkbox" id="toggle_wildlife_camera" checked>
+                        <span class="marker-dot" style="background: #44FF44;"></span>
+                        <span>Wildlife (12)</span>
+                    </div>
+                    <div class="legend-item">
+                        <input type="checkbox" id="toggle_flood_monitor" checked>
+                        <span class="marker-dot" style="background: #9944FF;"></span>
+                        <span>Flood Monitors (8)</span>
+                    </div>
+                    <div class="legend-item">
+                        <input type="checkbox" id="toggle_biochar_facility" checked>
+                        <span class="marker-dot" style="background: #FFAA44;"></span>
+                        <span>Biochar (3)</span>
+                    </div>
+                    <div class="legend-item">
+                        <input type="checkbox" id="toggle_mrf_site" checked>
+                        <span class="marker-dot" style="background: #FF44AA;"></span>
+                        <span>MRF Sites (2)</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Dashboard & Calculations -->
+            <div class="panel-stack">
+                <!-- Calculations Summary -->
+                <div class="panel calc-panel">
+                    <div class="panel-header">
+                        <h2>Project Calculations</h2>
+                        <button id="runCalculations" class="btn-primary">Run Calculations</button>
+                    </div>
+                    <div class="panel-content">
+                        <div id="calculationsResults">
+                            <div class="calc-section">
+                                <h3>💰 Revenue Forecast (Annual)</h3>
+                                <div id="revenueResults" class="results-grid"></div>
+                            </div>
+
+                            <div class="calc-section">
+                                <h3>🚜 Dredging Scope</h3>
+                                <div id="dredgingResults" class="results-grid"></div>
+                            </div>
+
+                            <div class="calc-section">
+                                <h3>♻️ Waste Processing</h3>
+                                <div id="wasteResults" class="results-grid"></div>
+                            </div>
+
+                            <div class="calc-section">
+                                <h3>🌳 Carbon Sequestration</h3>
+                                <div id="carbonResults" class="results-grid"></div>
+                            </div>
+
+                            <div class="calc-section">
+                                <h3>👷 Workload by Discipline</h3>
+                                <div id="workloadResults"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4D Schedule Timeline -->
+                <div class="panel schedule-panel">
+                    <div class="panel-header">
+                        <h2>4D Schedule Timeline</h2>
+                        <select id="phaseFilter" class="filter-select">
+                            <option value="all">All Phases</option>
+                            <option value="1">Phase 1 (Months 1-6)</option>
+                            <option value="2">Phase 2 (Months 7-12)</option>
+                            <option value="3">Phase 3 (Months 13-24)</option>
+                        </select>
+                    </div>
+                    <div class="panel-content">
+                        <div id="scheduleTimeline"></div>
+                    </div>
+                </div>
+
+                <!-- Export Options -->
+                <div class="panel export-panel">
+                    <div class="panel-header">
+                        <h2>Export Data</h2>
+                    </div>
+                    <div class="panel-content">
+                        <div class="export-buttons">
+                            <button id="exportGeoJSON" class="btn-export">📍 GeoJSON (Map Data)</button>
+                            <button id="exportCSV" class="btn-export">📊 CSV (Schedule)</button>
+                            <button id="exportCalculations" class="btn-export">🧮 Excel (Calculations)</button>
+                            <button id="exportReport" class="btn-export">📄 PDF (Summary Report)</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Property Panel (appears on marker click) -->
+        <div id="propertyPanel" class="property-panel hidden">
+            <div class="property-header">
+                <h3 id="propertyTitle">Site Details</h3>
+                <button id="closeProperty" class="btn-close">&times;</button>
+            </div>
+            <div class="property-content" id="propertyContent"></div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="calculations.js"></script>
+    <script src="viewer_static_map.js"></script>
+    <script>
+        // Initialize dashboard on load
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('Klang River Dashboard Loaded - Real Data Mode');
+
+            // Initialize real data viewer
+            initRealViewer();
+
+            // Run calculations on button click
+            document.getElementById('runCalculations').addEventListener('click', () => {
+                displayCalculationResults();
+            });
+
+            // Auto-run calculations on load
+            setTimeout(() => {
+                displayCalculationResults();
+            }, 500);
+        });
+
+        function displayCalculationResults() {
+            const summary = generateProjectSummary();
+            const carbon = calculateCarbonCredits();
+            const waste = calculateWasteProcessing();
+            const dredging = calculateDredgingVolume();
+            const disciplines = calculateWorkloadByDiscipline();
+            const schedule = generate4DSchedule();
+
+            // Revenue Results
+            const revenueHTML = `
+                <div class="result-item">
+                    <span class="label">Total Annual Revenue:</span>
+                    <span class="value highlight">RM ${(summary.revenue.total_annual_rm / 1000000).toFixed(1)}M</span>
+                </div>
+                <div class="result-item">
+                    <span class="label">Material Processing:</span>
+                    <span class="value">RM ${(summary.revenue.material_processing_rm / 1000000).toFixed(1)}M</span>
+                </div>
+                <div class="result-item">
+                    <span class="label">Carbon Credits:</span>
+                    <span class="value">RM ${(summary.revenue.carbon_credits_rm / 1000000).toFixed(1)}M</span>
+                </div>
+                <div class="breakdown">
+                    <div class="breakdown-item">Biochar: RM ${(summary.revenue.breakdown.biochar / 1000000).toFixed(1)}M</div>
+                    <div class="breakdown-item">Pyro Oil: RM ${(summary.revenue.breakdown.pyro_oil / 1000000).toFixed(1)}M</div>
+                    <div class="breakdown-item">RDF: RM ${(summary.revenue.breakdown.rdf / 1000000).toFixed(1)}M</div>
+                    <div class="breakdown-item">Plastics: RM ${(summary.revenue.breakdown.plastic / 1000000).toFixed(1)}M</div>
+                </div>
+            `;
+            document.getElementById('revenueResults').innerHTML = revenueHTML;
+
+            // Dredging Results
+            const dredgingHTML = `
+                <div class="result-item">
+                    <span class="label">Initial Volume:</span>
+                    <span class="value">${dredging.initial_volume_m3.toLocaleString()} m³</span>
+                </div>
+                <div class="result-item">
+                    <span class="label">Annual Maintenance:</span>
+                    <span class="value">${dredging.annual_maintenance_m3.toLocaleString()} m³/year</span>
+                </div>
+                <div class="result-item">
+                    <span class="label">Excavator Days:</span>
+                    <span class="value">${dredging.excavator_days} days</span>
+                </div>
+                <div class="result-item">
+                    <span class="label">Barge Trips:</span>
+                    <span class="value">${dredging.barge_trips} trips</span>
+                </div>
+            `;
+            document.getElementById('dredgingResults').innerHTML = dredgingHTML;
+
+            // Waste Processing Results
+            const wasteHTML = `
+                <div class="result-item">
+                    <span class="label">Annual Waste:</span>
+                    <span class="value">${waste.annual_waste_mt.toLocaleString()} MT</span>
+                </div>
+                <div class="result-item">
+                    <span class="label">Plastic Fraction:</span>
+                    <span class="value">${waste.annual_plastic_mt.toLocaleString()} MT (30%)</span>
+                </div>
+                <div class="result-item">
+                    <span class="label">Organic Fraction:</span>
+                    <span class="value">${waste.annual_organic_mt.toLocaleString()} MT (70%)</span>
+                </div>
+                <div class="breakdown">
+                    <div class="breakdown-item">Biochar Output: ${waste.outputs.biochar_mt.toLocaleString()} MT</div>
+                    <div class="breakdown-item">Pyrolysis Oil: ${waste.outputs.pyro_oil_mt.toLocaleString()} MT</div>
+                    <div class="breakdown-item">RDF: ${waste.outputs.rdf_mt.toLocaleString()} MT</div>
+                </div>
+            `;
+            document.getElementById('wasteResults').innerHTML = wasteHTML;
+
+            // Carbon Sequestration Results
+            const carbonHTML = `
+                <div class="result-item">
+                    <span class="label">Total CO₂ Sequestered:</span>
+                    <span class="value highlight">${carbon.total.co2_tonnes_year.toLocaleString()} tCO₂e/year</span>
+                </div>
+                <div class="result-item">
+                    <span class="label">Biochar:</span>
+                    <span class="value">${carbon.biochar.co2_tonnes_year.toLocaleString()} tCO₂e (@ RM ${carbon.biochar.price_per_tco2})</span>
+                </div>
+                <div class="result-item">
+                    <span class="label">Mangrove (${carbon.mangrove.area_ha.toLocaleString()} ha):</span>
+                    <span class="value">${carbon.mangrove.co2_tonnes_year.toLocaleString()} tCO₂e (@ RM ${carbon.mangrove.price_per_tco2})</span>
+                </div>
+                <div class="breakdown">
+                    <div class="breakdown-item">Total Credit Revenue: RM ${(carbon.total.revenue_rm_year / 1000000).toFixed(1)}M/year</div>
+                </div>
+            `;
+            document.getElementById('carbonResults').innerHTML = carbonHTML;
+
+            // Workload by Discipline
+            const workloadHTML = disciplines.map(d => `
+                <div class="discipline-card">
+                    <h4>${d.discipline}</h4>
+                    <div class="discipline-details">
+                        <p><strong>Scope:</strong> ${d.scope}</p>
+                        <p><strong>Labor:</strong> ${d.labor_days.toLocaleString()} person-days</p>
+                        <p><strong>Equipment:</strong> ${d.equipment}</p>
+                        <p><strong>Duration:</strong> ${d.duration_months} months</p>
+                    </div>
+                </div>
+            `).join('');
+            document.getElementById('workloadResults').innerHTML = workloadHTML;
+
+            // 4D Schedule Timeline
+            displayScheduleTimeline(schedule);
+        }
+
+        function displayScheduleTimeline(schedule) {
+            const phaseFilter = document.getElementById('phaseFilter').value;
+            const filtered = phaseFilter === 'all' ? schedule : schedule.filter(t => t.phase === parseInt(phaseFilter));
+
+            const timelineHTML = filtered.slice(0, 20).map(task => `
+                <div class="timeline-task priority-${task.priority.toLowerCase()}">
+                    <div class="task-header">
+                        <span class="task-name">${task.task_name}</span>
+                        <span class="task-dates">${task.start_date} → ${task.end_date}</span>
+                    </div>
+                    <div class="task-details">
+                        <span class="task-discipline">${task.discipline}</span>
+                        <span class="task-duration">${task.duration_days} days</span>
+                        ${task.workload_m3 ? `<span class="task-workload">${task.workload_m3.toLocaleString()} m³</span>` : ''}
+                    </div>
+                </div>
+            `).join('');
+
+            document.getElementById('scheduleTimeline').innerHTML = timelineHTML || '<p>No tasks found for selected phase.</p>';
+        }
+
+        // Phase filter change
+        document.getElementById('phaseFilter')?.addEventListener('change', () => {
+            const schedule = generate4DSchedule();
+            displayScheduleTimeline(schedule);
+        });
+
+        // Export functions
+        document.getElementById('exportGeoJSON')?.addEventListener('click', () => {
+            const schedule = generate4DSchedule();
+            const geojson = {
+                type: 'FeatureCollection',
+                features: schedule.map(task => ({
+                    type: 'Feature',
+                    geometry: {
+                        type: 'Point',
+                        coordinates: [task.location.lon, task.location.lat]
+                    },
+                    properties: {
+                        id: task.task_id,
+                        name: task.task_name,
+                        discipline: task.discipline,
+                        start_date: task.start_date,
+                        end_date: task.end_date,
+                        priority: task.priority,
+                        phase: task.phase
+                    }
+                }))
+            };
+            downloadJSON(geojson, 'klang_river_schedule.geojson');
+        });
+
+        document.getElementById('exportCSV')?.addEventListener('click', () => {
+            const schedule = generate4DSchedule();
+            const csv = [
+                ['Task ID', 'Task Name', 'Discipline', 'Start Date', 'End Date', 'Duration (days)', 'Priority', 'Phase'].join(','),
+                ...schedule.map(t => [
+                    t.task_id,
+                    `"${t.task_name}"`,
+                    t.discipline,
+                    t.start_date,
+                    t.end_date,
+                    t.duration_days,
+                    t.priority,
+                    t.phase
+                ].join(','))
+            ].join('\n');
+            downloadText(csv, 'klang_river_schedule.csv');
+        });
+
+        document.getElementById('exportCalculations')?.addEventListener('click', () => {
+            const summary = generateProjectSummary();
+            alert('Excel export would generate comprehensive BOQ report.\n\nFor now, JSON summary downloaded.');
+            downloadJSON(summary, 'klang_river_calculations.json');
+        });
+
+        document.getElementById('exportReport')?.addEventListener('click', () => {
+            alert('PDF report generation would create executive summary with charts and maps.\n\nStakeholder demo feature.');
+        });
+
+        function downloadJSON(data, filename) {
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function downloadText(text, filename) {
+            const blob = new Blob([text], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
