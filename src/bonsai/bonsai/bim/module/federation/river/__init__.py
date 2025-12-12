@@ -18,6 +18,7 @@ Modules:
 from . import equipment_placement
 from . import equipment_gizmo
 from . import centerline_osm
+from . import gps_sync_handler
 
 # Expose data structures that may be accessed from outside
 from .equipment_placement import (
@@ -39,6 +40,8 @@ classes = (
     equipment_placement.BIM_OT_equipment_view_properties,
     equipment_placement.BIM_OT_equipment_open_google_maps,
     equipment_placement.BIM_OT_equipment_export_and_launch_html,
+    equipment_placement.BIM_OT_equipment_export_kml,
+    equipment_placement.BIM_OT_equipment_export_mobile_html,
     equipment_placement.BIM_OT_equipment_view_sensor_dashboard,
     equipment_placement.BIM_OT_equipment_clear_all,
 
@@ -59,14 +62,21 @@ classes = (
     # Equipment Gizmos (GPU-drawn spheres)
     equipment_gizmo.EquipmentMarkerGizmo,
     equipment_gizmo.EquipmentMarkerGizmoGroup,
+
+    # GPS Auto-Sync
+    gps_sync_handler.BIM_OT_enable_gps_auto_sync,
+    gps_sync_handler.BIM_OT_disable_gps_auto_sync,
+    gps_sync_handler.BIM_OT_update_selected_gps,
+    gps_sync_handler.BIM_OT_recalibrate_gps_anchor,
+    gps_sync_handler.BIM_PT_gps_auto_sync,
 )
 
 
 def register():
     """Called when river module is registered"""
-    pass
+    gps_sync_handler.register()
 
 
 def unregister():
     """Called when river module is unregistered"""
-    pass
+    gps_sync_handler.unregister()

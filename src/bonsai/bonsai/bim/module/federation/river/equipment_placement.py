@@ -571,9 +571,9 @@ class BIM_OT_equipment_place_marker(Operator):
         import sqlite3
         import sys
         from pathlib import Path
-        from datetime import datetime
+        from . import river_utils
 
-        db_path = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER/klang_river_perfect.db")
+        db_path = river_utils.RIVER_DB_PATH
 
         if not db_path.exists():
             LOGGER.log("Database not found, skipping save", error=True)
@@ -588,9 +588,7 @@ class BIM_OT_equipment_place_marker(Operator):
             from sensor_definitions import create_sensors_for_equipment
             from georeferencing import GeoReferencing
 
-            # Initialize georeferencing
             geo = GeoReferencing(db_path)
-
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
 
@@ -604,77 +602,28 @@ class BIM_OT_equipment_place_marker(Operator):
                     continue
 
                 equipment_info = EQUIPMENT_TYPES[equipment_type]
-                color_hex = '#{:02x}{:02x}{:02x}'.format(
-                    int(equipment_info['color'][0] * 255),
-                    int(equipment_info['color'][1] * 255),
-                    int(equipment_info['color'][2] * 255)
-                )
+                color_hex = river_utils.rgb_to_hex(*equipment_info['color'])
 
                 for item in items:
-                    # Use marker_id from item number
                     marker_id = item['number']
                     name = f"{equipment_info['name']} #{marker_id}"
-
-                    # Calculate GPS coordinates
                     latitude, longitude, elevation = geo.blender_to_gps(item['x'], item['y'], item['z'])
 
                     # Save equipment marker
-                    cursor.execute("""
-                        INSERT OR REPLACE INTO project_markers (
-                            marker_id, marker_type, name, description,
-                            location_x, location_y, location_z,
-                            latitude, longitude, gps_elevation,
-                            color, priority, status,
-                            installation_date, position_source
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        marker_id,
-                        equipment_type,
-                        name,
+                    river_utils.save_marker_to_db(
+                        cursor, marker_id, equipment_type, name,
                         f"{equipment_info['name']} placed via Blender UI",
-                        item['x'],
-                        item['y'],
-                        item['z'],
-                        latitude,
-                        longitude,
-                        elevation,
-                        color_hex,
-                        'MEDIUM',
-                        'ACTIVE',
-                        datetime.now().isoformat(),
-                        'manual'  # User-placed
-                    ))
+                        item['x'], item['y'], item['z'],
+                        latitude, longitude, elevation, color_hex
+                    )
                     total_saved += 1
                     LOGGER.log(f"  Saved: {name} at ({item['x']:.1f}, {item['y']:.1f}, {item['z']:.1f})")
                     LOGGER.log(f"    GPS: {latitude:.6f}°N, {longitude:.6f}°E")
 
-                    # Auto-generate sensors for this equipment
+                    # Auto-generate and save sensors
                     sensors = create_sensors_for_equipment(equipment_type, marker_id, marker_id)
-
                     for sensor in sensors:
-                        cursor.execute("""
-                            INSERT OR REPLACE INTO sensors (
-                                sensor_id, equipment_marker_id, sensor_type, sensor_name, unit,
-                                api_endpoint, mqtt_topic,
-                                threshold_min, threshold_max, calibration_date,
-                                manufacturer, model, installation_date, status
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            sensor['sensor_id'],
-                            sensor['equipment_marker_id'],
-                            sensor['sensor_type'],
-                            sensor['sensor_name'],
-                            sensor['unit'],
-                            sensor['api_endpoint'],
-                            sensor['mqtt_topic'],
-                            sensor['threshold_min'],
-                            sensor['threshold_max'],
-                            sensor['calibration_date'],
-                            sensor['manufacturer'],
-                            sensor['model'],
-                            sensor['installation_date'],
-                            sensor['status'],
-                        ))
+                        river_utils.save_sensor_to_db(cursor, sensor)
                         total_sensors += 1
                         LOGGER.log(f"    → Sensor: {sensor['sensor_id']} ({sensor['sensor_name']})")
 
@@ -700,9 +649,9 @@ class BIM_OT_equipment_load_from_db(Operator):
     def execute(self, context):
         global PLACED_EQUIPMENT
         import sqlite3
-        from pathlib import Path
+        from . import river_utils
 
-        db_path = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER/klang_river_perfect.db")
+        db_path = river_utils.RIVER_DB_PATH
 
         if not db_path.exists():
             self.report({'ERROR'}, "Database not found")
@@ -900,7 +849,7 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
     _filter_panel_ui = None
 
     def invoke(self, context, event):
-        from pathlib import Path
+        from . import river_utils
 
         # Close any existing dashboard instance first
         if BIM_OT_equipment_view_sensor_dashboard._active_instance is not None:
@@ -912,7 +861,7 @@ class BIM_OT_equipment_view_sensor_dashboard(Operator):
         LOGGER.section("SENSOR DASHBOARD OPENING (GPU OVERLAY)")
 
         # Database path
-        db_path = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER/klang_river_perfect.db")
+        db_path = river_utils.RIVER_DB_PATH
         if not db_path.exists():
             LOGGER.log(f"ERROR: Database not found: {db_path}", error=True)
             self.report({'ERROR'}, "Database not found")
@@ -1744,48 +1693,14 @@ class BIM_OT_equipment_export_and_launch_html(Operator):
         html_path = script_dir / "RiverUI/index.html"
         db_path = script_dir / "klang_river_perfect.db"
 
+        from . import river_utils
+
         # Get all equipment objects
-        equipment_objects = [obj for obj in bpy.data.objects
-                            if obj.name.startswith(('BOOM_TRAP_', 'WATER_QUALITY_',
-                                                   'BIODIVERSITY_', 'WILDLIFE_',
-                                                   'BIOCHAR_', 'MRF_',
-                                                   'POLLUTANT_', 'FLOOD_MONITOR_'))]
+        equipment_objects = river_utils.get_all_equipment_objects()
 
         if not equipment_objects:
             self.report({'WARNING'}, "No equipment objects found in scene")
             return {'CANCELLED'}
-
-        # Equipment type colors
-        equipment_colors = {
-            'boom_trap': '#FF6B35',
-            'water_quality': '#4ECDC4',
-            'biodiversity': '#00FF00',
-            'wildlife_camera': '#00FF00',
-            'biochar_facility': '#99EDD9',
-            'mrf_site': '#FFBFCC',
-            'pollutant_sensor': '#AB96D7',
-            'flood_monitor': '#5D9DD5'
-        }
-
-        def get_equipment_type(obj_name):
-            name_lower = obj_name.lower()
-            if 'boom_trap' in name_lower:
-                return 'boom_trap'
-            elif 'water_quality' in name_lower:
-                return 'water_quality'
-            elif 'biodiversity' in name_lower:
-                return 'biodiversity'
-            elif 'wildlife' in name_lower:
-                return 'wildlife_camera'
-            elif 'biochar' in name_lower:
-                return 'biochar_facility'
-            elif 'mrf' in name_lower:
-                return 'mrf_site'
-            elif 'pollutant' in name_lower:
-                return 'pollutant_sensor'
-            elif 'flood' in name_lower:
-                return 'flood_monitor'
-            return 'boom_trap'
 
         # Connect to database for sensor data
         conn = None
@@ -1806,101 +1721,26 @@ class BIM_OT_equipment_export_and_launch_html(Operator):
                 skipped += 1
                 continue
 
-            eq_type = get_equipment_type(obj.name)
-            color = equipment_colors.get(eq_type, '#FF6B35')
+            eq_type = river_utils.get_equipment_type(obj.name)
+            color = river_utils.EQUIPMENT_COLORS_HEX.get(eq_type, '#FF6B35')
 
             # Get sensor data from database
-            sensor_count = 0
-            sensor_summary = ""
             sensors = []
-
             if conn:
                 try:
-                    cursor = conn.cursor()
-
-                    # First get marker ID from project_markers table by name
-                    cursor.execute("SELECT id FROM project_markers WHERE name = ?", (obj.name,))
-                    marker_row = cursor.fetchone()
-
-                    if marker_row:
-                        marker_id = marker_row[0]
-
-                        # Now get sensors using the numeric ID
-                        cursor.execute("""
-                            SELECT id, sensor_name, sensor_type, unit, last_reading, status
-                            FROM sensors
-                            WHERE equipment_marker_id = ?
-                            AND UPPER(status) = 'ACTIVE'
-                            ORDER BY sensor_type
-                        """, (marker_id,))
-
-                        sensor_rows = cursor.fetchall()
-                        sensor_count = len(sensor_rows)
-
-                        for sensor_id, sensor_name, sensor_type, unit, last_reading, status in sensor_rows:
-                            # Get 7-day historical readings
-                            cursor.execute("""
-                                SELECT value, day_label
-                                FROM sensor_readings
-                                WHERE sensor_id = ?
-                                ORDER BY timestamp
-                                LIMIT 7
-                            """, (sensor_id,))
-
-                            history_rows = cursor.fetchall()
-                            history = [{'value': round(val, 2) if val else None, 'day': day}
-                                      for val, day in history_rows]
-
-                            sensors.append({
-                                'name': sensor_name,
-                                'type': sensor_type,
-                                'unit': unit or '',
-                                'value': round(last_reading, 2) if last_reading else None,
-                                'status': status,
-                                'history': history
-                            })
-
-                        # Create summary (first 3 sensors)
-                        summary_parts = []
-                        for s in sensors[:3]:
-                            if s['value'] is not None:
-                                summary_parts.append(f"{s['type']}: {s['value']}{s['unit']}")
-                        if len(sensors) > 3:
-                            summary_parts.append(f"(+{len(sensors)-3} more)")
-                        sensor_summary = ", ".join(summary_parts)
-
+                    sensors = river_utils.fetch_sensor_data_from_db(conn.cursor(), obj.name)
                 except Exception as e:
                     LOGGER.log(f"Warning: Could not fetch sensors for {obj.name}: {e}")
 
-            feature = {
-                "type": "Feature",
-                "properties": {
-                    "id": obj.name,
-                    "name": obj.name,
-                    "type": eq_type,
-                    "color": color,
-                    "priority": "MEDIUM",
-                    "status": "ACTIVE",
-                    "pulse_rate": 3.0,
-                    "description": f"{eq_type.replace('_', ' ').title()}",
-                    "sensor_count": sensor_count,
-                    "sensor_summary": sensor_summary,
-                    "sensors": sensors
-                },
-                "geometry": {
-                    "type": "Point",
-                    "coordinates": [lon, lat]
-                }
-            }
+            sensor_count = len(sensors)
+            sensor_summary = river_utils.create_sensor_summary(sensors)
 
+            feature = river_utils.create_geojson_feature(obj.name, eq_type, color, lat, lon, sensors)
             features.append(feature)
             exported += 1
 
         # Create GeoJSON
-        geojson = {
-            "type": "FeatureCollection",
-            "features": features
-        }
+        geojson = river_utils.create_geojson_collection(features)
 
         # Close database connection
         if conn:
@@ -1958,6 +1798,683 @@ class BIM_OT_equipment_export_and_launch_html(Operator):
         return {'FINISHED'}
 
 
+class BIM_OT_equipment_export_kml(Operator):
+    """Export equipment to KML for Google Earth, Avenza Maps, Maps.me, OsmAnd"""
+    bl_idname = "bim.equipment_export_kml"
+    bl_label = "Export KML for Mobile Apps"
+    bl_options = {'REGISTER'}
+
+    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+
+    SENSOR_RANGES = {
+        'pH': (0, 14),
+        'Temperature': (0, 50),
+        'Turbidity': (0, 100),
+        'Dissolved_Oxygen': (0, 15),
+        'Load_Cell': (0, 500),
+        'Water_Level': (0, 5)
+    }
+
+    @staticmethod
+    def create_kml_styles(document, colors):
+        """Create KML styles for each equipment type."""
+        import xml.etree.ElementTree as ET
+        for eq_type, color in colors.items():
+            style = ET.SubElement(document, 'Style', id=eq_type)
+            icon_style = ET.SubElement(style, 'IconStyle')
+            ET.SubElement(icon_style, 'color').text = color
+            ET.SubElement(icon_style, 'scale').text = '0.8'
+            icon = ET.SubElement(icon_style, 'Icon')
+            ET.SubElement(icon, 'href').text = 'http://maps.google.com/mapfiles/kml/paddle/wht-blank.png'
+            label_style = ET.SubElement(style, 'LabelStyle')
+            ET.SubElement(label_style, 'scale').text = '0'
+
+    @staticmethod
+    def get_sensor_trend(cursor, sensor_id, last_reading):
+        """Calculate sensor trend from 7-day average."""
+        try:
+            cursor.execute("""
+                SELECT AVG(value) FROM sensor_readings
+                WHERE sensor_id = ? AND value IS NOT NULL LIMIT 7
+            """, (sensor_id,))
+            avg_row = cursor.fetchone()
+            if avg_row and avg_row[0] and last_reading:
+                seven_day_avg = avg_row[0]
+                diff_pct = ((last_reading - seven_day_avg) / seven_day_avg) * 100
+                if diff_pct > 5:
+                    return "↗️", f"+{diff_pct:.0f}%", seven_day_avg
+                elif diff_pct < -5:
+                    return "↘️", f"{diff_pct:.0f}%", seven_day_avg
+                else:
+                    return "→", "stable", seven_day_avg
+        except:
+            pass
+        return "", "", None
+
+    @staticmethod
+    def get_sensor_bar_color(sensor_type, last_reading):
+        """Determine bar color based on sensor type and value."""
+        if 'pH' in sensor_type:
+            return "#4caf50" if 6.5 <= last_reading <= 8.5 else "#ff9800"
+        elif 'Temperature' in sensor_type:
+            return "#ff5722" if last_reading > 30 else "#2196f3"
+        return "#2196f3"
+
+    def generate_sensor_html(self, cursor, marker_id):
+        """Generate HTML for sensor data display."""
+        cursor.execute("""
+            SELECT id, sensor_name, sensor_type, unit, last_reading, status
+            FROM sensors WHERE equipment_marker_id = ?
+            AND UPPER(status) = 'ACTIVE' ORDER BY sensor_type
+        """, (marker_id,))
+
+        sensor_rows = cursor.fetchall()
+        if not sensor_rows:
+            return ""
+
+        html = f"""
+<div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-top: 10px;">
+    <h3 style="color: #2c5364; margin: 0 0 15px 0; font-size: 16px;">📊 Active Sensors ({len(sensor_rows)})</h3>
+    <table style="width: 100%; border-collapse: collapse;">
+"""
+        for idx, (sensor_id, sensor_name, sensor_type, unit, last_reading, status) in enumerate(sensor_rows):
+            value_str = f"{last_reading:.2f}" if last_reading else "N/A"
+            bg_color = "#ffffff" if idx % 2 == 0 else "#f0f0f0"
+
+            trend_arrow, trend_text, seven_day_avg = self.get_sensor_trend(cursor, sensor_id, last_reading)
+
+            bar_width = 0
+            bar_color = "#2196f3"
+            if last_reading:
+                min_val, max_val = self.SENSOR_RANGES.get(sensor_type.replace(' ', '_'), (0, 100))
+                bar_width = min(100, max(0, (last_reading - min_val) / (max_val - min_val) * 100))
+                bar_color = self.get_sensor_bar_color(sensor_type, last_reading)
+
+            trend_html = f' <span style="font-size: 14px;">{trend_arrow} <span style="color: #666; font-size: 11px;">{trend_text}</span></span>' if trend_arrow else ''
+            avg_html = f'<div style="font-size: 10px; color: #999; margin-top: 3px;">7d avg: {seven_day_avg:.2f} {unit or ""}</div>' if seven_day_avg else ''
+
+            html += f"""
+        <tr style="background: {bg_color};">
+            <td style="padding: 10px; vertical-align: top;">
+                <div style="font-weight: bold; margin-bottom: 5px;">
+                    {sensor_type.replace('_', ' ').title()}{trend_html}
+                </div>
+                <div style="background: #ddd; border-radius: 10px; height: 8px; overflow: hidden;">
+                    <div style="background: {bar_color}; height: 100%; width: {bar_width}%; transition: width 0.3s;"></div>
+                </div>
+                {avg_html}
+            </td>
+            <td style="padding: 10px; text-align: right; vertical-align: top;">
+                <span style="color: {bar_color}; font-size: 18px; font-weight: bold;">{value_str}</span>
+                <span style="color: #666; font-size: 12px; display: block; margin-top: 2px;">{unit or ''}</span>
+            </td>
+        </tr>
+"""
+        html += """
+    </table>
+</div>"""
+        return html
+
+    def generate_description_html(self, obj_name, eq_type, lat, lon, sensor_html):
+        """Generate full description HTML for KML placemark."""
+        sensor_content = sensor_html if sensor_html else '<p style="color: #999; font-style: italic;">No sensor data available</p>'
+        return f"""
+<div style="font-family: Arial, sans-serif; width: 350px; padding: 15px;">
+    <h2 style="color: #2c5364; margin: 0 0 15px 0; font-size: 20px; border-bottom: 2px solid #4fc3f7; padding-bottom: 10px;">
+        {obj_name}
+    </h2>
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px;">
+        <tr style="background: #f0f0f0;">
+            <td style="padding: 10px; font-weight: bold; width: 40%;">Type:</td>
+            <td style="padding: 10px;">{eq_type.replace('_', ' ').title()}</td>
+        </tr>
+        <tr>
+            <td style="padding: 10px; font-weight: bold;">Location:</td>
+            <td style="padding: 10px; font-size: 12px;">{lat:.6f}°N<br>{lon:.6f}°E</td>
+        </tr>
+    </table>
+    {sensor_content}
+</div>"""
+
+    def fetch_sensor_data(self, conn, obj_name):
+        """Fetch sensor data HTML from database."""
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM project_markers WHERE name = ?", (obj_name,))
+            marker_row = cursor.fetchone()
+            if marker_row:
+                return self.generate_sensor_html(cursor, marker_row[0])
+        except Exception as e:
+            LOGGER.log(f"Warning: Could not fetch sensors for {obj_name}: {e}")
+        return ""
+
+    def invoke(self, context, event):
+        import os
+        downloads_path = os.path.expanduser("~/Downloads")
+        self.filepath = os.path.join(downloads_path, f"river_equipment_{datetime.now().strftime('%Y%m%d_%H%M%S')}.kml")
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+    def execute(self, context):
+        import sqlite3
+        from pathlib import Path
+        import xml.etree.ElementTree as ET
+        from . import river_utils
+
+        # Setup paths and database
+        script_dir = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER")
+        db_path = script_dir / "klang_river_perfect.db"
+
+        # Get equipment objects
+        equipment_objects = river_utils.get_all_equipment_objects()
+
+        if not equipment_objects:
+            self.report({'WARNING'}, "No equipment objects found in scene")
+            return {'CANCELLED'}
+
+        # Connect to database
+        conn = None
+        try:
+            conn = sqlite3.connect(str(db_path))
+        except Exception as e:
+            LOGGER.log(f"Warning: Could not connect to database: {e}")
+
+        # Build KML structure
+        kml = ET.Element('kml', xmlns="http://www.opengis.net/kml/2.2")
+        document = ET.SubElement(kml, 'Document')
+        ET.SubElement(document, 'name').text = 'River Equipment Monitoring'
+        ET.SubElement(document, 'description').text = 'Equipment sensors and monitoring stations'
+
+        # Create styles
+        self.create_kml_styles(document, river_utils.EQUIPMENT_COLORS_KML)
+
+        # Export placemarks
+        exported = 0
+        skipped = 0
+
+        for obj in equipment_objects:
+            lat = obj.get('latitude')
+            lon = obj.get('longitude')
+
+            if lat is None or lon is None:
+                skipped += 1
+                continue
+
+            eq_type = river_utils.get_equipment_type(obj.name)
+            sensor_html = self.fetch_sensor_data(conn, obj.name) if conn else ""
+
+            # Create placemark
+            placemark = ET.SubElement(document, 'Placemark')
+            ET.SubElement(placemark, 'name').text = ''  # Hide label on map
+            ET.SubElement(placemark, 'styleUrl').text = f'#{eq_type}'
+
+            # Add description with sensor data
+            description_elem = ET.SubElement(placemark, 'description')
+            description_html = self.generate_description_html(obj.name, eq_type, lat, lon, sensor_html)
+            description_elem.text = f"<![CDATA[{description_html}]]>"
+
+            # Add point coordinates
+            point = ET.SubElement(placemark, 'Point')
+            ET.SubElement(point, 'coordinates').text = f'{lon},{lat},0'
+
+            exported += 1
+
+        if conn:
+            conn.close()
+
+        # Write KML file with CDATA handling
+        tree = ET.ElementTree(kml)
+        ET.indent(tree, space="  ")
+
+        import io
+        output = io.BytesIO()
+        tree.write(output, encoding='utf-8', xml_declaration=True)
+        kml_content = output.getvalue().decode('utf-8')
+
+        # Fix CDATA escaping
+        kml_content = kml_content.replace('&lt;![CDATA[', '<![CDATA[')
+        kml_content = kml_content.replace(']]&gt;', ']]>')
+        kml_content = kml_content.replace('&lt;', '<')
+        kml_content = kml_content.replace('&gt;', '>')
+
+        with open(self.filepath, 'w', encoding='utf-8') as f:
+            f.write(kml_content)
+
+        LOGGER.log(f"Exported KML: {self.filepath}")
+        LOGGER.log(f"Exported {exported} equipment markers (skipped {skipped})")
+
+        # Show simple completion dialog
+        def draw_info(self, context):
+            layout = self.layout
+            layout.label(text=f"✅ Exported {exported} equipment markers", icon='CHECKMARK')
+            layout.separator()
+
+            box = layout.box()
+            box.label(text="📤 Share the KML file:", icon='INFO')
+            box.label(text="  • WhatsApp / Email / USB")
+            box.label(text="  • Open on phone with Google Earth")
+
+            layout.separator()
+            box = layout.box()
+            box.label(text="📱 Recommended App:", icon='VIEWZOOM')
+            box.label(text="  Google Earth (Free)")
+            box.label(text="  - Android: Play Store")
+            box.label(text="  - iOS: App Store")
+
+            layout.separator()
+            box = layout.box()
+            box.label(text="💡 Tips:", icon='QUESTION')
+            box.label(text="  • Tap markers for sensor data")
+            box.label(text="  • Swipe down panel for fullscreen")
+            box.label(text="  • Pinch to zoom")
+
+        context.window_manager.popup_menu(draw_info, title="KML Export Complete", icon='CHECKMARK')
+
+        self.report({'INFO'}, f"Exported {exported} markers to KML. Share via WhatsApp/Email!")
+
+        return {'FINISHED'}
+
+
+class BIM_OT_equipment_export_mobile_html(Operator):
+    """Export standalone mobile HTML with all data embedded (offline-ready)"""
+    bl_idname = "bim.equipment_export_mobile_html"
+    bl_label = "Export Mobile HTML"
+    bl_options = {'REGISTER'}
+
+    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+
+    def invoke(self, context, event):
+        # Set default filename to Downloads folder
+        import os
+        downloads_path = os.path.expanduser("~/Downloads")
+        self.filepath = os.path.join(downloads_path, f"river_mobile_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html")
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+    def execute(self, context):
+        import json
+        import sqlite3
+        from pathlib import Path
+
+        # Paths
+        script_dir = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER")
+        db_path = script_dir / "klang_river_perfect.db"
+        river_ui_path = script_dir / "RiverUI"
+
+        # Read source files
+        try:
+            with open(river_ui_path / "styles.css", 'r') as f:
+                css_content = f.read()
+            with open(river_ui_path / "viewer_static_map.js", 'r') as f:
+                viewer_js = f.read()
+            with open(river_ui_path / "calculations.js", 'r') as f:
+                calc_js = f.read()
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to read source files: {e}")
+            return {'CANCELLED'}
+
+        from . import river_utils
+
+        # Get equipment objects
+        equipment_objects = river_utils.get_all_equipment_objects()
+
+        if not equipment_objects:
+            self.report({'WARNING'}, "No equipment objects found in scene")
+            return {'CANCELLED'}
+
+        # Connect to database for sensor data
+        conn = None
+        try:
+            conn = sqlite3.connect(str(db_path))
+        except Exception as e:
+            LOGGER.log(f"Warning: Could not connect to database: {e}")
+
+        features = []
+        exported = 0
+        skipped = 0
+
+        for obj in equipment_objects:
+            lat = obj.get('latitude')
+            lon = obj.get('longitude')
+
+            if lat is None or lon is None:
+                skipped += 1
+                continue
+
+            eq_type = river_utils.get_equipment_type(obj.name)
+            color = river_utils.EQUIPMENT_COLORS_HEX.get(eq_type, '#FF6B35')
+
+            # Get sensor data from database
+            sensors = []
+            if conn:
+                try:
+                    sensors = river_utils.fetch_sensor_data_from_db(conn.cursor(), obj.name)
+                except Exception as e:
+                    LOGGER.log(f"Warning: Could not fetch sensors for {obj.name}: {e}")
+
+            feature = river_utils.create_geojson_feature(obj.name, eq_type, color, lat, lon, sensors)
+            features.append(feature)
+            exported += 1
+
+        # Create markers GeoJSON
+        markers_geojson = river_utils.create_geojson_collection(features)
+
+        # Get river geometry if exists
+        river_geojson_path = script_dir / "output/geojson/river_from_blender.geojson"
+        river_geojson = {"type": "FeatureCollection", "features": []}
+        if river_geojson_path.exists():
+            try:
+                with open(river_geojson_path, 'r') as f:
+                    river_geojson = json.load(f)
+            except:
+                pass
+
+        # Close database
+        if conn:
+            conn.close()
+
+        # Build single-file HTML
+        html_content = self.build_inline_html(css_content, viewer_js, calc_js, markers_geojson, river_geojson)
+
+        # Write file
+        try:
+            with open(self.filepath, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+
+            LOGGER.log(f"Exported mobile HTML: {self.filepath}")
+            LOGGER.log(f"Exported {exported} equipment markers (skipped {skipped})")
+            self.report({'INFO'}, f"Exported {exported} markers to {self.filepath}")
+
+            # Open in browser
+            import webbrowser
+            webbrowser.open(f"file://{self.filepath}")
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to write file: {e}")
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
+
+    def build_inline_html(self, css, viewer_js, calc_js, markers_data, river_data):
+        """Build a single-file HTML with all assets embedded"""
+        import json
+        import base64
+        from pathlib import Path
+
+        # Embed background image as base64
+        bg_image_base64 = ""
+        bg_image_path = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER/RiverUI/map_klang_valley.png")
+        if bg_image_path.exists():
+            try:
+                with open(bg_image_path, 'rb') as img_file:
+                    bg_image_base64 = base64.b64encode(img_file.read()).decode('utf-8')
+                LOGGER.log(f"Embedded background image ({bg_image_path.stat().st_size // 1024}KB)")
+            except Exception as e:
+                LOGGER.log(f"Warning: Could not embed background image: {e}")
+
+        # Create embedded data script
+        embedded_data_js = f"""
+// Embedded data for offline mode
+const EMBEDDED_RIVER_DATA = {json.dumps(river_data)};
+const EMBEDDED_MARKERS_DATA = {json.dumps(markers_data)};
+"""
+
+        # Modify viewer_js to use embedded data
+        modified_viewer_js = viewer_js.replace(
+            "async loadData() {",
+            """async loadData() {
+        // Use embedded data (offline mode)
+        try {
+            console.log('🔄 Loading embedded data...');
+            const riverData = EMBEDDED_RIVER_DATA;
+            const markersData = EMBEDDED_MARKERS_DATA;
+"""
+        ).replace(
+            "const riverResponse = await fetch('output/geojson/river_from_blender.geojson?v=' + Date.now());",
+            "// River data embedded"
+        ).replace(
+            "console.log('  River response status:', riverResponse.status);",
+            ""
+        ).replace(
+            "const riverData = await riverResponse.json();",
+            "// const riverData = EMBEDDED_RIVER_DATA; (already set above)"
+        ).replace(
+            "const markersResponse = await fetch('output/geojson/project_markers.geojson?v=' + Date.now());",
+            "// Markers data embedded"
+        ).replace(
+            "console.log('  Markers response status:', markersResponse.status);",
+            ""
+        ).replace(
+            "const markersData = await markersResponse.json();",
+            "// const markersData = EMBEDDED_MARKERS_DATA; (already set above)"
+        ).replace(
+            "console.log('  Markers data features:', markersData.features ? markersData.features.length : 'NONE');",
+            "console.log('  ✓ Embedded markers:', markersData.features ? markersData.features.length : 0);"
+        )
+
+        # Replace background image path with base64 data
+        if bg_image_base64:
+            modified_viewer_js = modified_viewer_js.replace(
+                "this.bgImageSrc = 'map_klang_valley.png';",
+                f"this.bgImageSrc = 'data:image/png;base64,{bg_image_base64}';"
+            )
+        else:
+            # No background image - disable it
+            modified_viewer_js = modified_viewer_js.replace(
+                "this.showBackground = true;",
+                "this.showBackground = false;"
+            )
+
+        html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#1e3c72">
+    <title>Klang River - Mobile Viewer (Offline)</title>
+    <style>
+{css}
+
+/* Mobile-specific enhancements */
+@media (max-width: 768px) {{
+    body {{
+        padding: 0;
+        margin: 0;
+    }}
+
+    .container {{
+        padding: 10px;
+    }}
+
+    .header {{
+        padding: 15px;
+        border-radius: 8px;
+    }}
+
+    .header-content h1 {{
+        font-size: 1.5rem;
+    }}
+
+    .header-content .subtitle {{
+        font-size: 0.75rem;
+    }}
+
+    .stat-box {{
+        padding: 8px 12px;
+    }}
+
+    .stat-value {{
+        font-size: 1.25rem;
+    }}
+
+    #riverMap {{
+        cursor: pointer;
+        touch-action: none;
+        width: 100%;
+        height: auto;
+        max-height: 50vh;
+    }}
+
+    .map-legend {{
+        flex-wrap: wrap;
+        gap: 12px;
+        padding: 12px;
+    }}
+
+    .legend-item {{
+        font-size: 0.75rem;
+        min-width: 45%;
+    }}
+
+    .property-panel {{
+        width: 95vw;
+        max-width: 95vw;
+        left: 2.5vw;
+        right: 2.5vw;
+        top: 10%;
+        transform: translateY(0);
+        max-height: 80vh;
+    }}
+
+    .property-panel.hidden {{
+        transform: translateY(-150%);
+    }}
+
+    .property-content {{
+        max-height: 60vh;
+    }}
+
+    .close-btn {{
+        font-size: 2rem;
+        padding: 0 10px;
+        cursor: pointer;
+    }}
+
+    .panel-header h2 {{
+        font-size: 1.25rem;
+    }}
+
+    .calc-panel {{
+        display: none; /* Hide calculations on mobile to focus on map */
+    }}
+}}
+
+/* Touch-friendly button sizing */
+button, .btn-primary, .btn-export {{
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+}}
+
+/* Prevent text selection during touch interactions */
+.map-panel, #riverMap, .legend-item {{
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header (simplified for mobile) -->
+        <header class="header" style="padding: 15px; text-align: center;">
+            <div class="header-content">
+                <h1 style="font-size: 1.5rem; margin-bottom: 5px;">River Equipment Monitor</h1>
+                <p class="subtitle" style="font-size: 0.85rem;">Tap markers to view sensor data (offline mode)</p>
+            </div>
+        </header>
+
+        <!-- Main Content Grid -->
+        <div class="main-grid" style="grid-template-columns: 1fr;">
+            <!-- Left Panel: Map View -->
+            <div class="panel map-panel">
+                <div class="panel-header">
+                    <h2>River Corridor Map</h2>
+                    <label style="color: white;">
+                        <input type="checkbox" id="toggleRiver" checked style="margin-right: 4px;">
+                        Show River
+                    </label>
+                </div>
+                <div class="panel-content">
+                    <canvas id="riverMap" width="800" height="530"></canvas>
+                </div>
+                <div class="map-legend">
+                    <div class="legend-item">
+                        <input type="checkbox" id="toggle_boom_trap" checked>
+                        <span class="marker-dot" style="background: #FF4444;"></span>
+                        <span>Boom Traps (40)</span>
+                    </div>
+                    <div class="legend-item">
+                        <input type="checkbox" id="toggle_water_quality" checked>
+                        <span class="marker-dot" style="background: #44AAFF;"></span>
+                        <span>Water Quality (15)</span>
+                    </div>
+                    <div class="legend-item">
+                        <input type="checkbox" id="toggle_pollutant_sensor" checked>
+                        <span class="marker-dot" style="background: #FF9944;"></span>
+                        <span>Pollutant Sensors (10)</span>
+                    </div>
+                    <div class="legend-item">
+                        <input type="checkbox" id="toggle_wildlife_camera" checked>
+                        <span class="marker-dot" style="background: #44FF44;"></span>
+                        <span>Wildlife (12)</span>
+                    </div>
+                    <div class="legend-item">
+                        <input type="checkbox" id="toggle_flood_monitor" checked>
+                        <span class="marker-dot" style="background: #9944FF;"></span>
+                        <span>Flood Monitors (8)</span>
+                    </div>
+                    <div class="legend-item">
+                        <input type="checkbox" id="toggle_biochar_facility" checked>
+                        <span class="marker-dot" style="background: #FFAA44;"></span>
+                        <span>Biochar (3)</span>
+                    </div>
+                    <div class="legend-item">
+                        <input type="checkbox" id="toggle_mrf_site" checked>
+                        <span class="marker-dot" style="background: #FF44AA;"></span>
+                        <span>MRF Sites (2)</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Property Panel (for marker details) -->
+        <div id="propertyPanel" class="property-panel hidden">
+            <div class="property-header">
+                <h3 id="propertyTitle">Equipment Details</h3>
+                <button id="closeProperty" class="close-btn">×</button>
+            </div>
+            <div id="propertyContent" class="property-content">
+                <!-- Populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+// Embedded data must be loaded first
+{embedded_data_js}
+    </script>
+    <script>
+{calc_js}
+    </script>
+    <script>
+{modified_viewer_js}
+    </script>
+    <script>
+        // Initialize on load
+        document.addEventListener('DOMContentLoaded', () => {{
+            console.log('🚀 Initializing mobile viewer...');
+            initRealViewer();
+        }});
+    </script>
+</body>
+</html>"""
+        return html
+
+
 class BIM_OT_equipment_view_properties(Operator):
     """View equipment properties and sensor details"""
     bl_idname = "bim.equipment_view_properties"
@@ -2012,11 +2529,11 @@ class BIM_OT_equipment_view_properties(Operator):
 
     def draw(self, context):
         import sqlite3
-        from pathlib import Path
+        from . import river_utils
 
         layout = self.layout
 
-        db_path = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER/klang_river_perfect.db")
+        db_path = river_utils.RIVER_DB_PATH
 
         if not db_path.exists():
             layout.label(text="Database not found", icon='ERROR')
@@ -2223,9 +2740,9 @@ class BIM_OT_equipment_clear_all(Operator):
     def delete_from_database(self):
         """Delete all equipment markers from database"""
         import sqlite3
-        from pathlib import Path
+        from . import river_utils
 
-        db_path = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER/klang_river_perfect.db")
+        db_path = river_utils.RIVER_DB_PATH
 
         if not db_path.exists():
             LOGGER.log("Database not found, skipping delete", error=True)
@@ -2326,8 +2843,11 @@ class BIM_PT_river_equipment_placement(Panel):
 
         # Export and Launch HTML
         html_box = layout.box()
-        html_box.label(text="🗺️ HTML Map Viewer:", icon='WORLD')
-        html_box.operator("bim.equipment_export_and_launch_html", text="Export & Launch HTML", icon='URL')
+        html_box.label(text="🗺️ Map Export:", icon='WORLD')
+        row = html_box.row(align=True)
+        row.operator("bim.equipment_export_and_launch_html", text="Launch HTML", icon='URL')
+        row = html_box.row(align=True)
+        row.operator("bim.equipment_export_kml", text="Export KML (Mobile Apps)", icon='EXPORT')
 
         layout.separator()
 
@@ -2335,7 +2855,13 @@ class BIM_PT_river_equipment_placement(Panel):
         box = layout.box()
         box.label(text="Placed Equipment:", icon='CHECKMARK')
 
+        # Add total count at the top
         global PLACED_EQUIPMENT
+        total_count_temp = sum(len(items) for items in PLACED_EQUIPMENT.values())
+        if total_count_temp > 0:
+            row = box.row()
+            row.label(text=f"Total: {total_count_temp}", icon='SORTSIZE')
+
         total_count = 0
 
         # Color emoji mapping
@@ -2463,7 +2989,7 @@ class BIM_OT_equipment_view_pm_schedule(Operator):
         import sqlite3
         import subprocess
         import sys
-        from pathlib import Path
+        from . import river_utils
 
         obj = context.active_object
         if not obj:
@@ -2488,7 +3014,7 @@ class BIM_OT_equipment_view_pm_schedule(Operator):
             return {'CANCELLED'}
 
         # Query PM schedule from database
-        db_path = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER/klang_river_perfect.db")
+        db_path = river_utils.RIVER_DB_PATH
         if not db_path.exists():
             self.report({'ERROR'}, f"Database not found: {db_path}")
             return {'CANCELLED'}
@@ -2576,8 +3102,8 @@ class BIM_OT_equipment_log_breakdown(Operator):
 
     def execute(self, context):
         import sqlite3
-        from pathlib import Path
         from datetime import datetime
+        from . import river_utils
 
         obj = context.active_object
         if not obj:
@@ -2601,7 +3127,7 @@ class BIM_OT_equipment_log_breakdown(Operator):
             self.report({'ERROR'}, "Could not parse equipment ID")
             return {'CANCELLED'}
 
-        db_path = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER/klang_river_perfect.db")
+        db_path = river_utils.RIVER_DB_PATH
         if not db_path.exists():
             self.report({'ERROR'}, f"Database not found: {db_path}")
             return {'CANCELLED'}
@@ -2692,8 +3218,8 @@ class BIM_OT_equipment_create_work_order(Operator):
 
     def execute(self, context):
         import sqlite3
-        from pathlib import Path
         from datetime import datetime, timedelta
+        from . import river_utils
 
         obj = context.active_object
         if not obj:
@@ -2717,7 +3243,7 @@ class BIM_OT_equipment_create_work_order(Operator):
             self.report({'ERROR'}, "Could not parse equipment ID")
             return {'CANCELLED'}
 
-        db_path = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER/klang_river_perfect.db")
+        db_path = river_utils.RIVER_DB_PATH
         if not db_path.exists():
             self.report({'ERROR'}, f"Database not found: {db_path}")
             return {'CANCELLED'}

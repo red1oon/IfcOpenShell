@@ -172,17 +172,23 @@ class GlobalAlertView:
             where_clauses = []
             params = []
 
-            # Zone filter
+            # Zone filter - if empty list, show nothing (user unchecked all zones)
             if self.filter_zones:
                 zone_placeholders = ','.join('?' * len(self.filter_zones))
                 where_clauses.append(f"river_section IN ({zone_placeholders})")
                 params.extend(self.filter_zones)
+            else:
+                # No zones selected = show nothing
+                where_clauses.append("1=0")
 
-            # Equipment type filter
+            # Equipment type filter - if empty list, show nothing (user unchecked all types)
             if self.filter_equipment_types:
                 equipment_placeholders = ','.join('?' * len(self.filter_equipment_types))
                 where_clauses.append(f"marker_type IN ({equipment_placeholders})")
                 params.extend(self.filter_equipment_types)
+            else:
+                # No equipment types selected = show nothing
+                where_clauses.append("1=0")
 
             # Build final query
             query = """
