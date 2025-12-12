@@ -15,20 +15,15 @@ import gpu
 from gpu_extras.batch import batch_for_shader
 from pathlib import Path
 
-# Will be imported from parent module
-EQUIPMENT_TYPES = None
-PLACED_EQUIPMENT = None
-LOGGER = None
-SENSOR_TYPE_COLORS = None
+# Import shared configuration
+from .equipment_config import EQUIPMENT_TYPES, PLACED_EQUIPMENT, SENSOR_TYPE_COLORS
+from .equipment_logger import LOGGER
 
 
 def init_module(equipment_types, placed_equipment, logger, sensor_type_colors):
-    """Initialize module with shared data from parent"""
-    global EQUIPMENT_TYPES, PLACED_EQUIPMENT, LOGGER, SENSOR_TYPE_COLORS
-    EQUIPMENT_TYPES = equipment_types
-    PLACED_EQUIPMENT = placed_equipment
-    LOGGER = logger
-    SENSOR_TYPE_COLORS = sensor_type_colors
+    """Initialize module with shared data from parent (deprecated - now uses direct imports)"""
+    # This function is kept for backwards compatibility but is no longer needed
+    pass
 
 
 # =============================================================================

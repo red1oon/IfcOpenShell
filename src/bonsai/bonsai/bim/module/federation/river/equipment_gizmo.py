@@ -171,10 +171,10 @@ class EquipmentMarkerGizmoGroup(GizmoGroup):
 
     def draw_prepare(self, context):
         """Called every frame - check if we need to refresh"""
-        from . import equipment_placement
+        from .equipment_config import PLACED_EQUIPMENT
 
         # Count current equipment
-        current_count = sum(len(items) for items in equipment_placement.PLACED_EQUIPMENT.values())
+        current_count = sum(len(items) for items in PLACED_EQUIPMENT.values())
 
         # If count changed, refresh gizmos
         if current_count != self._last_count:
@@ -184,13 +184,13 @@ class EquipmentMarkerGizmoGroup(GizmoGroup):
 
     def refresh_gizmos(self):
         """Refresh gizmos from placed equipment data"""
-        from . import equipment_placement
+        from .equipment_config import PLACED_EQUIPMENT, EQUIPMENT_TYPES
 
         # Clear existing gizmos
         self.gizmos.clear()
 
         # Create gizmo for each placed equipment
-        for equipment_type, items in equipment_placement.PLACED_EQUIPMENT.items():
+        for equipment_type, items in PLACED_EQUIPMENT.items():
             for item in items:
                 gz = self.gizmos.new(EquipmentMarkerGizmo.bl_idname)
                 gz.equipment_type = equipment_type

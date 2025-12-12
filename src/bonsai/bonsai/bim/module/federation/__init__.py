@@ -323,17 +323,17 @@ def restore_equipment_on_load(dummy):
         return
 
     try:
-        # Import equipment placement module to access PLACED_EQUIPMENT
-        from .river import equipment_placement
+        # Import equipment config module to access PLACED_EQUIPMENT
+        from .river import equipment_config
 
         # Clear existing data
-        for equipment_type in equipment_placement.EQUIPMENT_TYPES.keys():
-            equipment_placement.PLACED_EQUIPMENT[equipment_type] = []
+        for equipment_type in equipment_config.EQUIPMENT_TYPES.keys():
+            equipment_config.PLACED_EQUIPMENT[equipment_type] = []
 
         # Equipment name patterns to scan for - dynamically built from EQUIPMENT_TYPES
         equipment_map = {
             f'{eq_type.upper()}_': eq_type
-            for eq_type in equipment_placement.EQUIPMENT_TYPES.keys()
+            for eq_type in equipment_config.EQUIPMENT_TYPES.keys()
         }
 
         # Scan scene for equipment Empty objects
@@ -347,10 +347,10 @@ def restore_equipment_on_load(dummy):
                             num_str = obj.name.replace(prefix, '')
                             number = int(num_str)
                         except:
-                            number = len(equipment_placement.PLACED_EQUIPMENT[eq_type]) + 1
+                            number = len(equipment_config.PLACED_EQUIPMENT[eq_type]) + 1
 
                         # Add to PLACED_EQUIPMENT dictionary
-                        equipment_placement.PLACED_EQUIPMENT[eq_type].append({
+                        equipment_config.PLACED_EQUIPMENT[eq_type].append({
                             'id': obj.name,
                             'number': number,
                             'marker_id': obj.get("marker_id", number),  # Read from object custom property
@@ -367,9 +367,9 @@ def restore_equipment_on_load(dummy):
             print(f"✓ River Equipment: Restored {total_restored} equipment markers from scene")
 
             # Log details per type
-            for eq_type, items in equipment_placement.PLACED_EQUIPMENT.items():
+            for eq_type, items in equipment_config.PLACED_EQUIPMENT.items():
                 if items:
-                    eq_name = equipment_placement.EQUIPMENT_TYPES[eq_type]['name']
+                    eq_name = equipment_config.EQUIPMENT_TYPES[eq_type]['name']
                     print(f"  • {eq_name}: {len(items)} markers")
 
             # Force gizmo refresh
