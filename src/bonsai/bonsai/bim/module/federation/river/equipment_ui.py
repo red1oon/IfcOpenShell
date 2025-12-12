@@ -168,6 +168,15 @@ class BIM_PT_river_equipment_placement(Panel):
 
         layout.separator()
 
+        # GPS Calibration Utils
+        gps_utils_box = layout.box()
+        gps_utils_box.label(text="GPS Calibration Utils:", icon='DRIVER_DISTANCE')
+        col = gps_utils_box.column(align=True)
+        col.operator("bim.equipment_recalibrate_gps_from_truth", text="Recalibrate GPS from Truth File", icon='FILE_REFRESH')
+        col.operator("bim.equipment_compare_gps_blend_db", text="Compare GPS: Blend ↔ DB", icon='COMMUNITY')
+
+        layout.separator()
+
         # Debug info
         debug_box = layout.box()
         debug_box.label(text="Debug Info:", icon='INFO')

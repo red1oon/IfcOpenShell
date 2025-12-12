@@ -18,6 +18,7 @@ Modules:
 - equipment_gizmo: GPU-drawn gizmo spheres for equipment markers
 - centerline_osm: OpenStreetMap river centerline import and styling
 - gps_sync_handler: Auto-sync GPS coordinates for equipment
+- gps_calibration: GPS recalibration from truth file and comparison utilities
 """
 
 # Import new modular structure
@@ -30,6 +31,7 @@ from . import equipment_ui
 from . import equipment_gizmo
 from . import centerline_osm
 from . import gps_sync_handler
+from . import gps_calibration
 
 # Expose data structures that may be accessed from outside
 from .equipment_config import (
@@ -83,6 +85,10 @@ classes = (
     gps_sync_handler.BIM_OT_update_selected_gps,
     gps_sync_handler.BIM_OT_recalibrate_gps_anchor,
     gps_sync_handler.BIM_PT_gps_auto_sync,
+
+    # GPS Calibration Utils
+    gps_calibration.BIM_OT_equipment_recalibrate_gps_from_truth,
+    gps_calibration.BIM_OT_equipment_compare_gps_blend_db,
 )
 
 
