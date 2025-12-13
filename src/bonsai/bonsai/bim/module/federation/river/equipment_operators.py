@@ -381,7 +381,7 @@ class BIM_OT_equipment_place_marker(Operator):
 # =============================================================================
 
 class BIM_OT_equipment_load_from_db(Operator):
-    """Load equipment from database"""
+    """Load missing equipment from database (incremental, non-destructive)"""
     bl_idname = "bim.equipment_load_from_db"
     bl_label = "Load from Database"
     bl_options = {'REGISTER', 'UNDO'}
@@ -402,20 +402,22 @@ class BIM_OT_equipment_load_from_db(Operator):
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
 
-            LOGGER.section("LOADING FROM DATABASE")
+            LOGGER.section("LOADING MISSING EQUIPMENT FROM DATABASE (INCREMENTAL)")
 
             # River markers and meshes are in world coordinates (no offset needed)
-            # River objects are at origin with transforms applied to geometry
             mesh_offset = (0.0, 0.0, 0.0)
             LOGGER.log(f"River equipment uses world coordinates (no offset applied)")
 
-            # Query equipment markers (all types) - MUST include marker_id for sensor lookup
-            marker_types = ', '.join([f"'{mt}'" for mt in EQUIPMENT_TYPES.keys()])
+            # Query equipment markers (all types)
+            # Use UPPER() for case-insensitive matching (DB uses MANGROVE_ISLET, code uses mangrove_islet)
+            marker_types_upper = ', '.join([f"'{mt.upper()}'" for mt in EQUIPMENT_TYPES.keys()])
             cursor.execute(f"""
-                SELECT marker_id, marker_type, name, location_x, location_y, location_z
+                SELECT id, marker_type, name, location_x, location_y, location_z,
+                       latitude, longitude
                 FROM project_markers
-                WHERE marker_type IN ({marker_types})
-                ORDER BY marker_id
+                WHERE UPPER(marker_type) IN ({marker_types_upper})
+                   OR (marker_type IS NULL OR marker_type = '')
+                ORDER BY id
             """)
 
             rows = cursor.fetchall()
@@ -428,57 +430,95 @@ class BIM_OT_equipment_load_from_db(Operator):
 
             LOGGER.log(f"Found {len(rows)} equipment markers in database")
 
-            # Clear existing
-            for equipment_type in EQUIPMENT_TYPES.keys():
-                PLACED_EQUIPMENT[equipment_type] = []
-
-            # Remove ALL old equipment objects and collections
+            # Get existing marker_ids from Blender objects
+            existing_marker_ids = set()
             parent_collection_name = "River Equipment"
+
             if parent_collection_name in bpy.data.collections:
-                old_parent = bpy.data.collections[parent_collection_name]
-                LOGGER.log(f"Clearing old parent collection: {parent_collection_name}")
+                parent_coll = bpy.data.collections[parent_collection_name]
+                for child_coll in parent_coll.children:
+                    for obj in child_coll.objects:
+                        if "marker_id" in obj:
+                            existing_marker_ids.add(obj["marker_id"])
 
-                # Recursively delete all child collections and their objects
-                for child_coll in list(old_parent.children):
-                    # Delete all objects in child collection
-                    for obj in list(child_coll.objects):
-                        bpy.data.objects.remove(obj, do_unlink=True)
-                    # Unlink and remove child collection
-                    old_parent.children.unlink(child_coll)
-                    bpy.data.collections.remove(child_coll)
+            LOGGER.log(f"Found {len(existing_marker_ids)} existing equipment markers in Blender")
 
-                # Delete any objects directly in parent
-                for obj in list(old_parent.objects):
-                    bpy.data.objects.remove(obj, do_unlink=True)
+            # Ensure parent collection exists
+            if parent_collection_name not in bpy.data.collections:
+                parent_collection = bpy.data.collections.new(parent_collection_name)
+                context.scene.collection.children.link(parent_collection)
+                LOGGER.log(f"Created parent collection: {parent_collection_name}")
+            else:
+                parent_collection = bpy.data.collections[parent_collection_name]
 
-                # Unlink parent from scene
-                context.scene.collection.children.unlink(old_parent)
-                # Remove parent collection
-                bpy.data.collections.remove(old_parent)
-                LOGGER.log("  All old equipment cleared")
-
-            # Create fresh parent collection
-            parent_collection = bpy.data.collections.new(parent_collection_name)
-            context.scene.collection.children.link(parent_collection)
-            LOGGER.log(f"Created fresh parent collection: {parent_collection_name}")
-
-            # Create fresh collections for each equipment type
+            # Ensure collections exist for each equipment type
             equipment_collections = {}
             for eq_type in EQUIPMENT_TYPES.keys():
                 eq_info = EQUIPMENT_TYPES[eq_type]
                 collection_name = eq_info['name'] + 's'  # Plural
 
-                # Create new collection (old ones already cleared above)
-                eq_collection = bpy.data.collections.new(collection_name)
-                parent_collection.children.link(eq_collection)
-                equipment_collections[eq_type] = eq_collection
-                LOGGER.log(f"  Created collection: {collection_name}")
+                # Find or create collection
+                if collection_name in bpy.data.collections:
+                    eq_collection = bpy.data.collections[collection_name]
+                else:
+                    eq_collection = bpy.data.collections.new(collection_name)
+                    parent_collection.children.link(eq_collection)
+                    LOGGER.log(f"  Created collection: {collection_name}")
 
-            # Create empties from database, organized by collection
+                equipment_collections[eq_type] = eq_collection
+
+            # Rebuild PLACED_EQUIPMENT from existing objects
+            for equipment_type in EQUIPMENT_TYPES.keys():
+                PLACED_EQUIPMENT[equipment_type] = []
+
+            for eq_type, eq_coll in equipment_collections.items():
+                for obj in eq_coll.objects:
+                    if "marker_id" in obj:
+                        PLACED_EQUIPMENT[eq_type].append({
+                            'id': obj.name,
+                            'number': len(PLACED_EQUIPMENT[eq_type]) + 1,
+                            'marker_id': obj["marker_id"],
+                            'x': obj.location.x,
+                            'y': obj.location.y,
+                            'z': obj.location.z,
+                            'object': obj,
+                            'object_name': obj.name
+                        })
+
+            # Create empties ONLY for NEW markers (incremental)
             total_loaded = 0
-            for marker_id, marker_type, name, x, y, z in rows:
+            skipped = 0
+            for marker_id, marker_type, name, x, y, z, latitude, longitude in rows:
+                # Detect marker_type from name if empty (for old markers: BOOM_TRAP_001, FLOOD_MONITOR_001, etc.)
+                if not marker_type or marker_type == '':
+                    if 'BOOM_TRAP' in name:
+                        marker_type = 'boom_trap'
+                    elif 'FLOOD_MONITOR' in name:
+                        marker_type = 'flood_monitor'
+                    elif 'WATER_QUALITY' in name:
+                        marker_type = 'water_quality'
+                    elif 'POLLUTANT_SENSOR' in name or 'POLLUTANT' in name:
+                        marker_type = 'pollutant_sensor'
+                    elif 'BIODIVERSITY' in name or 'WILDLIFE' in name:
+                        marker_type = 'biodiversity'
+                    elif 'BIOCHAR' in name:
+                        marker_type = 'biochar'
+                    elif 'MRF' in name:
+                        marker_type = 'mrf'
+                    else:
+                        LOGGER.log(f"WARNING: Cannot detect marker type for '{name}' - skipping", error=True)
+                        continue
+                else:
+                    # Convert from database UPPERCASE to code lowercase
+                    marker_type = marker_type.lower()
+
                 if marker_type not in EQUIPMENT_TYPES:
                     LOGGER.log(f"WARNING: Unknown marker type '{marker_type}' - skipping", error=True)
+                    continue
+
+                # INCREMENTAL CHECK: Skip if marker_id already exists in Blender
+                if marker_id in existing_marker_ids:
+                    skipped += 1
                     continue
 
                 equipment_info = EQUIPMENT_TYPES[marker_type]
@@ -499,6 +539,13 @@ class BIM_OT_equipment_load_from_db(Operator):
 
                 # Store marker_id as custom property for sensor lookup
                 empty["marker_id"] = marker_id
+
+                # GPS integration: Store GPS coordinates for carbon credits traceability
+                # These custom properties enable auto-fill in carbon credit batch creation
+                if latitude is not None and longitude is not None:
+                    empty["gps_lat"] = latitude
+                    empty["gps_lon"] = longitude
+                    empty["equipment_type"] = marker_type  # For filtering in carbon credits UI
 
                 # Link to type-specific collection
                 equipment_collections[marker_type].objects.link(empty)
@@ -521,9 +568,9 @@ class BIM_OT_equipment_load_from_db(Operator):
                 })
 
                 total_loaded += 1
-                LOGGER.log(f"  Loaded: {name} (marker_id={marker_id}) - DB:({x:.1f}, {y:.1f}, {z:.1f}) → Display:({stored_x:.1f}, {stored_y:.1f}, {stored_z:.1f})")
+                LOGGER.log(f"  Added NEW: {name} (marker_id={marker_id}) - DB:({x:.1f}, {y:.1f}, {z:.1f}) → Display:({stored_x:.1f}, {stored_y:.1f}, {stored_z:.1f})")
 
-            LOGGER.log(f"✅ Loaded {total_loaded} equipment markers from database")
+            LOGGER.log(f"✅ Incremental load complete: {total_loaded} new markers added, {skipped} existing markers preserved")
 
             # Force gizmo refresh by triggering viewport update
             # Gizmos read from PLACED_EQUIPMENT which now has offset-applied coords
@@ -538,7 +585,11 @@ class BIM_OT_equipment_load_from_db(Operator):
 
             LOGGER.log(f"Equipment stored with offset: ({mesh_offset[0]:.2f}, {mesh_offset[1]:.2f}, {mesh_offset[2]:.2f})")
 
-            self.report({'INFO'}, f"Loaded {total_loaded} equipment from database")
+            # Report incremental loading results
+            if total_loaded > 0:
+                self.report({'INFO'}, f"Added {total_loaded} new markers (preserved {skipped} existing)")
+            else:
+                self.report({'INFO'}, f"All {skipped} markers already loaded - nothing to add")
             return {'FINISHED'}
 
         except Exception as e:

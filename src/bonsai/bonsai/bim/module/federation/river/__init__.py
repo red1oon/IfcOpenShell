@@ -3,10 +3,10 @@
 # Item 11: River Monitoring Equipment & Ecosystem
 
 """
-River Equipment Monitoring
-===========================
+River Equipment Monitoring + Circular Economy Platform
+=======================================================
 Comprehensive river monitoring system with equipment placement,
-sensor dashboards, and OSM integration.
+sensor dashboards, OSM integration, and carbon credit tracking.
 
 Modules:
 - equipment_config: Equipment types, sensor icons/colors, global state
@@ -19,6 +19,7 @@ Modules:
 - centerline_osm: OpenStreetMap river centerline import and styling
 - gps_sync_handler: Auto-sync GPS coordinates for equipment
 - gps_calibration: GPS recalibration from truth file and comparison utilities
+- carbon_credits: Biochar, mangrove, plastic credit tracking (Phase 1 - RM 200-500M/year)
 """
 
 # Import new modular structure
@@ -32,6 +33,7 @@ from . import equipment_gizmo
 from . import centerline_osm
 from . import gps_sync_handler
 from . import gps_calibration
+from . import carbon_credits
 
 # Expose data structures that may be accessed from outside
 from .equipment_config import (
@@ -83,18 +85,25 @@ classes = (
     gps_sync_handler.BIM_OT_enable_gps_auto_sync,
     gps_sync_handler.BIM_OT_disable_gps_auto_sync,
     gps_sync_handler.BIM_OT_update_selected_gps,
-    gps_sync_handler.BIM_OT_recalibrate_gps_anchor,
+    gps_sync_handler.BIM_OT_recalibrate_gps_affine,
     gps_sync_handler.BIM_PT_gps_auto_sync,
 
     # GPS Calibration Utils
     gps_calibration.BIM_OT_equipment_recalibrate_gps_from_truth,
     gps_calibration.BIM_OT_equipment_compare_gps_blend_db,
+
+    # Carbon Credits - Phase 1 (Biochar Pipeline)
+    carbon_credits.credit_operators.RIVER_OT_create_biochar_batch,
+    carbon_credits.credit_operators.RIVER_OT_update_biochar_lab_results,
+    carbon_credits.credit_operators.RIVER_OT_calculate_lca_emissions,
+    carbon_credits.credit_operators.RIVER_PT_carbon_credits,
 )
 
 
 def register():
     """Called when river module is registered"""
     gps_sync_handler.register()
+    carbon_credits.register()
     # Register context menu for equipment objects
     import bpy
     bpy.types.VIEW3D_MT_object_context_menu.append(equipment_maintenance.menu_func)
@@ -103,6 +112,7 @@ def register():
 def unregister():
     """Called when river module is unregistered"""
     gps_sync_handler.unregister()
+    carbon_credits.unregister()
     # Unregister context menu
     import bpy
     bpy.types.VIEW3D_MT_object_context_menu.remove(equipment_maintenance.menu_func)

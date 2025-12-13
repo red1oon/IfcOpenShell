@@ -8,98 +8,88 @@ Automatically updates GPS coordinates (latitude/longitude) when equipment
 objects are moved in Blender 3D space.
 
 **Algorithm:**
-Uses BOOM_TRAP_002 as the ANCHOR reference point (hard-coded for now).
-- Anchor GPS is never changed (considered ground truth)
-- All other objects' GPS calculated relative to anchor using scale factors
-- Scale: GPS degrees per Blender unit (calculated from anchor + one other point)
+Uses affine transformation from georef_config database table.
+- Loads calibration bounds on initialization
+- Converts Blender XY → GPS using normalized interpolation
+- No anchor needed - uses full georeferencing system
 - Blender-only updates - no database sync (backward compatible)
 
-**Note to Users:**
-BOOM_TRAP_002 is the GPS anchor. Do not move this object unless you recalibrate.
-Later: Will support dynamic anchor selection when other markers verified to river mesh.
+**Affine Transformation:**
+lon = lon_min + (x - x_min) / (x_max - x_min) * (lon_max - lon_min)
+lat = lat_min + (y - y_min) / (y_max - y_min) * (lat_max - lat_min)
 """
 
 import bpy
 from bpy.app.handlers import persistent, depsgraph_update_post
+import sqlite3
+from pathlib import Path
 
 
 class GPSAutoSync:
     """Handles automatic GPS synchronization when objects move"""
 
-    # Hard-coded anchor for now (verified ground truth)
-    ANCHOR_NAME = "BOOM_TRAP_002"
-
     def __init__(self):
         self.enabled = False
-        self.anchor_obj_name = None
-        self.anchor_blender_pos = None  # (x, y)
-        self.anchor_gps = None  # (lat, lon)
-        self.scale_x_to_lon = None  # Longitude degrees per Blender X unit
-        self.scale_y_to_lat = None  # Latitude degrees per Blender Y unit
+        # Affine calibration bounds (loaded from georef_config)
+        self.x_min = None
+        self.x_max = None
+        self.y_min = None
+        self.y_max = None
+        self.lon_min = None
+        self.lon_max = None
+        self.lat_min = None
+        self.lat_max = None
         self.tracked_objects = set()
         self.last_positions = {}
 
     def enable(self):
         """Enable GPS auto-sync (Blender-only, no database)"""
-        # Find anchor object and calculate scale
-        if not self._calibrate_from_scene():
+        # Load affine calibration from database
+        if not self._load_affine_calibration():
             return False
 
         self.enabled = True
-        print(f"✓ GPS Auto-Sync: Enabled")
-        print(f"  Anchor: {self.anchor_obj_name}")
-        print(f"  Scale: {self.scale_x_to_lon:.10f} lon/X, {self.scale_y_to_lat:.10f} lat/Y")
+        print(f"✓ GPS Auto-Sync: Enabled (Affine Calibration)")
+        print(f"  Blender X: {self.x_min:.2f} to {self.x_max:.2f} m")
+        print(f"  Blender Y: {self.y_min:.2f} to {self.y_max:.2f} m")
+        print(f"  GPS Lon:   {self.lon_min:.6f}° to {self.lon_max:.6f}° E")
+        print(f"  GPS Lat:   {self.lat_min:.6f}° to {self.lat_max:.6f}° N")
         return True
 
-    def _calibrate_from_scene(self):
-        """Find anchor object and calculate GPS scale factors"""
-        # Find all equipment objects with GPS
-        equipment = []
-        for obj in bpy.data.objects:
-            if self._is_equipment_object(obj):
-                lat = obj.get('latitude')
-                lon = obj.get('longitude')
-                if lat is not None and lon is not None:
-                    equipment.append({
-                        'obj': obj,
-                        'name': obj.name,
-                        'x': obj.location.x,
-                        'y': obj.location.y,
-                        'lat': lat,
-                        'lon': lon
-                    })
+    def _load_affine_calibration(self):
+        """Load affine transformation bounds from database georef_config table"""
+        db_path = Path.home() / "Projects/IfcOpenShell/WORK_DIR/RIVER/databases/klang_river_perfect.db"
 
-        if len(equipment) < 2:
-            print(f"⚠️  GPS Auto-Sync: Need at least 2 equipment objects with GPS")
+        if not db_path.exists():
+            print(f"⚠️  GPS Auto-Sync: Database not found: {db_path}")
             return False
 
-        # Find anchor (hard-coded BOOM_TRAP_002)
-        anchor = next((e for e in equipment if e['name'] == self.ANCHOR_NAME), None)
-        if not anchor:
-            print(f"⚠️  GPS Auto-Sync: Anchor {self.ANCHOR_NAME} not found")
+        try:
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT blender_x_min, blender_x_max, blender_y_min, blender_y_max,
+                       gps_lon_min, gps_lon_max, gps_lat_min, gps_lat_max
+                FROM georef_config
+                WHERE id = 1
+            """)
+
+            row = cursor.fetchone()
+            conn.close()
+
+            if not row or not all(row):
+                print(f"⚠️  GPS Auto-Sync: Georef calibration not found in database")
+                return False
+
+            self.x_min, self.x_max, self.y_min, self.y_max, \
+            self.lon_min, self.lon_max, self.lat_min, self.lat_max = row
+
+            return True
+
+        except Exception as e:
+            print(f"⚠️  GPS Auto-Sync: Failed to load calibration - {e}")
             return False
-
-        self.anchor_obj_name = anchor['name']
-        self.anchor_blender_pos = (anchor['x'], anchor['y'])
-        self.anchor_gps = (anchor['lat'], anchor['lon'])
-
-        # Find eastmost-northmost for scale calculation (maximum X+Y)
-        opposite = max(equipment, key=lambda e: e['x'] + e['y'])
-
-        # Calculate scale factors
-        dx = opposite['x'] - anchor['x']
-        dy = opposite['y'] - anchor['y']
-        dlon = opposite['lon'] - anchor['lon']
-        dlat = opposite['lat'] - anchor['lat']
-
-        if abs(dx) < 0.1 or abs(dy) < 0.1:
-            print(f"⚠️  GPS Auto-Sync: Objects too close for calibration")
-            return False
-
-        self.scale_x_to_lon = dlon / dx
-        self.scale_y_to_lat = dlat / dy
-
-        return True
 
     def disable(self):
         """Disable GPS auto-sync"""
@@ -121,28 +111,27 @@ class GPSAutoSync:
     def _is_equipment_object(self, obj):
         """Check if object is equipment marker"""
         equipment_keywords = ['BOOM', 'PUMP', 'GATE', 'SENSOR', 'WATER_QUALITY',
-                             'BIODIVERSITY', 'WILDLIFE', 'BIOCHAR', 'MRF', 'POLLUTANT', 'FLOOD']
+                             'BIODIVERSITY', 'WILDLIFE', 'BIOCHAR', 'MRF', 'POLLUTANT',
+                             'FLOOD', 'ISLET', 'MANGROVE']
         return any(keyword in obj.name.upper() for keyword in equipment_keywords)
 
     def update_gps_for_object(self, obj):
-        """Update GPS coordinates for a single object"""
+        """Update GPS coordinates for a single object using affine transformation"""
         if not self.enabled:
-            return False
-
-        # Don't update anchor object
-        if obj.name == self.anchor_obj_name:
             return False
 
         try:
             # Get current Blender position
             x, y = obj.location.x, obj.location.y
 
-            # Calculate GPS relative to anchor
-            dx = x - self.anchor_blender_pos[0]
-            dy = y - self.anchor_blender_pos[1]
+            # Affine transformation: Blender XY → GPS
+            # Normalize to [0, 1]
+            x_norm = (x - self.x_min) / (self.x_max - self.x_min) if self.x_max != self.x_min else 0.5
+            y_norm = (y - self.y_min) / (self.y_max - self.y_min) if self.y_max != self.y_min else 0.5
 
-            lon = self.anchor_gps[1] + (dx * self.scale_x_to_lon)
-            lat = self.anchor_gps[0] + (dy * self.scale_y_to_lat)
+            # Map to GPS coordinates
+            lon = self.lon_min + x_norm * (self.lon_max - self.lon_min)
+            lat = self.lat_min + y_norm * (self.lat_max - self.lat_min)
 
             # Update object custom properties (Blender-only)
             obj["latitude"] = lat
@@ -164,10 +153,6 @@ class GPSAutoSync:
 
         # Check each tracked object
         for obj_name in list(self.tracked_objects):
-            # Skip anchor
-            if obj_name == self.anchor_obj_name:
-                continue
-
             obj = bpy.data.objects.get(obj_name)
             if not obj:
                 continue
@@ -181,7 +166,7 @@ class GPSAutoSync:
             # Compare X and Y (ignore Z for GPS)
             current_pos = obj.location
             if abs(current_pos.x - last_pos.x) > 0.01 or abs(current_pos.y - last_pos.y) > 0.01:
-                # Position changed - update GPS
+                # Position changed - update GPS using affine transformation
                 if self.update_gps_for_object(obj):
                     print(f"✓ GPS Updated: {obj_name} → Lat {obj['latitude']:.6f}, Lon {obj['longitude']:.6f}")
 
@@ -208,7 +193,7 @@ class BIM_OT_enable_gps_auto_sync(bpy.types.Operator):
     """Enable automatic GPS updates when objects move"""
     bl_idname = "bim.enable_gps_auto_sync"
     bl_label = "Enable GPS Auto-Sync"
-    bl_description = "Auto-update GPS when objects move (BOOM_TRAP_002 is anchor)"
+    bl_description = "Auto-update GPS when objects move (uses affine calibration from georef_config)"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -220,9 +205,9 @@ class BIM_OT_enable_gps_auto_sync(bpy.types.Operator):
             if gps_sync_depsgraph_handler not in depsgraph_update_post:
                 depsgraph_update_post.append(gps_sync_depsgraph_handler)
 
-            self.report({'INFO'}, f"GPS Auto-Sync enabled (Anchor: {_gps_sync.anchor_obj_name})")
+            self.report({'INFO'}, "GPS Auto-Sync enabled (Affine Calibration)")
         else:
-            self.report({'ERROR'}, "Failed to enable GPS Auto-Sync")
+            self.report({'ERROR'}, "Failed to enable GPS Auto-Sync - check georef_config table")
 
         return {'FINISHED'}
 
@@ -265,18 +250,18 @@ class BIM_OT_update_selected_gps(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class BIM_OT_recalibrate_gps_anchor(bpy.types.Operator):
-    """Recalibrate GPS anchor and scale from current scene"""
-    bl_idname = "bim.recalibrate_gps_anchor"
-    bl_label = "Recalibrate GPS Anchor"
-    bl_description = "Recalculate anchor point and scale factors from current equipment positions"
+class BIM_OT_recalibrate_gps_affine(bpy.types.Operator):
+    """Reload affine calibration from database"""
+    bl_idname = "bim.recalibrate_gps_affine"
+    bl_label = "Reload Affine Calibration"
+    bl_description = "Reload affine transformation bounds from georef_config table"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        if _gps_sync._calibrate_from_scene():
-            self.report({'INFO'}, f"Recalibrated (Anchor: {_gps_sync.anchor_obj_name})")
+        if _gps_sync._load_affine_calibration():
+            self.report({'INFO'}, "Affine calibration reloaded from database")
         else:
-            self.report({'ERROR'}, "Failed to recalibrate")
+            self.report({'ERROR'}, "Failed to reload calibration - check georef_config table")
 
         return {'FINISHED'}
 
@@ -307,18 +292,18 @@ class BIM_PT_gps_auto_sync(bpy.types.Panel):
         if _gps_sync.enabled:
             layout.separator()
             box = layout.box()
-            box.label(text=f"✓ Active (Anchor: {_gps_sync.anchor_obj_name})", icon='CHECKMARK')
+            box.label(text="✓ Active (Affine Calibration)", icon='CHECKMARK')
 
             layout.separator()
             layout.operator("bim.update_selected_gps", text="Update Selected GPS", icon='FILE_REFRESH')
-            layout.operator("bim.recalibrate_gps_anchor", text="Recalibrate Anchor", icon='MODIFIER')
+            layout.operator("bim.recalibrate_gps_affine", text="Reload Calibration", icon='FILE_REFRESH')
 
         layout.separator()
         info_box = layout.box()
         info_box.label(text="How it works:", icon='INFO')
         info_box.label(text="• Move any object in viewport")
-        info_box.label(text="• GPS auto-updates based on X/Y")
-        info_box.label(text="• Anchor: BOOM_TRAP_002")
+        info_box.label(text="• GPS auto-updates via affine transform")
+        info_box.label(text="• Uses georef_config bounds")
 
 
 # =============================================================================
@@ -329,7 +314,7 @@ classes = (
     BIM_OT_enable_gps_auto_sync,
     BIM_OT_disable_gps_auto_sync,
     BIM_OT_update_selected_gps,
-    BIM_OT_recalibrate_gps_anchor,
+    BIM_OT_recalibrate_gps_affine,
     BIM_PT_gps_auto_sync,
 )
 

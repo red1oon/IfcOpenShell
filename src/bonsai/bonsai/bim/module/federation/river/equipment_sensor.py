@@ -735,6 +735,7 @@ class FilterPanelUI:
             ('ZONE_I_EAST', 'Zone I (EAST - Puchong, 30m width)'),
             ('ZONE_II_MIDDLE', 'Zone II (MIDDLE - Meandering)'),
             ('ZONE_III_WEST', 'Zone III (WEST - Intake, 80m width)'),
+            ('ZONE_IV_COASTAL', 'Zone IV (COASTAL - Islets, mangrove restoration)'),
         ]
 
         blf.size(font_id, 13)
@@ -1068,7 +1069,7 @@ class FilterPanelUI:
         blf.size(font_id, 13)
         blf.color(font_id, 0.85, 0.85, 0.85, 1.0)
         blf.position(font_id, panel_x + 35, content_y, 0)
-        blf.draw(font_id, f"Zone I: {zone_counts['ZONE_I_EAST']}   Zone II: {zone_counts['ZONE_II_MIDDLE']}   Zone III: {zone_counts['ZONE_III_WEST']}")
+        blf.draw(font_id, f"Zone I: {zone_counts['ZONE_I_EAST']}   Zone II: {zone_counts['ZONE_II_MIDDLE']}   Zone III: {zone_counts['ZONE_III_WEST']}   Zone IV: {zone_counts.get('ZONE_IV_COASTAL', 0)}")
         content_y -= 25
 
         blf.position(font_id, panel_x + 35, content_y, 0)

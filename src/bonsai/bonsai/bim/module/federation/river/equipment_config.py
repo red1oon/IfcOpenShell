@@ -61,6 +61,12 @@ EQUIPMENT_TYPES = {
         'icon': 'MOD_FLUIDSIM',
         'radius': 3.0
     },
+    'mangrove_islet': {
+        'name': 'Mangrove Islet',
+        'color': (0.13, 0.77, 0.37),  # Green #22c55e
+        'icon': 'WORLD',
+        'radius': 3.0
+    },
 }
 
 # =============================================================================
@@ -132,6 +138,16 @@ SENSOR_TYPE_ICONS = {
     'debris_radar': '📡',
     'bridge_clearance': '🌉',
     'siren_status': '🚨',
+
+    # Mangrove Islet sensors
+    'tide_level': '🌊',
+    'salinity': '🧂',
+    'water_temp': '🌡️',
+    'co2_atmospheric': '🌫️',
+    'dissolved_oxygen': '💧',
+    'soil_moisture': '🌱',
+    'turbidity': '☁️',
+    'sediment_accret': '🏖️',
 
     # Pollutant Sensor sensors
     'voc': '💨',
