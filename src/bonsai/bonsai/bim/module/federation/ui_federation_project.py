@@ -501,6 +501,36 @@ class BIM_PT_digital_twin(Panel):
         box.label(text="Visualization:", icon='SHADING_RENDERED')
         box.operator("bim.visualize_assets_by_condition", text="Color by Condition", icon='SHADING_SOLID')
 
+        # IoT Command Center (Phase 3) - Section that was missing after refactor
+        box = layout.box()
+        box.label(text="IoT Sensor Visualization:", icon='OUTLINER_OB_LIGHTPROBE')
+
+        # Check overlay status
+        from .tandem.sensor_overlay import get_sensor_overlay
+        overlay = get_sensor_overlay()
+
+        row = box.row(align=True)
+        row.scale_y = 1.5
+
+        if overlay.enabled:
+            # Enabled - show disable button
+            row.operator("bim.iot_disable_sensor_overlay", text="Hide Sensors", icon='HIDE_ON')
+            row.label(text=f"({len(overlay.sensors)} active)", icon='CHECKMARK')
+        else:
+            # Disabled - show enable button
+            row.operator("bim.iot_enable_sensor_overlay", text="Show Sensors", icon='HIDE_OFF')
+
+        # Info text
+        info_col = box.column(align=True)
+        info_col.scale_y = 0.6
+        if overlay.enabled:
+            info_col.label(text=f"✅ Showing {len(overlay.sensors)} animated sensors in viewport")
+            info_col.label(text="   🔵 Pulsing spheres = Temperature")
+            info_col.label(text="   🟦 Rotating cubes = Pressure")
+            info_col.label(text="   🔴 Blinking red = Alerts")
+        else:
+            info_col.label(text="Enable to see animated sensor markers in 3D")
+
 
 # =============================================================================
 # 9. NATURAL LANGUAGE QUERY
