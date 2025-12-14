@@ -319,13 +319,19 @@ class BIM_OT_equipment_export_kml(Operator):
 </div>"""
         return html
 
-    def generate_description_html(self, obj_name, eq_type, lat, lon, sensor_html):
+    def generate_description_html(self, obj_name, eq_type, lat, lon, sensor_html, marker_id=None):
         """Generate full description HTML for KML placemark."""
         sensor_content = sensor_html if sensor_html else '<p style="color: #999; font-style: italic;">No sensor data available</p>'
+
+        # Add marker_id to header if provided
+        header_text = f"{obj_name}"
+        if marker_id:
+            header_text = f"{obj_name} <span style=\"color: #999; font-size: 14px;\">(ID: {marker_id})</span>"
+
         return f"""
 <div style="font-family: Arial, sans-serif; width: 350px; padding: 15px;">
     <h2 style="color: #2c5364; margin: 0 0 15px 0; font-size: 20px; border-bottom: 2px solid #4fc3f7; padding-bottom: 10px;">
-        {obj_name}
+        {header_text}
     </h2>
     <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px;">
         <tr style="background: #f0f0f0;">
@@ -439,9 +445,9 @@ class BIM_OT_equipment_export_kml(Operator):
             ET.SubElement(placemark, 'name').text = ''  # Hide label on map
             ET.SubElement(placemark, 'styleUrl').text = f'#{eq_type}'
 
-            # Add description with sensor data
+            # Add description with sensor data (include marker_id in header)
             description_elem = ET.SubElement(placemark, 'description')
-            description_html = self.generate_description_html(name, eq_type, lat, lon, sensor_html)
+            description_html = self.generate_description_html(name, eq_type, lat, lon, sensor_html, marker_id)
             description_elem.text = f"<![CDATA[{description_html}]]>"
 
             # Add point coordinates

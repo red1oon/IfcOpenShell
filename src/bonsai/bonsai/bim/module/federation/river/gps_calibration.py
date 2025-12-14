@@ -15,32 +15,60 @@ from bpy.types import Operator
 
 
 class BIM_OT_equipment_recalibrate_gps_from_truth(Operator):
-    """Recalibrate GPS from truth file using affine transformation"""
+    """Recalibrate GPS for latest additions using oldest markers as anchors"""
     bl_idname = "bim.equipment_recalibrate_gps_from_truth"
-    bl_label = "Recalibrate GPS from Truth File"
+    bl_label = "Recalibrate For Latest Addition"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
         import sqlite3
 
-        truth_file = Path.home() / "Projects/IfcOpenShell/WORK_DIR/RIVER/RiverEcoModel/truthful.txt"
         db_path = Path.home() / "Projects/IfcOpenShell/WORK_DIR/RIVER/klang_river_perfect.db"
-
-        if not truth_file.exists():
-            self.report({'ERROR'}, f"Truth file not found: {truth_file}")
-            return {'CANCELLED'}
 
         if not db_path.exists():
             self.report({'ERROR'}, f"Database not found: {db_path}")
             return {'CANCELLED'}
 
-        # Read truth markers
-        truth_markers = self._read_truth_file(truth_file)
-        if not truth_markers:
-            self.report({'ERROR'}, "No valid reference markers found in truth file")
+        # Get oldest markers from database as anchors
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+
+        # Find oldest creation date
+        cursor.execute("""
+            SELECT MIN(created_at) FROM project_markers
+            WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+        """)
+        oldest_date = cursor.fetchone()[0]
+
+        if not oldest_date:
+            self.report({'ERROR'}, "No markers with timestamps found in database")
+            conn.close()
             return {'CANCELLED'}
 
-        self.report({'INFO'}, f"Loaded {len(truth_markers)} truth markers")
+        print(f"\nOldest marker date: {oldest_date}")
+
+        # Get anchor markers (oldest date, with GPS)
+        cursor.execute("""
+            SELECT name, location_x, location_y, latitude, longitude
+            FROM project_markers
+            WHERE created_at = ?
+              AND latitude IS NOT NULL
+              AND longitude IS NOT NULL
+              AND location_x IS NOT NULL
+              AND location_y IS NOT NULL
+        """, (oldest_date,))
+
+        anchor_rows = cursor.fetchall()
+        conn.close()
+
+        if len(anchor_rows) < 3:
+            self.report({'ERROR'}, f"Need at least 3 anchor markers, found {len(anchor_rows)}")
+            return {'CANCELLED'}
+
+        # Build anchor dictionary
+        anchor_markers = {row[0]: {'x': row[1], 'y': row[2], 'lat': row[3], 'lon': row[4]} for row in anchor_rows}
+
+        self.report({'INFO'}, f"Using {len(anchor_markers)} oldest markers as anchors ({oldest_date})")
 
         # Get equipment objects from Blender
         equipment_objects = [obj for obj in bpy.data.objects
@@ -107,23 +135,25 @@ class BIM_OT_equipment_recalibrate_gps_from_truth(Operator):
             self.report({'ERROR'}, f"XY mismatch detected on {len(xy_mismatches)} markers - sync Blend→DB first!")
             return {'CANCELLED'}
 
-        # Build reference points (XY from Blender, GPS from truth file)
+        # Build reference points from anchor markers (oldest dated markers from DB)
         references = []
         for obj in equipment_objects:
-            if obj.name in truth_markers:
+            if obj.name in anchor_markers:
+                anchor = anchor_markers[obj.name]
                 references.append({
                     'name': obj.name,
                     'x': obj.location.x,
                     'y': obj.location.y,
-                    'lat': truth_markers[obj.name]['lat'],
-                    'lon': truth_markers[obj.name]['lon']
+                    'lat': anchor['lat'],
+                    'lon': anchor['lon']
                 })
 
         if len(references) < 3:
-            self.report({'ERROR'}, f"Need at least 3 reference markers, found {len(references)}")
+            self.report({'ERROR'}, f"Need at least 3 anchor markers in scene, found {len(references)}")
             return {'CANCELLED'}
 
-        self.report({'INFO'}, f"Found {len(references)} reference markers in scene")
+        print(f"Found {len(references)} anchor markers in Blender scene")
+        self.report({'INFO'}, f"Building calibration from {len(references)} anchor markers")
 
         # Calculate affine transformation using least squares
         transform = self._calculate_affine_transform(references)
@@ -138,8 +168,8 @@ class BIM_OT_equipment_recalibrate_gps_from_truth(Operator):
         print(f"Latitude  = {transform['b1']:.10f}*X + {transform['b2']:.10f}*Y + {transform['b3']:.6f}")
         print(f"=================================\n")
 
-        # Apply transformation to all equipment objects (including truth markers)
-        # Truth markers used to CALCULATE transform, but then same transform applied to all
+        # Apply transformation to all equipment objects (including anchor markers)
+        # Anchor markers used to CALCULATE transform, but then same transform applied to all
         # This gives leeway/best-fit across all references using least squares
         updated_count = 0
         x_mean = transform['x_mean']
@@ -157,34 +187,12 @@ class BIM_OT_equipment_recalibrate_gps_from_truth(Operator):
             obj["longitude"] = lon
             updated_count += 1
 
-        self.report({'INFO'}, f"Updated GPS for {updated_count} equipment objects using least-squares fit from {len(references)} truth markers")
+        print(f"\n✅ Updated GPS for {updated_count} equipment objects")
+        print(f"   Calibration from {len(references)} anchor markers (oldest dated)")
+        print(f"   Newer markers recalibrated, anchors unchanged\n")
+
+        self.report({'INFO'}, f"Recalibrated {updated_count} objects using {len(references)} anchors")
         return {'FINISHED'}
-
-    def _read_truth_file(self, filepath):
-        """Parse truthful.txt: BOOM_TRAP_001, 3.001988, 101.389090;"""
-        markers = {}
-        try:
-            with open(filepath, 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    if not line or line.startswith('#'):
-                        continue
-
-                    # Remove trailing semicolon
-                    line = line.rstrip(';')
-
-                    # Parse: name, lat, lon
-                    parts = [p.strip() for p in line.split(',')]
-                    if len(parts) == 3:
-                        name = parts[0]
-                        lat = float(parts[1])
-                        lon = float(parts[2])
-                        markers[name] = {'lat': lat, 'lon': lon}
-        except Exception as e:
-            print(f"Error reading truth file: {e}")
-            return {}
-
-        return markers
 
     def _calculate_affine_transform(self, references):
         """

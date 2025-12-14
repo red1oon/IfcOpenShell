@@ -352,12 +352,25 @@ class BIM_OT_equipment_place_marker(Operator):
                         item['x'], item['y'], item['z'],
                         latitude, longitude, elevation, color_hex
                     )
+
+                    # Get the actual database ID from the saved marker
+                    cursor.execute("SELECT id FROM project_markers WHERE name = ?", (item['object_name'],))
+                    db_row = cursor.fetchone()
+                    if db_row:
+                        db_marker_id = db_row[0]
+                        # Update Blender object with database marker_id
+                        if 'object' in item and item['object']:
+                            item['object']["marker_id"] = db_marker_id
+                            item['marker_id'] = db_marker_id  # Also update PLACED_EQUIPMENT dict
+                            LOGGER.log(f"    → Assigned marker_id={db_marker_id} to object")
+
                     total_saved += 1
                     LOGGER.log(f"  Saved: {name} at ({item['x']:.1f}, {item['y']:.1f}, {item['z']:.1f})")
                     LOGGER.log(f"    GPS: {latitude:.6f}°N, {longitude:.6f}°E")
 
-                    # Auto-generate and save sensors
-                    sensors = create_sensors_for_equipment(equipment_type, marker_id, marker_id)
+                    # Auto-generate and save sensors (use db_marker_id if available)
+                    sensor_marker_id = db_marker_id if db_row else marker_id
+                    sensors = create_sensors_for_equipment(equipment_type, sensor_marker_id, sensor_marker_id)
                     for sensor in sensors:
                         river_utils.save_sensor_to_db(cursor, sensor)
                         total_sensors += 1
@@ -421,11 +434,11 @@ class BIM_OT_equipment_load_from_db(Operator):
             """)
 
             rows = cursor.fetchall()
-            conn.close()
 
             if not rows:
                 LOGGER.log("No equipment found in database")
                 self.report({'INFO'}, "No equipment in database")
+                conn.close()
                 return {'FINISHED'}
 
             LOGGER.log(f"Found {len(rows)} equipment markers in database")
@@ -468,22 +481,55 @@ class BIM_OT_equipment_load_from_db(Operator):
                 equipment_collections[eq_type] = eq_collection
 
             # Rebuild PLACED_EQUIPMENT from existing objects
+            # ALSO: Assign marker_id to objects that don't have it yet (retroactive fix)
+            LOGGER.log("Rebuilding PLACED_EQUIPMENT and assigning missing marker_ids...")
+            retroactive_count = 0
+
             for equipment_type in EQUIPMENT_TYPES.keys():
                 PLACED_EQUIPMENT[equipment_type] = []
 
             for eq_type, eq_coll in equipment_collections.items():
                 for obj in eq_coll.objects:
+                    # Try to get marker_id from object, or look it up in database by name
                     if "marker_id" in obj:
-                        PLACED_EQUIPMENT[eq_type].append({
-                            'id': obj.name,
-                            'number': len(PLACED_EQUIPMENT[eq_type]) + 1,
-                            'marker_id': obj["marker_id"],
-                            'x': obj.location.x,
-                            'y': obj.location.y,
-                            'z': obj.location.z,
-                            'object': obj,
-                            'object_name': obj.name
-                        })
+                        marker_id = obj["marker_id"]
+                    else:
+                        # Retroactive fix: Look up marker_id from database by object name
+                        cursor.execute("SELECT id FROM project_markers WHERE name = ?", (obj.name,))
+                        db_row = cursor.fetchone()
+                        if db_row:
+                            marker_id = db_row[0]
+                            obj["marker_id"] = marker_id  # Assign to object for future lookups
+                            retroactive_count += 1
+                            LOGGER.log(f"  ✓ Retroactive: Assigned marker_id={marker_id} to {obj.name}")
+                        else:
+                            # Object exists in Blender but not in database - skip
+                            LOGGER.log(f"  WARNING: {obj.name} not found in database, skipping", error=True)
+                            continue
+
+                    PLACED_EQUIPMENT[eq_type].append({
+                        'id': obj.name,
+                        'number': len(PLACED_EQUIPMENT[eq_type]) + 1,
+                        'marker_id': marker_id,
+                        'x': obj.location.x,
+                        'y': obj.location.y,
+                        'z': obj.location.z,
+                        'object': obj,
+                        'object_name': obj.name
+                    })
+
+            if retroactive_count > 0:
+                LOGGER.log(f"✅ Assigned marker_id to {retroactive_count} objects retroactively")
+            else:
+                LOGGER.log(f"All objects already have marker_id property")
+
+            # Debug: Show PLACED_EQUIPMENT registry summary
+            total_registered = sum(len(items) for items in PLACED_EQUIPMENT.values())
+            LOGGER.log(f"PLACED_EQUIPMENT registry: {total_registered} markers registered")
+            for eq_type, items in PLACED_EQUIPMENT.items():
+                if items:
+                    sample = items[0] if items else None
+                    LOGGER.log(f"  {eq_type}: {len(items)} markers (sample marker_id={sample.get('marker_id', 'MISSING') if sample else 'N/A'})")
 
             # Create empties ONLY for NEW markers (incremental)
             total_loaded = 0
@@ -542,9 +588,10 @@ class BIM_OT_equipment_load_from_db(Operator):
 
                 # GPS integration: Store GPS coordinates for carbon credits traceability
                 # These custom properties enable auto-fill in carbon credit batch creation
+                # IMPORTANT: Use same property names as GPS Auto-Sync (latitude/longitude)
                 if latitude is not None and longitude is not None:
-                    empty["gps_lat"] = latitude
-                    empty["gps_lon"] = longitude
+                    empty["latitude"] = latitude
+                    empty["longitude"] = longitude
                     empty["equipment_type"] = marker_type  # For filtering in carbon credits UI
 
                 # Link to type-specific collection
@@ -571,6 +618,9 @@ class BIM_OT_equipment_load_from_db(Operator):
                 LOGGER.log(f"  Added NEW: {name} (marker_id={marker_id}) - DB:({x:.1f}, {y:.1f}, {z:.1f}) → Display:({stored_x:.1f}, {stored_y:.1f}, {stored_z:.1f})")
 
             LOGGER.log(f"✅ Incremental load complete: {total_loaded} new markers added, {skipped} existing markers preserved")
+
+            # Close database connection after all operations
+            conn.close()
 
             # Force gizmo refresh by triggering viewport update
             # Gizmos read from PLACED_EQUIPMENT which now has offset-applied coords
@@ -1754,52 +1804,217 @@ class BIM_OT_equipment_dump_gps(Operator):
     bl_label = "Dump GPS to File"
     bl_options = {'REGISTER'}
 
+    include_db_comparison: bpy.props.BoolProperty(
+        name="Include DB Comparison",
+        description="Include XY/GPS comparison with database",
+        default=False
+    )
+
+    copy_marker_ids: bpy.props.BoolProperty(
+        name="Copy marker_id from DB",
+        description="Copy marker_id property from database to Blender objects (patch/fix)",
+        default=False
+    )
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "include_db_comparison")
+        layout.prop(self, "copy_marker_ids")
+
     def execute(self, context):
         import os
+        import sqlite3
+        from pathlib import Path
         from . import river_utils
 
-        # Get all equipment objects
-        equipment_objects = river_utils.get_all_equipment_objects()
+        # PATCH: Copy marker_id from DB to Blender objects
+        if self.copy_marker_ids:
+            db_path = Path.home() / "Projects/IfcOpenShell/WORK_DIR/RIVER/klang_river_perfect.db"
+            if not db_path.exists():
+                self.report({'ERROR'}, f"Database not found: {db_path}")
+                return {'CANCELLED'}
+
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.cursor()
+
+            # Get ALL objects from River Equipment collections (not just name pattern matches)
+            all_objects = []
+            parent_collection_name = "River Equipment"
+            if parent_collection_name in bpy.data.collections:
+                parent_coll = bpy.data.collections[parent_collection_name]
+                for child_coll in parent_coll.children:
+                    for obj in child_coll.objects:
+                        all_objects.append(obj)
+
+            copied = 0
+            skipped_have_id = 0
+            not_in_db = 0
+
+            for obj in all_objects:
+                # Skip objects that already have marker_id (safe - don't touch existing)
+                if "marker_id" in obj:
+                    skipped_have_id += 1
+                    continue
+
+                # Match by name: Blender object name = DB project_markers.name
+                cursor.execute("SELECT id FROM project_markers WHERE name = ?", (obj.name,))
+                row = cursor.fetchone()
+                if row:
+                    obj["marker_id"] = row[0]
+                    copied += 1
+                else:
+                    not_in_db += 1
+
+            conn.close()
+
+            msg = f"Copied marker_id to {copied} objects (skipped {skipped_have_id} with existing IDs, {not_in_db} not in DB)"
+            self.report({'INFO'}, msg)
+            LOGGER.log(msg)
+            return {'FINISHED'}
+
+        # Get ALL objects from River Equipment collections (don't assume names)
+        equipment_objects = []
+        parent_collection_name = "River Equipment"
+
+        print(f"\n=== DUMP: Getting objects from collections ===")
+        print(f"Looking for parent collection: '{parent_collection_name}'")
+
+        if parent_collection_name in bpy.data.collections:
+            parent_coll = bpy.data.collections[parent_collection_name]
+            print(f"Found parent collection with {len(parent_coll.children)} child collections")
+
+            for child_coll in parent_coll.children:
+                print(f"  Checking child collection: '{child_coll.name}' ({len(child_coll.objects)} objects)")
+                for obj in child_coll.objects:
+                    equipment_objects.append(obj)
+
+            print(f"Total equipment objects found: {len(equipment_objects)}")
+        else:
+            print(f"WARNING: Parent collection '{parent_collection_name}' not found!")
+            print(f"Available collections: {list(bpy.data.collections.keys())}")
 
         if not equipment_objects:
-            self.report({'WARNING'}, "No equipment objects found")
+            self.report({'WARNING'}, "No equipment objects found in River Equipment collections")
             return {'CANCELLED'}
 
         # Output file
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filepath = os.path.expanduser(f"~/Downloads/gps_dump_{timestamp}.txt")
+        if self.include_db_comparison:
+            filepath = os.path.expanduser(f"~/Downloads/blender_vs_db_dump_{timestamp}.txt")
+        else:
+            filepath = os.path.expanduser(f"~/Downloads/gps_dump_{timestamp}.txt")
 
-        # Track min/max for summary
-        lats = []
-        lons = []
         lines = []
 
-        for obj in equipment_objects:
-            lat = obj.get('latitude')
-            lon = obj.get('longitude')
+        if self.include_db_comparison:
+            # Dump with DB comparison
+            db_path = Path.home() / "Projects/IfcOpenShell/WORK_DIR/RIVER/klang_river_perfect.db"
 
-            if lat is not None and lon is not None:
-                lines.append(f"{obj.name} lat={lat} lon={lon}")
-                lats.append(lat)
-                lons.append(lon)
-            else:
-                lines.append(f"{obj.name} lat=None lon=None")
+            if not db_path.exists():
+                self.report({'ERROR'}, f"Database not found: {db_path}")
+                return {'CANCELLED'}
+
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.cursor()
+
+            lines.append("="*80)
+            lines.append("BLENDER vs DATABASE COMPARISON - XY and GPS")
+            lines.append("="*80)
+            lines.append("")
+
+            for obj in equipment_objects:
+                # Blender data
+                blender_x = obj.location.x
+                blender_y = obj.location.y
+                blender_lat = obj.get('latitude')
+                blender_lon = obj.get('longitude')
+                marker_id = obj.get('marker_id')
+
+                # If no marker_id, show as "N/A" to confirm it doesn't exist
+                if marker_id is None:
+                    lines.append(f"[N/A] {obj.name} - NO MARKER_ID PROPERTY")
+                    lines.append(f"  Blender XY:  ({blender_x:>10.1f}, {blender_y:>10.1f})")
+                    if blender_lat and blender_lon:
+                        lines.append(f"  Blender GPS: ({blender_lat:.6f}, {blender_lon:.6f})")
+                    lines.append("")
+                    continue
+
+                # DB data - query by marker_id, not name
+                cursor.execute("""
+                    SELECT name, location_x, location_y, latitude, longitude
+                    FROM project_markers
+                    WHERE id = ?
+                """, (marker_id,))
+
+                row = cursor.fetchone()
+                if not row:
+                    lines.append(f"[{marker_id}] {obj.name} - marker_id NOT FOUND IN DATABASE")
+                    lines.append(f"  Blender XY:  ({blender_x:>10.1f}, {blender_y:>10.1f})")
+                    if blender_lat and blender_lon:
+                        lines.append(f"  Blender GPS: ({blender_lat:.6f}, {blender_lon:.6f})")
+                    lines.append("")
+                    continue
+
+                db_name, db_x, db_y, db_lat, db_lon = row
+
+                # Calculate diffs
+                xy_diff = ((blender_x - db_x)**2 + (blender_y - db_y)**2)**0.5
+
+                gps_diff_m = 0.0
+                if blender_lat and blender_lon and db_lat and db_lon:
+                    lat_diff_m = abs(blender_lat - db_lat) * 111000
+                    lon_diff_m = abs(blender_lon - db_lon) * 111000 * 0.9
+                    gps_diff_m = (lat_diff_m**2 + lon_diff_m**2)**0.5
+
+                lines.append(f"[{marker_id:3d}] {obj.name}")
+                lines.append(f"  Blender XY:  ({blender_x:>10.1f}, {blender_y:>10.1f})")
+                lines.append(f"  DB XY:       ({db_x:>10.1f}, {db_y:>10.1f})")
+                lines.append(f"  XY Diff:     {xy_diff:>10.1f}m")
+                if blender_lat and blender_lon:
+                    lines.append(f"  Blender GPS: ({blender_lat:.6f}, {blender_lon:.6f})")
+                if db_lat and db_lon:
+                    lines.append(f"  DB GPS:      ({db_lat:.6f}, {db_lon:.6f})")
+                if gps_diff_m > 0:
+                    lines.append(f"  GPS Diff:    {gps_diff_m:>10.1f}m")
+                lines.append("")
+
+            conn.close()
+
+        else:
+            # Simple GPS dump (original behavior)
+            lats = []
+            lons = []
+
+            for obj in equipment_objects:
+                lat = obj.get('latitude')
+                lon = obj.get('longitude')
+
+                if lat is not None and lon is not None:
+                    lines.append(f"{obj.name} lat={lat} lon={lon}")
+                    lats.append(lat)
+                    lons.append(lon)
+                else:
+                    lines.append(f"{obj.name} lat=None lon=None")
+
+            lines.append("")
+            lines.append('='*80)
+            lines.append('SUMMARY')
+            lines.append('='*80)
+            lines.append(f'Total count: {len(equipment_objects)}')
+            if lats and lons:
+                lines.append(f'Min lat: {min(lats)}')
+                lines.append(f'Max lat: {max(lats)}')
+                lines.append(f'Min lon: {min(lons)}')
+                lines.append(f'Max lon: {max(lons)}')
 
         # Write to file
         with open(filepath, 'w') as f:
             f.write('\n'.join(lines))
-            f.write('\n\n')
-            f.write('='*80 + '\n')
-            f.write('SUMMARY\n')
-            f.write('='*80 + '\n')
-            f.write(f'Total count: {len(equipment_objects)}\n')
-            if lats and lons:
-                f.write(f'Min lat: {min(lats)}\n')
-                f.write(f'Max lat: {max(lats)}\n')
-                f.write(f'Min lon: {min(lons)}\n')
-                f.write(f'Max lon: {max(lons)}\n')
 
-        self.report({'INFO'}, f"GPS dumped to {filepath}")
-        LOGGER.log(f"GPS dumped to: {filepath}")
+        self.report({'INFO'}, f"Dump written to {filepath}")
+        LOGGER.log(f"Dump written to: {filepath}")
 
         return {'FINISHED'}

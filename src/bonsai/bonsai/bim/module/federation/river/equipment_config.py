@@ -67,6 +67,48 @@ EQUIPMENT_TYPES = {
         'icon': 'WORLD',
         'radius': 3.0
     },
+    'wave_breaker': {
+        'name': 'Wave Breaker',
+        'color': (0.055, 0.647, 0.914),  # Sky Blue #0ea5e9
+        'icon': 'MOD_WAVE',
+        'radius': 3.0
+    },
+    'erosion_control': {
+        'name': 'Erosion Control',
+        'color': (0.635, 0.384, 0.027),  # Amber/Brown #a16207
+        'icon': 'MESH_GRID',
+        'radius': 3.0
+    },
+    'floating_wetland': {
+        'name': 'Floating Wetland',
+        'color': (0.086, 0.639, 0.290),  # Dark Green #16a34a
+        'icon': 'FORCE_TURBULENCE',
+        'radius': 3.0
+    },
+    'biochar_barrier': {
+        'name': 'Biochar Barrier',
+        'color': (0.216, 0.255, 0.318),  # Dark Gray #374151
+        'icon': 'MESH_PLANE',
+        'radius': 3.0
+    },
+    'drone_base': {
+        'name': 'Drone Base',
+        'color': (0.486, 0.227, 0.929),  # Violet #7c3aed
+        'icon': 'OUTLINER_OB_FORCE_FIELD',
+        'radius': 3.0
+    },
+    'environmental_station': {
+        'name': 'Environmental Station',
+        'color': (0.031, 0.569, 0.698),  # Cyan #0891b2
+        'icon': 'OUTLINER_DATA_LIGHTPROBE',
+        'radius': 3.0
+    },
+    'pir_security': {
+        'name': 'PIR Security',
+        'color': (0.863, 0.149, 0.149),  # Red #dc2626
+        'icon': 'OUTLINER_DATA_CAMERA',
+        'radius': 3.0
+    },
 }
 
 # =============================================================================
@@ -148,6 +190,7 @@ SENSOR_TYPE_ICONS = {
     'soil_moisture': '🌱',
     'turbidity': '☁️',
     'sediment_accret': '🏖️',
+    'sediment_accretion': '🏖️',  # Full name
 
     # Pollutant Sensor sensors
     'voc': '💨',
@@ -157,6 +200,64 @@ SENSOR_TYPE_ICONS = {
     'oil_grease': '🛢️',
     'cyanide': '☠️',
     'phenols': '⚗️',
+
+    # Wave Breaker sensors
+    'wave_height': '🌊',
+    'wave_period': '⏱️',
+    'wave_direction': '🧭',
+    'structural_stress': '⚙️',
+    'water_level': '📏',
+    'current_velocity': '💨',
+    'sediment_transport': '🏖️',
+    'structural_integrity': '🏗️',
+
+    # Erosion Control sensors
+    'soil_movement': '⛰️',
+    'bank_stability': '🏔️',
+    'pore_pressure': '💧',
+    'inclinometer': '📐',
+    'groundwater': '💦',
+    'crack_width': '📏',
+
+    # Floating Wetland sensors
+    'nutrient_uptake': '🌿',
+    'plant_health': '🌱',
+    'turbidity_reduction': '✨',
+    'buoyancy': '🎈',
+    'root_depth': '🌿',
+
+    # Biochar Barrier sensors
+    'filtration_rate': '💧',
+    'biochar_saturation': '⚫',
+    'heavy_metal_capture': '☢️',
+    'organic_removal': '♻️',
+    'pressure_differential': '📊',
+    'gabion_integrity': '🧱',
+    'submerged_fence_status': '🚧',
+
+    # Drone Base sensors
+    'drone_battery': '🔋',
+    'flights_today': '✈️',
+    'thermal_camera': '🔥',
+    'rgb_camera': '📷',
+    'gps_satellites': '🛰️',
+    'data_storage': '💾',
+
+    # Environmental Station sensors
+    'air_temperature': '🌡️',
+    'humidity': '💧',
+    'co2_level': '🌫️',
+    'air_quality_index': '🌫️',
+    'barometric_pressure': '🌐',
+
+    # PIR Security sensors
+    'pir_motion': '👁️',
+    'edge_ai_alert': '🚨',
+    'intrusion_count': '⚠️',
+    'thermal_anomaly': '🔥',
+    'camera_status': '📹',
+    'night_vision': '🌙',
+    'alert_response_time': '⏱️',
 }
 
 # Sensor color mappings - RGB tuples for dashboard visualization
@@ -233,6 +334,76 @@ SENSOR_TYPE_COLORS = {
     'oil_grease': (0.1, 0.1, 0.1),         # Oil Black
     'cyanide': (1.0, 1.0, 0.5),            # Toxic Yellow
     'phenols': (1.0, 0.4, 0.6),            # Rose
+
+    # Wave Breaker sensors
+    'wave_height': (0.0, 0.6, 0.9),        # Deep Blue
+    'wave_period': (0.3, 0.7, 0.95),       # Light Blue
+    'wave_direction': (0.2, 0.5, 0.8),     # Ocean Blue
+    'structural_stress': (1.0, 0.5, 0.0),  # Orange Alert
+    'water_level': (0.4, 0.7, 0.95),       # Sky Blue
+    'current_velocity': (0.0, 0.8, 0.9),   # Cyan
+    'sediment_transport': (0.8, 0.7, 0.5), # Sand
+    'structural_integrity': (0.2, 0.8, 0.2), # Green Status
+
+    # Erosion Control sensors
+    'soil_movement': (0.6, 0.4, 0.2),      # Soil Brown
+    'bank_stability': (0.4, 0.7, 0.3),     # Earth Green
+    'pore_pressure': (0.5, 0.6, 0.8),      # Steel Blue
+    'inclinometer': (0.9, 0.6, 0.2),       # Orange
+    'groundwater': (0.2, 0.5, 0.7),        # Water Blue
+    'crack_width': (0.9, 0.3, 0.2),        # Warning Red
+
+    # Floating Wetland sensors
+    'nutrient_uptake': (0.3, 0.8, 0.4),    # Lime Green
+    'plant_health': (0.2, 0.9, 0.3),       # Bright Green
+    'turbidity_reduction': (0.6, 0.8, 0.95), # Clean Blue
+    'buoyancy': (0.9, 0.7, 0.2),           # Buoy Yellow
+    'root_depth': (0.5, 0.4, 0.2),         # Root Brown
+
+    # Mangrove Islet sensors
+    'tide_level': (0.2, 0.6, 0.9),         # Tidal Blue
+    'salinity': (0.3, 0.7, 0.8),           # Saline Cyan
+    'water_temp': (1.0, 0.5, 0.2),         # Warm Orange
+    'co2_atmospheric': (0.5, 0.5, 0.5),    # CO2 Grey
+    'sediment_accretion': (0.7, 0.6, 0.4), # Sediment Tan
+    'soil_moisture': (0.6, 0.4, 0.2),      # Soil Brown (alias)
+
+    # Biochar Barrier sensors
+    'filtration_rate': (0.3, 0.6, 0.9),    # Flow Blue
+    'biochar_saturation': (0.2, 0.2, 0.2), # Charcoal
+    'heavy_metal_capture': (0.8, 0.2, 0.2), # Alert Red
+    'organic_removal': (0.4, 0.8, 0.4),    # Success Green
+    'pressure_differential': (0.7, 0.5, 0.3), # Pressure Tan
+    'gabion_integrity': (0.5, 0.5, 0.5),   # Stone Grey
+    'submerged_fence_status': (0.3, 0.5, 0.7), # Underwater Blue
+
+    # Drone Base sensors
+    'drone_battery': (0.2, 0.9, 0.2),      # Charge Green
+    'flights_today': (0.4, 0.6, 0.9),      # Sky Blue
+    'thermal_camera': (1.0, 0.3, 0.2),     # Heat Red
+    'rgb_camera': (0.6, 0.4, 0.9),         # Camera Purple
+    'gps_satellites': (0.9, 0.8, 0.2),     # Satellite Gold
+    'data_storage': (0.3, 0.7, 0.9),       # Data Blue
+    'visibility': (0.8, 0.9, 0.95),        # Clear White
+
+    # Environmental Station sensors
+    'air_temperature': (1.0, 0.5, 0.2),    # Warm Orange
+    'humidity': (0.4, 0.7, 0.9),           # Humid Blue
+    'co2_level': (0.6, 0.6, 0.6),          # CO2 Grey
+    'air_quality_index': (0.7, 0.8, 0.3),  # AQI Yellow-Green
+    'barometric_pressure': (0.7, 0.7, 0.8), # Pressure Grey
+    'wind_direction': (0.5, 0.8, 0.95),    # Wind Cyan
+    'wind_speed': (0.3, 0.7, 0.9),         # Breeze Blue
+
+    # PIR Security sensors
+    'pir_motion': (1.0, 0.8, 0.2),         # Motion Yellow
+    'edge_ai_alert': (1.0, 0.2, 0.2),      # AI Alert Red
+    'intrusion_count': (0.9, 0.4, 0.1),    # Warning Orange
+    'thermal_anomaly': (1.0, 0.1, 0.4),    # Thermal Magenta
+    'fence_integrity': (0.4, 0.8, 0.4),    # Fence Green
+    'camera_status': (0.6, 0.5, 0.9),      # Camera Purple
+    'night_vision': (0.3, 0.2, 0.5),       # Night Purple
+    'alert_response_time': (0.9, 0.6, 0.1), # Response Amber
 }
 
 # =============================================================================

@@ -70,10 +70,18 @@ class RealRiverViewer {
             'boom_trap': true,
             'water_quality': true,
             'pollutant_sensor': true,
-            'wildlife_camera': true,
+            'biodiversity': true,
             'flood_monitor': true,
-            'biochar_facility': true,
-            'mrf_site': true
+            'biochar': true,
+            'mrf': true,
+            'mangrove_islet': true,
+            'wave_breaker': true,
+            'erosion_control': true,
+            'floating_wetland': true,
+            'biochar_barrier': true,
+            'drone_base': true,
+            'environmental_station': true,
+            'pir_security': true
         };
 
         // Animation
@@ -205,13 +213,18 @@ class RealRiverViewer {
             'boom_trap': 'boom_trap',
             'water_quality': 'water_quality',
             'pollutant_sensor': 'pollutant_sensor',
-            'wildlife_camera': 'wildlife_camera',
+            'biodiversity': 'biodiversity',
             'flood_monitor': 'flood_monitor',
-            'biochar': 'biochar_facility',
-            'biochar_facility': 'biochar_facility',
-            'mrf': 'mrf_site',
-            'mrf_site': 'mrf_site',
-            'biodiversity': 'wildlife_camera'
+            'biochar': 'biochar',
+            'mrf': 'mrf',
+            'mangrove_islet': 'mangrove_islet',
+            'wave_breaker': 'wave_breaker',
+            'erosion_control': 'erosion_control',
+            'floating_wetland': 'floating_wetland',
+            'biochar_barrier': 'biochar_barrier',
+            'drone_base': 'drone_base',
+            'environmental_station': 'environmental_station',
+            'pir_security': 'pir_security'
         };
 
         // Update each legend item

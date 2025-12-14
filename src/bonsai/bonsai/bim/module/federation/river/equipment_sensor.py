@@ -437,7 +437,7 @@ class FilterPanelUI:
 
     def __init__(self, global_alert_view):
         self.alert_view = global_alert_view
-        self.panel_width = 550
+        self.panel_width = 400  # Reduced width to give more viewport space
         self.panel_height = 780  # Increased to cover all equipment types + bottom text
 
         # Track clickable regions for interaction
@@ -937,16 +937,30 @@ class FilterPanelUI:
 
         content_y -= 18  # Increased spacing to separate "All Types" from individual types
 
-        # Individual equipment type checkboxes
+        # Individual equipment type checkboxes (2-column layout)
         blf.size(font_id, 13)
-        for eq_type, eq_info in EQUIPMENT_TYPES.items():
+        equipment_types_list = list(EQUIPMENT_TYPES.items())
+        col_width = (self.panel_width - 70) // 2  # Divide available space into 2 columns
+
+        for idx, (eq_type, eq_info) in enumerate(equipment_types_list):
             checked = eq_type in self.alert_view.filter_equipment_types
             eq_label = eq_info['name']
 
-            # Draw button/checkbox background
-            button_x = panel_x + 50  # Indent more to show it's under "All Types"
+            # Determine column position (left or right)
+            col = idx % 2  # 0 = left, 1 = right
+            if col == 0:
+                # Left column
+                button_x = panel_x + 30
+            else:
+                # Right column
+                button_x = panel_x + 30 + col_width + 10
+
+            # Only move down when starting left column (every 2 items)
+            if col == 0 and idx > 0:
+                content_y -= 22
+
             button_y = content_y - 3
-            button_width = self.panel_width - 80
+            button_width = col_width - 5
             button_height = 20
 
             # Button background color
@@ -1032,7 +1046,11 @@ class FilterPanelUI:
                 'label': eq_label
             })
 
+        # Move down after last row (if odd number of items, add extra space)
+        if len(equipment_types_list) % 2 == 0:
             content_y -= 22
+        else:
+            content_y -= 44  # Extra space for last odd item
 
         # Separator
         content_y -= 10
