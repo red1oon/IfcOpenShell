@@ -21,10 +21,18 @@ EQUIPMENT_TYPE_MAPPING = {
     'water_quality': ['water_quality'],
     'biodiversity': ['biodiversity'],
     'wildlife_camera': ['wildlife'],
-    'biochar_facility': ['biochar'],
-    'mrf_site': ['mrf'],
+    'biochar': ['biochar'],
+    'biochar_barrier': ['biochar_barrier'],
+    'mrf': ['mrf'],
     'pollutant_sensor': ['pollutant'],
-    'flood_monitor': ['flood']
+    'flood_monitor': ['flood'],
+    'mangrove_islet': ['mangrove', 'islet'],
+    'wave_breaker': ['wave', 'breaker'],
+    'erosion_control': ['erosion'],
+    'floating_wetland': ['wetland', 'floating'],
+    'drone_base': ['drone'],
+    'environmental_station': ['environmental', 'weather', 'station'],
+    'pir_security': ['pir', 'security']
 }
 
 EQUIPMENT_COLORS_HEX = {
@@ -32,10 +40,18 @@ EQUIPMENT_COLORS_HEX = {
     'water_quality': '#4ECDC4',
     'biodiversity': '#00FF00',
     'wildlife_camera': '#00FF00',
-    'biochar_facility': '#99EDD9',
-    'mrf_site': '#FFBFCC',
+    'biochar': '#99EDD9',
+    'biochar_barrier': '#8B7355',
+    'mrf': '#FFBFCC',
     'pollutant_sensor': '#AB96D7',
-    'flood_monitor': '#5D9DD5'
+    'flood_monitor': '#5D9DD5',
+    'mangrove_islet': '#22c55e',
+    'wave_breaker': '#06b6d4',
+    'erosion_control': '#a855f7',
+    'floating_wetland': '#10b981',
+    'drone_base': '#f59e0b',
+    'environmental_station': '#3b82f6',
+    'pir_security': '#ef4444'
 }
 
 EQUIPMENT_COLORS_KML = {
@@ -43,10 +59,18 @@ EQUIPMENT_COLORS_KML = {
     'water_quality': 'ffc4cd4e',
     'biodiversity': 'ff00ff00',
     'wildlife_camera': 'ff00ff00',
-    'biochar_facility': 'ffd9ed99',
-    'mrf_site': 'ffccbfff',
+    'biochar': 'ffd9ed99',
+    'biochar_barrier': 'ff55738b',
+    'mrf': 'ffccbfff',
     'pollutant_sensor': 'ffd796ab',
-    'flood_monitor': 'ffd59d5d'
+    'flood_monitor': 'ffd59d5d',
+    'mangrove_islet': 'ff5ec522',
+    'wave_breaker': 'ffd4b606',
+    'erosion_control': 'fff755a8',
+    'floating_wetland': 'ff81b910',
+    'drone_base': 'ff0b9ef5',
+    'environmental_station': 'fff6823b',
+    'pir_security': 'ff4444ef'
 }
 
 
@@ -78,7 +102,11 @@ def get_all_equipment_objects():
             if obj.name.startswith(('BOOM_TRAP_', 'WATER_QUALITY_',
                                    'BIODIVERSITY_', 'WILDLIFE_',
                                    'BIOCHAR_', 'MRF_',
-                                   'POLLUTANT_', 'FLOOD_MONITOR_'))]
+                                   'POLLUTANT_', 'FLOOD_MONITOR_',
+                                   'MANGROVE_ISLET_', 'WAVE_BREAKER_',
+                                   'EROSION_CONTROL_', 'FLOATING_WETLAND_',
+                                   'DRONE_BASE_', 'ENVIRONMENTAL_STATION_',
+                                   'PIR_SECURITY_', 'BIOCHAR_BARRIER_'))]
 
 
 def fetch_sensor_data_from_db(cursor, marker_name):

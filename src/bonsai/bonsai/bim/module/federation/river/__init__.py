@@ -86,6 +86,8 @@ classes = (
     gps_sync_handler.BIM_OT_disable_gps_auto_sync,
     gps_sync_handler.BIM_OT_update_selected_gps,
     gps_sync_handler.BIM_OT_recalibrate_gps_affine,
+    gps_sync_handler.BIM_OT_verify_xy_gps_correlation,
+    gps_sync_handler.BIM_OT_sync_gps_to_database,
     gps_sync_handler.BIM_PT_gps_auto_sync,
 
     # GPS Calibration Utils
