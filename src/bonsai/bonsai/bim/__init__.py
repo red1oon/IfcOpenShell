@@ -87,6 +87,7 @@ modules = {
     "light": None,
     "alignment": None,
     "federation": None,  # Multi-model federation & coordination
+    "mep_engineering": None,  # MEP routing & conduit engineering
     # Uncomment this line to enable loading of the demo module. Happy hacking!
     # The name "demo" must correlate to a folder name in `bim/module/`.
     # "demo": None,

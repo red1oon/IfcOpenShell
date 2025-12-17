@@ -11,8 +11,12 @@ from collections import defaultdict
 from pathlib import Path
 
 
-# Path constants
-RIVER_WORK_DIR = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER")
+# Path constants - detect platform
+import platform
+if platform.system() == "Windows":
+    RIVER_WORK_DIR = Path("C:/Dev/bonsai-extensions/WORK_DIR/databases")
+else:
+    RIVER_WORK_DIR = Path("/home/red1/Projects/IfcOpenShell/WORK_DIR/RIVER")
 RIVER_DB_PATH = RIVER_WORK_DIR / "klang_river_perfect.db"
 
 # Equipment type constants
