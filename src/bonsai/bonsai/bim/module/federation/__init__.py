@@ -43,6 +43,7 @@ from . import ui, prop, operator, discipline_legend, cache_monitor, color_palett
 # from . import ui_federation_tab  # Old experimental sandbox - replaced by ui_federation_project
 from . import ui_federation_project  # Clean enterprise layout under Project Overview
 from . import river  # River Equipment Monitoring - Item 11
+from . import pdf_terrain  # PDF Terrain Extraction - Item 12
 # from . import equipment_placement  # Equipment Placement Tool - Item 12 (ARCHIVED - rebuilding POC)
 from .loading.unified_progressive_loader import GlassOutlineLoader
 from .clash import gizmo
@@ -174,6 +175,9 @@ classes = (
 
     # River Equipment Monitoring - Item 11
     *river.classes,
+
+    # PDF Terrain Extraction - Item 12
+    *pdf_terrain.classes,
 
     # Equipment Placement - Item 12 (ARCHIVED - rebuilding POC)
     # equipment_placement.BIM_PT_equipment_placement,
@@ -440,10 +444,14 @@ def register():
         bpy.app.handlers.load_post.append(restore_equipment_on_load)
 
     # Register equipment context menu (right-click on equipment)
-    bpy.types.VIEW3D_MT_object_context_menu.append(river.equipment_placement.menu_func)
+    # Note: river module handles its own context menu in river/__init__.py register()
+    # bpy.types.VIEW3D_MT_object_context_menu.append(river.equipment_maintenance.menu_func)
 
     # Equipment Placement properties (ARCHIVED - rebuilding POC)
     # equipment_placement.register()
+
+    # PDF Terrain module properties
+    pdf_terrain.register()
 
     print("✓ federation module registered (consolidated + Digital Twin + River Equipment + 7D Maintenance)")
 
@@ -456,7 +464,8 @@ def unregister():
         bpy.app.handlers.load_post.remove(restore_equipment_on_load)
 
     # Remove equipment context menu
-    bpy.types.VIEW3D_MT_object_context_menu.remove(river.equipment_placement.menu_func)
+    # Note: river module handles its own context menu in river/__init__.py unregister()
+    # bpy.types.VIEW3D_MT_object_context_menu.remove(river.equipment_maintenance.menu_func)
 
     # Unregister federation analysis properties from BIMClashProperties
     prop.unregister_federation_properties()
@@ -474,6 +483,9 @@ def unregister():
 
     # Equipment Placement cleanup (ARCHIVED - rebuilding POC)
     # equipment_placement.unregister()
+
+    # PDF Terrain module cleanup
+    pdf_terrain.unregister()
 
     # Remove properties from Scene
     del bpy.types.Scene.BIMFederationProperties
