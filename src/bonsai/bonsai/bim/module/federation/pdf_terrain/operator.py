@@ -480,12 +480,7 @@ class BIM_OT_pdf_terrain_save(Operator):
         base_name = pdf_path.stem
 
         try:
-            # Save .blend file
-            blend_path = output_dir / f"{base_name}.blend"
-            bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
-            self.report({'INFO'}, f"Saved: {blend_path}")
-
-            # Export .ifc file
+            # Export IFC file only (user saves .blend manually)
             ifc_path = output_dir / f"{base_name}.ifc"
 
             # Check if IfcOpenShell is available
@@ -493,15 +488,16 @@ class BIM_OT_pdf_terrain_save(Operator):
                 import ifcopenshell
                 import ifcopenshell.api
 
-                # Create minimal IFC file with terrain
+                # Create IFC file with terrain points
                 self._export_terrain_ifc(context, ifc_path)
-                self.report({'INFO'}, f"Saved: {ifc_path}")
+                self.report({'INFO'}, f"Saved IFC: {ifc_path}")
 
             except ImportError:
-                self.report({'WARNING'}, "IfcOpenShell not available, IFC export skipped")
+                self.report({'ERROR'}, "IfcOpenShell not available - cannot export IFC")
+                return {'CANCELLED'}
 
             props.output_path = str(output_dir)
-            props.status_message = f"Saved to {output_dir.name}/"
+            props.status_message = f"Saved IFC to {output_dir.name}/"
 
             return {'FINISHED'}
 
@@ -562,9 +558,11 @@ class BIM_OT_pdf_terrain_save(Operator):
                 "PixelY": obj.get("PixelY", 0.0)
             })
 
-            # Get sphere geometry
+            # Get sphere geometry in world coordinates
             mesh = obj.data
-            verts = [(v.co.x, v.co.y, v.co.z) for v in mesh.vertices]
+            verts = [(obj.location.x + v.co.x,
+                      obj.location.y + v.co.y,
+                      obj.location.z + v.co.z) for v in mesh.vertices]
             faces = [[v for v in f.vertices] for f in mesh.polygons]
 
             # Create geometry representation (sphere)
