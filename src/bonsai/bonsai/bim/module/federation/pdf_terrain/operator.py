@@ -510,19 +510,17 @@ class BIM_OT_pdf_terrain_save(Operator):
             return {'CANCELLED'}
 
     def _export_terrain_ifc(self, context, ifc_path):
-        """Export terrain mesh as IFC file"""
+        """Export terrain points as IFC file"""
         import ifcopenshell
         import ifcopenshell.api
 
-        # Find terrain object
-        terrain_obj = None
-        for obj in context.scene.objects:
-            if obj.type == 'MESH' and 'Terrain' in obj.name:
-                terrain_obj = obj
-                break
-
-        if not terrain_obj:
+        # Find Ground_Elevations collection
+        ground_col = bpy.data.collections.get("Ground_Elevations")
+        if not ground_col or len(ground_col.objects) == 0:
+            self.report({'WARNING'}, "No ground elevation points found to export")
             return
+
+        print(f"[PDF_TERRAIN] Exporting {len(ground_col.objects)} elevation points to IFC...")
 
         # Create IFC file
         ifc = ifcopenshell.api.run("project.create_file")
@@ -539,24 +537,50 @@ class BIM_OT_pdf_terrain_save(Operator):
         # Assign site to project
         ifcopenshell.api.run("aggregate.assign_object", ifc, relating_object=project, products=[site])
 
-        # Create terrain as IfcGeographicElement
-        terrain = ifcopenshell.api.run("root.create_entity", ifc,
-            ifc_class="IfcGeographicElement", name="Terrain_TIN")
+        # Export each elevation point as IfcGeographicElement
+        terrain_elements = []
+        for obj in ground_col.objects:
+            if obj.type != 'MESH':
+                continue
 
-        # Get mesh data
-        mesh = terrain_obj.data
-        verts = [(v.co.x, v.co.y, v.co.z) for v in mesh.vertices]
-        faces = [[v for v in f.vertices] for f in mesh.polygons]
+            # Get elevation and position from custom properties
+            elevation = obj.get("Elevation", obj.location.z)
+            point_id = obj.get("PointID", obj.name)
 
-        # Create geometry representation
-        if verts and faces:
-            representation = ifcopenshell.api.run("geometry.add_mesh_representation", ifc,
-                context=body, vertices=[verts], faces=[faces])
-            ifcopenshell.api.run("geometry.assign_representation", ifc,
-                product=terrain, representation=representation)
+            # Create IFC geographic element for this point
+            point_elem = ifcopenshell.api.run("root.create_entity", ifc,
+                ifc_class="IfcGeographicElement",
+                name=f"ElevationPoint_{elevation:.3f}")
 
-        # Assign to site
-        ifcopenshell.api.run("spatial.assign_container", ifc, relating_structure=site, products=[terrain])
+            # Add custom properties (Pset)
+            pset = ifcopenshell.api.run("pset.add_pset", ifc, product=point_elem, name="Survey_Data")
+            ifcopenshell.api.run("pset.edit_pset", ifc, pset=pset, properties={
+                "PointID": point_id,
+                "Elevation": elevation,
+                "PointType": obj.get("SurveyPointType", "GroundElevation"),
+                "PixelX": obj.get("PixelX", 0.0),
+                "PixelY": obj.get("PixelY", 0.0)
+            })
+
+            # Get sphere geometry
+            mesh = obj.data
+            verts = [(v.co.x, v.co.y, v.co.z) for v in mesh.vertices]
+            faces = [[v for v in f.vertices] for f in mesh.polygons]
+
+            # Create geometry representation (sphere)
+            if verts and faces:
+                representation = ifcopenshell.api.run("geometry.add_mesh_representation", ifc,
+                    context=body, vertices=[verts], faces=[faces])
+                ifcopenshell.api.run("geometry.assign_representation", ifc,
+                    product=point_elem, representation=representation)
+
+            terrain_elements.append(point_elem)
+
+        # Assign all points to site
+        if terrain_elements:
+            ifcopenshell.api.run("spatial.assign_container", ifc,
+                relating_structure=site, products=terrain_elements)
 
         # Write file
         ifc.write(str(ifc_path))
+        print(f"[PDF_TERRAIN] IFC export complete: {len(terrain_elements)} points with survey data")
