@@ -16,6 +16,24 @@ Converts survey drawings (PDF/PNG) to 3D terrain:
 - IFC export with survey data properties
 - Reference image overlay in Blender
 
+## Proof of Concept Sample Files
+
+See working example with real survey data:
+- **Location**: `bim/module/federation/pdf_terrain/samples/`
+- **Includes**:
+  - `survey_highres_GV.json` - Google Vision API cache (426 KB)
+  - `survey_highres_extracted.json` - 689 extracted elevation points (203 KB)
+  - `SAMPLES.md` - Full documentation
+
+**Validates**:
+- ✓ 689 points extracted from real civil survey
+- ✓ Coordinate accuracy with affine transform
+- ✓ API caching workflow (no repeat charges)
+- ✓ IFC export with survey properties
+- ✓ End-to-end PDF → Blender → IFC pipeline
+
+**Try It**: Follow instructions in `samples/SAMPLES.md` to test with provided cache files (no API call needed).
+
 ## Requirements
 
 ### 1. Blender
