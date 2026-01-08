@@ -88,23 +88,18 @@ C:\Dev\bonsai-extensions\WORK_DIR\vision-api.json
 
 ## Installation
 
-PDF Terrain is integrated into Bonsai. Update your Bonsai addon:
+**→ See [INSTALL_RED1OON.md](INSTALL_RED1OON.md) for complete installation instructions ←**
 
-**Option 1: Git Pull** (if installed via git):
-```bash
-cd <blender_addons>/bonsai
-git pull origin v0.8.0  # or your branch
-```
+PDF Terrain is available in **Red1OON's enhanced Bonsai branch**.
 
-**Option 2: Download** (manual install):
-1. Download Bonsai from [IfcOpenShell releases](https://github.com/IfcOpenShell/IfcOpenShell/releases)
-2. Extract to Blender addons folder
-3. Enable in Blender → Edit → Preferences → Add-ons
+**Quick Summary**:
+1. Install from Red1OON's fork: https://github.com/red1oon/IfcOpenShell (branch: feature/IFC4_DB)
+2. Install Python dependencies in Blender
+3. Setup Google Vision API credentials
 
-**Verify Installation**:
-- Open Blender
-- Press `N` in 3D Viewport to show sidebar
-- Look for "PDF Terrain" tab
+**Assumes**: You already have Bonsai addon installed and running.
+
+**Full step-by-step guide**: [INSTALL_RED1OON.md](INSTALL_RED1OON.md)
 
 ## Usage
 
