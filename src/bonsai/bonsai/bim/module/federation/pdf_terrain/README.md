@@ -167,10 +167,32 @@ PDF Terrain is available in **Red1OON's enhanced Bonsai branch**.
 2. Select `survey_highres.dxf`
 3. Points appear as 3D POINT entities with text labels
 4. Command: **ZE** (Zoom Extents) to view all
-5. Layers:
-   - Turn on/off SURVEY-POINTS to show/hide points
-   - Turn on/off SURVEY-LABELS to show/hide text
+5. Make points visible:
+   - Type: **PDMODE** → Enter **35** (circle with X marker)
+   - Type: **PDSIZE** → Enter **1** (or larger for bigger points)
+   - Type: **REGEN** to refresh display
 6. No scale issues - direct 1:1 import ✓
+
+**Layer Management in AutoCAD**:
+
+The DXF file uses separate layers for easy control:
+- **SURVEY-POINTS** (green) - 3D POINT entities at elevation coordinates
+- **SURVEY-LABELS** (yellow) - TEXT entities showing elevation values
+
+**Control layers**:
+1. Type: **LAYER** (or click Layer Properties icon)
+2. Toggle lightbulb to hide/show each layer:
+   - Hide labels, keep points visible
+   - Hide points, keep labels visible
+   - Show both, or hide both
+
+**Quick operations**:
+- **LAYISO** - Select any object → isolates its layer
+- **LAYUNISO** - Restores all layers
+- **Freeze layers** - Click snowflake icon (better performance)
+- **Change colors** - Modify point/label colors independently
+
+**Best practice**: Keep labels on during review, turn off when creating surfaces or doing calculations.
 
 **Civil 3D - Create Surface from Points**:
 1. Import DXF (steps above)
