@@ -82,7 +82,7 @@ class BIM_PT_pdf_terrain(Panel):
         row = box.row()
         row.scale_y = 1.5
         row.enabled = props.mesh_generated
-        row.operator("bim.pdf_terrain_save", text="Export .ifc", icon="EXPORT")
+        row.operator("bim.pdf_terrain_save", text="Export IFC + DXF", icon="EXPORT")
 
         if props.output_path:
             col = box.column(align=True)
@@ -92,8 +92,9 @@ class BIM_PT_pdf_terrain(Panel):
         # Info section
         layout.separator()
         info_box = layout.box()
-        info_box.label(text="Output File:", icon="INFO")
+        info_box.label(text="Output Files:", icon="INFO")
         col = info_box.column(align=True)
         col.scale_y = 0.7
-        col.label(text="  survey.ifc - For Revit/AutoCAD import")
+        col.label(text="  survey.ifc - For Revit/BIM software")
+        col.label(text="  survey.dxf - For AutoCAD/Civil 3D (recommended)")
         col.label(text="  (Use File > Save to save .blend manually)")

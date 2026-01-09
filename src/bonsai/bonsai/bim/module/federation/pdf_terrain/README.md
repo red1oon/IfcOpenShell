@@ -123,10 +123,11 @@ PDF Terrain is available in **Red1OON's enhanced Bonsai branch**.
 [PDF_TERRAIN] Camera: (210.1, 148.4, 504.2)
 ```
 
-**3. Export IFC**
-- Click **"Export .ifc"** button
-- IFC file saved to same folder as input image
-- Ready for Revit/AutoCAD import
+**3. Export IFC + DXF**
+- Click **"Export IFC + DXF"** button
+- Files saved to same folder as input image:
+  - `survey_highres.ifc` - For Revit/BIM software
+  - `survey_highres.dxf` - For AutoCAD/Civil 3D (recommended)
 
 **4. Save Blender File** (optional)
 - File → Save or Save As
@@ -150,22 +151,41 @@ PDF Terrain is available in **Red1OON's enhanced Bonsai branch**.
   - PointType
 - Organized under IfcSite
 
+**In DXF File**:
+- 3D POINT entities at correct X, Y, Z coordinates
+- TEXT entities showing elevation values
+- Organized in layers:
+  - **SURVEY-POINTS** - Point markers (green)
+  - **SURVEY-LABELS** - Elevation text (yellow)
+- Units: Meters
+- Compatible with all AutoCAD-based products
+
 ### For Autodesk Users
 
-**Revit**:
+**AutoCAD / Civil 3D (Recommended - Use DXF)**:
+1. Command: **OPEN** or **INSERT**
+2. Select `survey_highres.dxf`
+3. Points appear as 3D POINT entities with text labels
+4. Command: **ZE** (Zoom Extents) to view all
+5. Layers:
+   - Turn on/off SURVEY-POINTS to show/hide points
+   - Turn on/off SURVEY-LABELS to show/hide text
+6. No scale issues - direct 1:1 import ✓
+
+**Civil 3D - Create Surface from Points**:
+1. Import DXF (steps above)
+2. Home → Create Surface → From Point Cloud
+3. Select all survey points
+4. Generate TIN surface for grading/earthwork
+
+**Revit (Use IFC)**:
 1. Insert → Link IFC
-2. Select exported .ifc file
+2. Select `survey_highres.ifc` file
 3. View survey points with properties
 4. Use elevations for site modeling
 
-**AutoCAD / Civil 3D**:
-1. Insert → Import → IFC
-2. Points import with elevation data
-3. Extract Z values from properties
-4. Create surface from points
-
 **Navisworks**:
-1. Append → IFC
+1. Append → IFC or DXF
 2. Review point cloud
 3. Coordinate with other models
 

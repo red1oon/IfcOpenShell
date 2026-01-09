@@ -480,24 +480,41 @@ class BIM_OT_pdf_terrain_save(Operator):
         base_name = pdf_path.stem
 
         try:
-            # Export IFC file only (user saves .blend manually)
+            # Export both IFC and DXF files
             ifc_path = output_dir / f"{base_name}.ifc"
+            dxf_path = output_dir / f"{base_name}.dxf"
 
-            # Check if IfcOpenShell is available
+            # Export IFC
             try:
                 import ifcopenshell
                 import ifcopenshell.api
 
-                # Create IFC file with terrain points
                 self._export_terrain_ifc(context, ifc_path)
-                self.report({'INFO'}, f"Saved IFC: {ifc_path}")
+                self.report({'INFO'}, f"Saved IFC: {ifc_path.name}")
 
             except ImportError:
-                self.report({'ERROR'}, "IfcOpenShell not available - cannot export IFC")
+                self.report({'WARNING'}, "IfcOpenShell not available - IFC export skipped")
+                ifc_path = None
+
+            # Export DXF
+            try:
+                self._export_terrain_dxf(context, dxf_path)
+                self.report({'INFO'}, f"Saved DXF: {dxf_path.name}")
+
+            except Exception as e:
+                self.report({'WARNING'}, f"DXF export failed: {str(e)}")
+                dxf_path = None
+
+            # Check if at least one export succeeded
+            if not ifc_path and not dxf_path:
+                self.report({'ERROR'}, "All exports failed")
                 return {'CANCELLED'}
 
             props.output_path = str(output_dir)
-            props.status_message = f"Saved IFC to {output_dir.name}/"
+            exports = []
+            if ifc_path: exports.append("IFC")
+            if dxf_path: exports.append("DXF")
+            props.status_message = f"Saved {' + '.join(exports)} to {output_dir.name}/"
 
             return {'FINISHED'}
 
@@ -521,8 +538,21 @@ class BIM_OT_pdf_terrain_save(Operator):
         # Create IFC file
         ifc = ifcopenshell.api.run("project.create_file")
 
+        # Assign units (CRITICAL for Autodesk software)
+        # Length units: Meters
+        length_unit = ifc.create_entity("IfcSIUnit", UnitType="LENGTHUNIT", Name="METRE")
+        # Area units: Square meters
+        area_unit = ifc.create_entity("IfcSIUnit", UnitType="AREAUNIT", Name="SQUARE_METRE")
+        # Volume units: Cubic meters
+        volume_unit = ifc.create_entity("IfcSIUnit", UnitType="VOLUMEUNIT", Name="CUBIC_METRE")
+
         # Create project structure
         project = ifcopenshell.api.run("root.create_entity", ifc, ifc_class="IfcProject", name="Terrain Project")
+
+        # Assign units to project
+        unit_assignment = ifc.create_entity("IfcUnitAssignment", Units=[length_unit, area_unit, volume_unit])
+        project.UnitsInContext = unit_assignment
+
         site = ifcopenshell.api.run("root.create_entity", ifc, ifc_class="IfcSite", name="Site")
 
         # Create context
@@ -582,3 +612,295 @@ class BIM_OT_pdf_terrain_save(Operator):
         # Write file
         ifc.write(str(ifc_path))
         print(f"[PDF_TERRAIN] IFC export complete: {len(terrain_elements)} points with survey data")
+
+    def _export_terrain_dxf(self, context, dxf_path):
+        """Export terrain points as DXF file (AutoCAD format)"""
+        # Find Ground_Elevations collection
+        ground_col = bpy.data.collections.get("Ground_Elevations")
+        if not ground_col or len(ground_col.objects) == 0:
+            self.report({'WARNING'}, "No ground elevation points found to export")
+            return
+
+        print(f"[PDF_TERRAIN] Exporting {len(ground_col.objects)} elevation points to DXF...")
+
+        try:
+            import ezdxf
+            print("[PDF_TERRAIN] Using ezdxf library for DXF export")
+
+            # Use ezdxf library for proper DXF generation
+            doc = ezdxf.new('R2010')  # AutoCAD 2010 format
+            msp = doc.modelspace()
+
+            # Create layers
+            doc.layers.new('SURVEY-POINTS', dxfattribs={'color': 3})  # Green
+            doc.layers.new('SURVEY-LABELS', dxfattribs={'color': 2})  # Yellow
+
+            # Add each point
+            for obj in ground_col.objects:
+                if obj.type != 'MESH':
+                    continue
+
+                x = obj.location.x
+                y = obj.location.y
+                z = obj.location.z
+                elevation = obj.get("Elevation", z)
+
+                # Add point
+                msp.add_point((x, y, z), dxfattribs={'layer': 'SURVEY-POINTS'})
+
+                # Add text label
+                msp.add_text(
+                    f"{elevation:.3f}",
+                    dxfattribs={
+                        'layer': 'SURVEY-LABELS',
+                        'height': 1.2
+                    }
+                ).set_placement((x, y, z + 0.2))
+
+            # Set units to meters
+            doc.units = ezdxf.units.M
+
+            # Save file
+            doc.saveas(str(dxf_path))
+            print(f"[PDF_TERRAIN] ezdxf DXF export complete: {len(ground_col.objects)} points")
+            return
+
+        except ImportError as e:
+            # Fallback to manual DXF generation if ezdxf not available
+            print(f"[PDF_TERRAIN] ezdxf not available: {e}")
+            print("[PDF_TERRAIN] Using manual DXF generation (may have errors)...")
+            pass
+        except Exception as e:
+            # Catch any other errors in ezdxf code
+            print(f"[PDF_TERRAIN] ezdxf export failed: {e}")
+            print("[PDF_TERRAIN] Falling back to manual DXF generation...")
+            pass
+
+        # DXF header with all required tables
+        dxf_content = """0
+SECTION
+2
+HEADER
+9
+$ACADVER
+1
+AC1015
+9
+$INSUNITS
+70
+6
+0
+ENDSEC
+0
+SECTION
+2
+TABLES
+0
+TABLE
+2
+VPORT
+70
+0
+0
+ENDTAB
+0
+TABLE
+2
+LTYPE
+70
+1
+0
+LTYPE
+2
+CONTINUOUS
+70
+0
+3
+Solid line
+72
+65
+73
+0
+40
+0.0
+0
+ENDTAB
+0
+TABLE
+2
+LAYER
+70
+2
+0
+LAYER
+2
+0
+70
+0
+62
+7
+6
+CONTINUOUS
+0
+LAYER
+2
+SURVEY-POINTS
+70
+0
+62
+3
+6
+CONTINUOUS
+0
+LAYER
+2
+SURVEY-LABELS
+70
+0
+62
+2
+6
+CONTINUOUS
+0
+ENDTAB
+0
+TABLE
+2
+STYLE
+70
+1
+0
+STYLE
+2
+STANDARD
+70
+0
+40
+0.0
+41
+1.0
+50
+0.0
+71
+0
+42
+0.2
+3
+txt
+4
+
+0
+ENDTAB
+0
+TABLE
+2
+VIEW
+70
+0
+0
+ENDTAB
+0
+TABLE
+2
+UCS
+70
+0
+0
+ENDTAB
+0
+TABLE
+2
+APPID
+70
+1
+0
+APPID
+2
+ACAD
+70
+0
+0
+ENDTAB
+0
+TABLE
+2
+DIMSTYLE
+70
+0
+0
+ENDTAB
+0
+TABLE
+2
+BLOCK_RECORD
+70
+0
+0
+ENDTAB
+0
+ENDSEC
+0
+SECTION
+2
+BLOCKS
+0
+ENDSEC
+0
+SECTION
+2
+ENTITIES
+"""
+
+        # Add each point as POINT entity and TEXT entity
+        for obj in ground_col.objects:
+            if obj.type != 'MESH':
+                continue
+
+            x = obj.location.x
+            y = obj.location.y
+            z = obj.location.z
+            elevation = obj.get("Elevation", z)
+            point_id = obj.get("PointID", "")
+
+            # Add 3D POINT entity
+            dxf_content += f"""0
+POINT
+8
+SURVEY-POINTS
+10
+{x:.6f}
+20
+{y:.6f}
+30
+{z:.6f}
+"""
+
+            # Add TEXT entity (elevation label)
+            dxf_content += f"""0
+TEXT
+8
+SURVEY-LABELS
+10
+{x:.6f}
+20
+{y:.6f}
+30
+{z + 0.2:.6f}
+40
+1.2
+1
+{elevation:.3f}
+"""
+
+        # DXF footer
+        dxf_content += """0
+ENDSEC
+0
+EOF
+"""
+
+        # Write DXF file
+        with open(dxf_path, 'w') as f:
+            f.write(dxf_content)
+
+        print(f"[PDF_TERRAIN] DXF export complete: {len(ground_col.objects)} points")
