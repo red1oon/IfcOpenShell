@@ -1,0 +1,193 @@
+{
+  "document_info": {
+    "project_name": "RUMAH",
+    "drawing_number": null,
+    "scale": null,
+    "date": null,
+    "page_count": 8,
+    "page_types": {
+      "1": "floor_plan",
+      "2": "front_elevation",
+      "3": "right_elevation",
+      "4": "rear_elevation",
+      "5": "left_elevation",
+      "6": "roof_plan",
+      "7": "site_plan",
+      "8": "schedule"
+    }
+  },
+  "building_envelope": {
+    "width_mm": 11200,
+    "depth_mm": 8500,
+    "height_mm": 3000,
+    "floor_count": 1
+  },
+  "grid_system": {
+    "columns": {
+      "labels": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ],
+      "spacing_mm": [
+        1300,
+        3100,
+        3700,
+        3100
+      ]
+    },
+    "rows": {
+      "labels": [
+        "1",
+        "5",
+        "3",
+        "4",
+        "2"
+      ],
+      "spacing_mm": [
+        1500,
+        1800,
+        3100,
+        2100
+      ]
+    },
+    "calibration": {}
+  },
+  "roof": {
+    "type": "hip",
+    "pitch_degrees": 25,
+    "overhang_mm": 600
+  },
+  "rooms": {
+    "count": 6,
+    "list": [
+      {
+        "name_malay": "DAPUR",
+        "name_english": "Kitchen",
+        "position_px": [
+          1243.0,
+          838.0
+        ]
+      },
+      {
+        "name_malay": "ANJUNG",
+        "name_english": "Porch",
+        "position_px": [
+          1248.5,
+          1583.0
+        ]
+      },
+      {
+        "name_malay": "RUANG MAKAN",
+        "name_english": "Dining Room",
+        "position_px": [
+          1173.5,
+          966.5
+        ]
+      },
+      {
+        "name_malay": "BILIK UTAMA",
+        "name_english": "Master Bedroom",
+        "position_px": [
+          769.5,
+          1264.0
+        ]
+      },
+      {
+        "name_malay": "RUANG TAMU",
+        "name_english": "Living Room",
+        "position_px": [
+          1202.5,
+          1287.5
+        ]
+      },
+      {
+        "name_malay": "BILIK 2",
+        "name_english": "Bedroom 2",
+        "position_px": [
+          1670.5,
+          1250.5
+        ]
+      }
+    ]
+  },
+  "openings": {
+    "doors": {
+      "count": 3,
+      "specs": {
+        "D1": {
+          "width_mm": 900,
+          "height_mm": 2100,
+          "type": "single"
+        },
+        "D2": {
+          "width_mm": 900,
+          "height_mm": 2100,
+          "type": "single"
+        },
+        "D3": {
+          "width_mm": 750,
+          "height_mm": 2100,
+          "type": "louvre"
+        }
+      },
+      "instances": []
+    },
+    "windows": {
+      "count": 3,
+      "specs": {
+        "W1": {
+          "width_mm": 1800,
+          "height_mm": 1000,
+          "sill_mm": 900,
+          "type": "3panel"
+        },
+        "W2": {
+          "width_mm": 1200,
+          "height_mm": 1000,
+          "sill_mm": 900,
+          "type": "2panel"
+        },
+        "W3": {
+          "width_mm": 600,
+          "height_mm": 500,
+          "sill_mm": 1500,
+          "type": "tophung"
+        }
+      },
+      "instances": []
+    }
+  },
+  "fixtures": {
+    "sanitary": [
+      {
+        "type": "basin",
+        "x": 2250.5,
+        "y": 565.0
+      },
+      {
+        "type": "shower",
+        "x": 2261.0,
+        "y": 692.0
+      }
+    ],
+    "kitchen": [
+      {
+        "type": "sink",
+        "x": 2471.0,
+        "y": 496.5
+      }
+    ],
+    "electrical": []
+  },
+  "extraction_status": {
+    "document_info": "completed",
+    "building_envelope": "completed",
+    "grid_system": "completed",
+    "roof": "completed",
+    "rooms": "completed",
+    "openings": "completed",
+    "fixtures": "completed"
+  }
+}

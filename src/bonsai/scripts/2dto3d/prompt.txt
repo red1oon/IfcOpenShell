@@ -1,0 +1,71 @@
+# 2D-to-3D Pipeline - Session Prompt
+# Updated: 2025-12-20
+
+## STATUS: Scripts created, ready to run pipeline
+
+---
+
+## FOLDER STRUCTURE (DONE)
+
+2dto3d/
+  INPUT/
+    TB-LKTN HOUSE.pdf        <- Source PDF (ready)
+  CACHE/                      <- Will have: page1.png, page1_raw.json
+  OUTPUT/                     <- Will have: placements.json, .blend
+  config/
+    building_config.json      <- Grid: 11.2m x 8.5m (done)
+    object_library_map.json   <- D1-D3, W1-W3 mappings (done)
+  scripts/
+    pdf_to_png.py             <- Step 1 (done)
+    vision_extract.py         <- Step 2 (done)
+    floor_plan_parser.py      <- Step 3 (done)
+    blender_import.py         <- Step 4 (done)
+
+---
+
+## NEXT: RUN PIPELINE (4 steps)
+
+Set credentials first:
+$env:GOOGLE_APPLICATION_CREDENTIALS="C:\Dev\bonsai-extensions\WORK_DIR\vision-api.json"
+
+Then run:
+
+cd C:/Dev/bonsai-extensions/IfcOpenShell/src/bonsai/scripts/2dto3d/scripts
+
+Step 1 - PDF to PNG:
+py pdf_to_png.py "../INPUT/TB-LKTN HOUSE.pdf" ../CACHE 300 1
+
+Step 2 - Vision API (ONE call, cached):
+py vision_extract.py ../CACHE/page1.png ../CACHE
+
+Step 3 - Parse and transform:
+py floor_plan_parser.py ../CACHE/page1_raw.json ../config/building_config.json ../config/object_library_map.json ../OUTPUT/placements.json
+
+Step 4 - Blender:
+"C:/Program Files/Blender Foundation/Blender 5.0/blender.exe" --background --python blender_import.py -- ../OUTPUT/placements.json ../CACHE/page1.png ../OUTPUT/TB-LKTN_HOUSE.blend
+
+---
+
+## EXPECTED RESULTS
+
+- Grid: A-E, 1-5 (for scale calibration)
+- 7 doors: D1 x2, D2 x3, D3 x2
+- 7 windows: W1 x1, W2 x4, W3 x2
+
+---
+
+## BUG FIXES (in code)
+
+1. PIL for dimensions (not API bounds)
+2. Blender scale: (width, width, 1)
+3. Image anchor: (0, 0)
+4. Y-flip applied
+5. Accept . and , decimals
+
+---
+
+## REFERENCE
+
+- archive/EMBED_IN_CODE.py - bug fix reference
+- PDF_to_Blender_Survey_Pipeline_Spec.md
+- 2D_to_3D_Pipeline_Revamp_Guide.html

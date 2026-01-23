@@ -1,0 +1,19 @@
+{
+  "project_name": "TB-LKTN House",
+  "scale_notation": "1:100",
+  "grid_width_m": 11.2,
+  "grid_height_m": 8.5,
+  "building_height_m": 3.0,
+  "wall_thickness_m": 0.15,
+  "grid_labels": {
+    "columns": ["A", "B", "C", "D", "E"],
+    "rows": ["1", "2", "3", "4", "5"]
+  },
+  "default_heights": {
+    "door": 0.0,
+    "window_sill": 1.0,
+    "switch": 1.2,
+    "outlet": 0.3,
+    "ceiling": 3.0
+  }
+}

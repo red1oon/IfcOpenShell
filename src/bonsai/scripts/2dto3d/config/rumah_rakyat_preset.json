@@ -1,0 +1,268 @@
+{
+  "preset_name": "RUMAH_RAKYAT_3BILIK",
+  "version": "1.0",
+  "description": "Malaysian affordable housing preset - walls derived from doors and grid",
+
+  "grid_pattern": {
+    "columns": {
+      "labels": ["A", "B", "C", "D", "E"],
+      "wall_at": ["B", "D"],
+      "note": "Interior vertical walls align with grid B and D"
+    },
+    "rows": {
+      "labels": ["1", "5", "3", "4", "2"],
+      "order": "back_to_front",
+      "wall_at": ["5", "3"],
+      "note": "Row 5 separates wet area, Row 3 separates bedrooms on right"
+    }
+  },
+
+  "wall_derivation_rules": {
+    "rule_1_door_to_envelope": {
+      "description": "From interior door, extend wall to building envelope or grid intersection",
+      "logic": "D2 on grid B → wall runs from row5 to row4 along X=B"
+    },
+    "rule_2_grid_alignment": {
+      "description": "Interior walls align with grid markers A,B,C,D,E and row numbers",
+      "vertical_walls": ["B", "D"],
+      "horizontal_walls": ["5", "3"]
+    },
+    "rule_3_envelope_connection": {
+      "description": "All interior walls must connect to exterior envelope or another interior wall",
+      "validation": "no floating walls"
+    }
+  },
+
+  "interior_walls_pattern": {
+    "WALL_COL_B": {
+      "type": "vertical",
+      "grid_column": "B",
+      "from_row": "1",
+      "to_row": "4",
+      "doors_on_wall": ["D2_BILIK_UTAMA", "D3_BILIK_MANDI"],
+      "separates": ["left_rooms", "center_hall"]
+    },
+    "WALL_COL_D": {
+      "type": "vertical",
+      "grid_column": "D",
+      "from_row": "1",
+      "to_row": "4",
+      "doors_on_wall": ["D2_BILIK_1", "D2_BILIK_2"],
+      "separates": ["right_rooms", "center_hall"]
+    },
+    "WALL_ROW_5": {
+      "type": "horizontal",
+      "grid_row": "5",
+      "from_column": "A",
+      "to_column": "D",
+      "doors_on_wall": ["D2_DAPUR", "D3_BILIK_MANDI"],
+      "separates": ["back_wet_area", "living_area"],
+      "note": "Does NOT extend to column E - BILIK 1 extends to back"
+    },
+    "WALL_ROW_3_RIGHT": {
+      "type": "horizontal",
+      "grid_row": "3",
+      "from_column": "D",
+      "to_column": "E",
+      "doors_on_wall": [],
+      "separates": ["BILIK_1", "BILIK_2"],
+      "note": "Only on right side between bedrooms"
+    }
+  },
+
+  "room_definitions": {
+    "BILIK_MANDI": {
+      "type": "bathroom",
+      "grid_cell": {"col": ["A", "B"], "row": ["1", "mid"]},
+      "min_area_m2": 1.8,
+      "min_width_m": 1.2,
+      "shape": "squarish",
+      "must_have": ["door_D3", "window_W3"],
+      "fixtures": ["WC", "shower", "basin"]
+    },
+    "RUANG_BASAH": {
+      "type": "wet_kitchen",
+      "grid_cell": {"col": ["A", "B"], "row": ["mid", "5"]},
+      "min_area_m2": 1.5,
+      "shape": "squarish",
+      "adjacent_to": ["BILIK_MANDI"]
+    },
+    "DAPUR": {
+      "type": "kitchen",
+      "grid_cell": {"col": ["B", "D"], "row": ["1", "5"]},
+      "min_area_m2": 6.0,
+      "shape": "squarish",
+      "is_open_plan": true,
+      "open_to": ["RUANG_MAKAN"],
+      "must_have": ["window_W2"],
+      "note": "NO wall between DAPUR and RUANG_MAKAN - thin line boundary"
+    },
+    "BILIK_1": {
+      "type": "bedroom",
+      "grid_cell": {"col": ["D", "E"], "row": ["1", "3"]},
+      "min_area_m2": 9.0,
+      "shape": "squarish",
+      "must_have": ["door_D2", "window_W2"]
+    },
+    "BILIK_UTAMA": {
+      "type": "master_bedroom",
+      "grid_cell": {"col": ["A", "B"], "row": ["5", "4"]},
+      "min_area_m2": 9.0,
+      "shape": "squarish",
+      "must_have": ["door_D2", "window_W1"]
+    },
+    "RUANG_MAKAN": {
+      "type": "dining",
+      "grid_cell": {"col": ["B", "D"], "row": ["5", "3"]},
+      "is_open_plan": true,
+      "open_to": ["DAPUR", "RUANG_TAMU"]
+    },
+    "RUANG_TAMU": {
+      "type": "living",
+      "grid_cell": {"col": ["B", "D"], "row": ["3", "4"]},
+      "is_open_plan": true,
+      "open_to": ["RUANG_MAKAN", "ANJUNG"]
+    },
+    "BILIK_2": {
+      "type": "bedroom",
+      "grid_cell": {"col": ["D", "E"], "row": ["3", "4"]},
+      "min_area_m2": 9.0,
+      "shape": "squarish",
+      "must_have": ["door_D2", "window_W2"]
+    },
+    "ANJUNG": {
+      "type": "porch",
+      "grid_cell": {"col": ["B", "D"], "row": ["4", "2"]},
+      "is_open_plan": true,
+      "open_to": ["RUANG_TAMU"],
+      "has_main_door": true
+    }
+  },
+
+  "open_plan_zones": {
+    "LIVING_ZONE": {
+      "rooms": ["RUANG_TAMU", "RUANG_MAKAN", "ANJUNG"],
+      "rule": "NO walls between these rooms"
+    },
+    "KITCHEN_DINING": {
+      "rooms": ["DAPUR", "RUANG_MAKAN"],
+      "rule": "NO wall - thin line boundary only"
+    }
+  },
+
+  "door_mapping": {
+    "D1": {
+      "type": "main_entry",
+      "location": "exterior_front",
+      "on_wall": "EXT_WALL_FRONT",
+      "leads_to": "ANJUNG",
+      "size_mm": {"width": 900, "height": 2100}
+    },
+    "D2": {
+      "type": "interior_bedroom",
+      "location": "on_grid_vertical_wall",
+      "placement_rule": "center_of_room_depth",
+      "size_mm": {"width": 900, "height": 2100},
+      "instances": ["BILIK_UTAMA", "BILIK_1", "BILIK_2", "DAPUR"]
+    },
+    "D3": {
+      "type": "bathroom_louvre",
+      "location": "on_grid_horizontal_wall",
+      "placement_rule": "near_corner",
+      "size_mm": {"width": 750, "height": 2100},
+      "instances": ["BILIK_MANDI"]
+    }
+  },
+
+  "window_mapping": {
+    "W1": {
+      "type": "large_3panel",
+      "size_mm": {"width": 1800, "height": 1000},
+      "sill_mm": 900,
+      "rooms": ["BILIK_UTAMA"],
+      "wall": "exterior_left"
+    },
+    "W2": {
+      "type": "medium_2panel",
+      "size_mm": {"width": 1200, "height": 1000},
+      "sill_mm": 900,
+      "rooms": ["DAPUR", "BILIK_1", "BILIK_2"],
+      "wall": "exterior"
+    },
+    "W3": {
+      "type": "small_tophung",
+      "size_mm": {"width": 600, "height": 500},
+      "sill_mm": 1500,
+      "rooms": ["BILIK_MANDI"],
+      "wall": "exterior",
+      "note": "high window for privacy"
+    }
+  },
+
+  "validation_rules": {
+    "room_shape_check": {
+      "description": "Rooms should be squarish",
+      "ratio_min": 0.5,
+      "ratio_max": 2.0,
+      "formula": "width/depth must be between 0.5 and 2.0"
+    },
+    "room_closure_check": {
+      "description": "Each room must be enclosed by walls",
+      "exception": "open_plan rooms share boundaries"
+    },
+    "door_on_wall_check": {
+      "description": "Every door must be on a wall",
+      "validation": "door position aligns with wall position"
+    },
+    "minimum_dimensions_UBBL": {
+      "BATHROOM": {
+        "min_width_m": 1.5,
+        "min_depth_m": 1.7,
+        "min_area_m2": 2.5,
+        "door_width_mm": 750,
+        "door_swing": "outward"
+      },
+      "TOILET": {
+        "min_width_m": 0.9,
+        "min_depth_m": 1.2,
+        "min_area_m2": 1.1,
+        "door_width_mm": 600
+      },
+      "BEDROOM": {
+        "min_width_m": 2.5,
+        "min_depth_m": 3.0,
+        "min_area_m2": 9.0,
+        "window_min_percent": 10
+      },
+      "MASTER_BEDROOM": {
+        "min_width_m": 3.0,
+        "min_depth_m": 3.5,
+        "min_area_m2": 11.0,
+        "window_min_percent": 10
+      },
+      "KITCHEN": {
+        "min_width_m": 1.8,
+        "min_depth_m": 2.5,
+        "min_area_m2": 4.5,
+        "ventilation": "required"
+      },
+      "LIVING": {
+        "min_width_m": 3.0,
+        "min_depth_m": 3.5,
+        "min_area_m2": 12.0,
+        "natural_light": "required"
+      },
+      "CORRIDOR": {
+        "min_width_m": 1.0
+      }
+    }
+  },
+
+  "raw_json_fills": {
+    "description": "These values come from Vision API raw JSON",
+    "grid_positions": "from grid label text positions A,B,C,D,E and 1,2,3,4,5",
+    "grid_dimensions": "from dimension text 1300, 3100, 3700, etc",
+    "door_positions": "from D1,D2,D3 text positions - confirms wall locations",
+    "room_centers": "from room label text positions"
+  }
+}

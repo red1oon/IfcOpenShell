@@ -1,0 +1,123 @@
+TB-LKTN FLOOR PLAN - VERIFIED FROM VISUAL + VISION + DICTIONARY
+================================================================
+
+Scale: 1:100 (approximately)
+All dimensions in millimeters
+
+     A          B              C              D              E
+     0         1300           4400           8100          11200
+     │          │              │              │              │
+     │          │              │              │              │
+═════╪══════════╪══════════════╪══════════════╪══════════════╪═════ 8500 (Row 5) BACK WALL
+     │▓▓▓▓▓▓▓▓▓▓│▓▓▓▓▓▓▓▓▓▓▓▓▓▓│              │              │
+     │▓TANDAS▓▓▓│▓▓▓▓▓▓▓▓▓▓▓▓▓▓│              │              │
+     │▓1.95sqm▓▓│▓▓RUANG▓▓▓▓▓▓▓│    DAPUR     │              │
+     │▓ [D3]▓▓▓▓│▓▓BASUH▓▓▓▓▓▓▓│   8.25sqm    │   BILIK 3    │
+     │▓▓▓▓▓▓▓▓▓▓│▓▓2.88sqm▓▓▓▓▓│    [D1]      │   9.61sqm    │
+─────┼──────────┼──────────────┤              │      ⊕       │ 7000 (Row 4)
+     │▓▓▓▓▓▓▓▓▓▓│              │              │     [D2]     │
+     │▓BILIK▓▓▓▓│              │ RUANG MAKAN  │              │
+     │▓MANDI▓▓▓▓│              │   5.93sqm    │              │
+     │▓2.08sqm▓▓│              │              │              │
+     │▓ [D3]▓▓▓▓│              │              │              │
+═════╪══════════╧══════════════┼──────────────┼──────────────┤ 5400 (Row 3)
+     │                    [D2]→│              │         [D2]←│
+     │         ⊕               │      ⊕       │      ⊕       │
+     │                         │              │              │
+     │      BILIK UTAMA        │  RUANG TAMU  │   BILIK 2    │
+     │       13.64 sqm         │  11.47 sqm   │   9.61sqm    │
+     │                         │              │              │
+     │        [W1]             │    [W2]      │    [W1]      │
+═════╪═════════════════════════╪══════╤═══════╪══════════════╪═════ 2300 (Row 2) FRONT WALL
+     │                         │ [D1] │       │              │
+     │                         │   ▼  │       │              │
+     │                         │      │       │              │
+     │                         │ ANJUNG       │              │
+     │                         │ 7.30sqm      │              │
+     │                         │    3200      │              │
+─────┴─────────────────────────┴──────┴───────┴──────────────┴───── 0 (Row 1) DRAIN LINE
+
+
+LEGEND:
+═══════
+═══  Exterior wall (150mm brick)
+───  Interior partition (100mm brick)
+│    Grid line (no wall)
+▓▓▓  Wet zone (waterproofed)
+⊕    Ceiling fan (indicates room center)
+[D1] Door D1 (900×2100mm main entry)
+[D2] Door D2 (750×2100mm bedroom)
+[D3] Door D3 (900×2100mm wet area)
+[W1] Window W1 (1800×1000mm)
+[W2] Window W2 (1200×1000mm)
+→←   Door swing direction
+
+
+ROOM SUMMARY:
+═════════════
+┌──────────────┬────────────┬───────────┬────────────┬──────────┐
+│ Room         │ Grid Zone  │ Size (mm) │ Area (sqm) │ Status   │
+├──────────────┼────────────┼───────────┼────────────┼──────────┤
+│ BILIK UTAMA  │ A-C, 2-3   │ 4400×3100 │ 13.64      │ ✓ VALID  │
+│ BILIK 2      │ D-E, 2-3   │ 3100×3100 │ 9.61       │ ✓ VALID  │
+│ BILIK 3      │ D-E, 3-5   │ 3100×3100 │ 9.61       │ ✓ VALID  │
+│ RUANG TAMU   │ C-D, 2-3   │ 3700×3100 │ 11.47      │ ≈ ACCEPT │
+│ RUANG MAKAN  │ C-D, 3-4   │ 3700×1600 │ 5.93       │ ✓ VALID  │
+│ DAPUR        │ C-D, 4-5   │ 3700×1500 │ 8.25*      │ ? REVIEW │
+│ BILIK MANDI  │ A-B, 3-4   │ 1300×1600 │ 2.08       │ ✓ VALID  │
+│ TANDAS       │ A-B, 4-5   │ 1300×1500 │ 1.95       │ ✓ VALID  │
+│ RUANG BASUH  │ B-C, 4-5   │ 3100×1500 │ 2.88*      │ ? REVIEW │
+│ ANJUNG       │ C-D, 1-2   │ 3200×2300 │ 7.30       │ ✓ VALID  │
+└──────────────┴────────────┴───────────┴────────────┴──────────┘
+* Area from drawing annotation, calculation differs
+
+
+KEY OBSERVATIONS:
+═════════════════
+1. BILIK_UTAMA spans A-C (two column zones) as indicated by door D2 position
+2. BILIK_3 spans Row 3-5 (two row zones) for adequate depth
+3. Wet zone (TANDAS + BILIK MANDI) in narrow Column A-B zone
+4. RUANG BASUH behind wet zone in B-C / 4-5 zone
+5. All bedrooms confirmed < BILIK_UTAMA (13.64 > 9.61)
+6. D2 door at Column C / Row 3 confirms BILIK_UTAMA boundary
+
+
+WALL DETECTION EVIDENCE:
+════════════════════════
+Wall at Column A: EXTERIOR (building edge - visible)
+Wall at Column B: PARTIAL (Row 3→5 only, wet zone divider - visible)
+Wall at Column C: PARTIAL (Row 2→3 only, bedroom partition - D2 door indicates)
+Wall at Column D: FULL (Row 2→5, separates bedroom wing - visible)
+Wall at Column E: EXTERIOR (building edge - visible)
+Wall at Row 2:    EXTERIOR (front wall - visible)
+Wall at Row 3:    PARTIAL (A→D, front/back zone divider - visible)
+Wall at Row 4:    PARTIAL (A→B only, bathroom divider - visible)
+Wall at Row 5:    EXTERIOR (back wall - visible)
+
+
+ROOF GEOMETRY:
+══════════════
+Main Roof: HIP type, 25° pitch
+  - Footprint: 11200 × 6200 mm (with 600mm overhang)
+  - Ridge height: 4445mm (calculated: 3000 + 3100×tan(25°))
+  - Ridge runs E-W at Y=5400 (center of depth)
+  - Ridge from X=3100 to X=8100
+
+Porch Roof: LEAN-TO type, 15° pitch
+  - Footprint: 3200 × 2300 mm
+  - High edge: 3000mm (at main wall)
+  - Low edge: 2384mm (at front)
+
+
+DATA SOURCES:
+═════════════
+✓ Page 1 (Floor Plan) - Grid, rooms, doors, windows, dimensions
+✓ Page 2 (Electrical Plan) - Wall lines traced visually, ceiling fans
+✓ Page 3 (Roof Plan) - Pitch angles, gutters, outline
+✓ Page 4 (Front Elevation) - Heights, window positions
+✓ Page 5 (Side Elevation) - Heights, profile
+✓ Page 6 (Section) - Internal details
+✓ Page 7 (Plumbing) - Drainage, fixtures
+✓ Page 8 (Schedules) - Door/window specifications
+
+✓ MASTER_BUILDING_DICTIONARY.json - Validation rules and constraints

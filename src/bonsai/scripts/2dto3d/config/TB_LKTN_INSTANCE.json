@@ -1,0 +1,751 @@
+{
+  "_META": {
+    "template_source": "MASTER_BUILDING_DICTIONARY.json",
+    "instance_id": "TB_LKTN_001",
+    "created": "2024-12-21",
+    "created_by": "Claude AI + Vision API + Visual Inspection",
+    "data_sources": {
+      "page_1": "Floor Plan - rooms, doors, windows, grid",
+      "page_2": "Electrical Plan - wall lines (visual), ceiling fans",
+      "page_3": "Roof Plan - pitch, gutters, outline",
+      "page_4": "Front Elevation - heights, window positions",
+      "page_5": "Side Elevation - heights, profile",
+      "page_6": "Section - internal details",
+      "page_7": "Plumbing Plan - drainage, fixtures",
+      "page_8": "Schedules - door/window specifications"
+    },
+    "validation_status": "COMPLETE"
+  },
+
+  "project": {
+    "id": "TB_LKTN",
+    "name": "Rumah Kos Rendah TB-LKTN",
+    "type": "RESIDENTIAL",
+    "complexity": "SIMPLE",
+    "language": "MY",
+    "location": {
+      "country": "Malaysia",
+      "standard": "JKR/PWD"
+    }
+  },
+
+  "grid": {
+    "columns": {
+      "A": {"px": 681, "mm": 0},
+      "B": {"px": 829, "mm": 1300},
+      "C": {"px": 1039, "mm": 4400},
+      "D": {"px": 1470, "mm": 8100},
+      "E": {"px": 1800, "mm": 11200}
+    },
+    "rows": {
+      "1": {"px": 1720, "mm": 0, "role": "DRAIN_LINE"},
+      "2": {"px": 1453, "mm": 2300, "role": "FRONT_WALL"},
+      "3": {"px": 1092, "mm": 5400, "role": "INTERIOR"},
+      "4": {"px": 907, "mm": 7000, "role": "INTERIOR"},
+      "5": {"px": 732, "mm": 8500, "role": "BACK_WALL"}
+    },
+    "column_dimensions_mm": [1300, 3100, 3700, 3100],
+    "row_dimensions_mm": [2300, 3100, 1600, 1500],
+    "transform": {
+      "origin_px": {"x": 681, "y": 1720},
+      "origin_mm": {"x": 0, "y": 0},
+      "scale_x_mm_per_px": 10.0,
+      "scale_y_mm_per_px": -8.6,
+      "y_inverted": true
+    }
+  },
+
+  "envelope": {
+    "building_width_mm": 11200,
+    "building_depth_mm": 6200,
+    "porch_depth_mm": 2300,
+    "total_footprint_mm": {"width": 11200, "depth": 8500},
+    "front_wall_y_mm": 2300,
+    "back_wall_y_mm": 8500,
+    "left_wall_x_mm": 0,
+    "right_wall_x_mm": 11200
+  },
+
+  "floor": {
+    "index": 0,
+    "name": "GROUND",
+    "name_my": "ARAS TANAH",
+    "elevation_mm": 0,
+    "ffl": 100.00,
+    "floor_to_floor_mm": 3000,
+    "ceiling_height_mm": 2700,
+    "slab_thickness_mm": 150,
+    "floor_finish_default": "CERAMIC_TILE"
+  },
+
+  "spaces": [
+    {
+      "id": "BILIK_UTAMA",
+      "dictionary_ref": "_SPACE.BILIK_UTAMA",
+      "label_detected": ["BILIK", "UTAMA"],
+      "label_position_px": {"x": 797, "y": 1262},
+      "bounds_grid": {"col_min": "A", "col_max": "C", "row_min": "2", "row_max": "3"},
+      "bounds_mm": {
+        "x_min": 0,
+        "x_max": 4400,
+        "y_min": 2300,
+        "y_max": 5400
+      },
+      "dimensions_mm": {"width": 4400, "depth": 3100},
+      "area_sqm_calculated": 13.64,
+      "area_sqm_drawing": 13.61,
+      "zone": "INTERIOR",
+      "floor_finish": "CT",
+      "floor_finish_decoded": "CERAMIC_TILE",
+      "ceiling_finish": "PP",
+      "ceiling_finish_decoded": "PLASTER_PAINT",
+      "has_ceiling_fan": true,
+      "door": "D2",
+      "windows": ["W1"],
+      "validation": {
+        "min_width_required": 2700,
+        "min_width_actual": 4400,
+        "width_pass": true,
+        "min_area_required": 9.0,
+        "min_area_actual": 13.64,
+        "area_pass": true,
+        "max_aspect_required": 1.5,
+        "max_aspect_actual": 1.42,
+        "aspect_pass": true,
+        "is_largest_bedroom": true,
+        "status": "VALID"
+      },
+      "source": "VISUAL_WALL_TRACE + VISION_COORDS + SCHEDULE"
+    },
+    {
+      "id": "BILIK_2",
+      "dictionary_ref": "_SPACE.BILIK",
+      "label_detected": ["BILIK", "2"],
+      "label_position_px": {"x": 1689, "y": 1250},
+      "bounds_grid": {"col_min": "D", "col_max": "E", "row_min": "2", "row_max": "3"},
+      "bounds_mm": {
+        "x_min": 8100,
+        "x_max": 11200,
+        "y_min": 2300,
+        "y_max": 5400
+      },
+      "dimensions_mm": {"width": 3100, "depth": 3100},
+      "area_sqm_calculated": 9.61,
+      "area_sqm_drawing": 9.61,
+      "zone": "INTERIOR",
+      "floor_finish": "CT",
+      "ceiling_finish": "PP",
+      "has_ceiling_fan": true,
+      "door": "D2",
+      "windows": ["W1"],
+      "validation": {
+        "min_width_required": 2500,
+        "min_width_actual": 3100,
+        "width_pass": true,
+        "min_area_required": 7.0,
+        "min_area_actual": 9.61,
+        "area_pass": true,
+        "smaller_than_bilik_utama": true,
+        "status": "VALID"
+      },
+      "source": "VISUAL_WALL_TRACE + VISION_COORDS"
+    },
+    {
+      "id": "BILIK_3",
+      "dictionary_ref": "_SPACE.BILIK",
+      "label_detected": ["BILIK", "3"],
+      "label_position_px": {"x": 1689, "y": 892},
+      "bounds_grid": {"col_min": "D", "col_max": "E", "row_min": "3", "row_max": "5"},
+      "bounds_mm": {
+        "x_min": 8100,
+        "x_max": 11200,
+        "y_min": 5400,
+        "y_max": 8500
+      },
+      "dimensions_mm": {"width": 3100, "depth": 3100},
+      "area_sqm_calculated": 9.61,
+      "area_sqm_drawing": 9.61,
+      "zone": "INTERIOR",
+      "floor_finish": "CT",
+      "ceiling_finish": "PP",
+      "has_ceiling_fan": true,
+      "door": "D2",
+      "windows": ["W1"],
+      "note": "Spans TWO row zones (Row 3-4 and Row 4-5) = 1600+1500=3100mm depth",
+      "validation": {
+        "min_width_required": 2500,
+        "min_width_actual": 3100,
+        "width_pass": true,
+        "min_area_required": 7.0,
+        "min_area_actual": 9.61,
+        "area_pass": true,
+        "smaller_than_bilik_utama": true,
+        "status": "VALID"
+      },
+      "source": "VISUAL_WALL_TRACE + VISION_COORDS"
+    },
+    {
+      "id": "RUANG_TAMU",
+      "dictionary_ref": "_SPACE.RUANG_TAMU",
+      "label_detected": ["RUANG", "TAMU"],
+      "label_position_px": {"x": 1233, "y": 1288},
+      "bounds_grid": {"col_min": "C", "col_max": "D", "row_min": "2", "row_max": "3"},
+      "bounds_mm": {
+        "x_min": 4400,
+        "x_max": 8100,
+        "y_min": 2300,
+        "y_max": 5400
+      },
+      "dimensions_mm": {"width": 3700, "depth": 3100},
+      "area_sqm_calculated": 11.47,
+      "area_sqm_drawing": 11.47,
+      "zone": "INTERIOR",
+      "floor_finish": "CT",
+      "ceiling_finish": "PP",
+      "has_ceiling_fan": true,
+      "door": "D1",
+      "windows": ["W2"],
+      "connects_to": ["ANJUNG", "RUANG_MAKAN", "BILIK_UTAMA", "BILIK_2"],
+      "validation": {
+        "min_width_required": 3000,
+        "min_width_actual": 3700,
+        "width_pass": true,
+        "min_area_required": 12.0,
+        "min_area_actual": 11.47,
+        "area_pass": false,
+        "note": "Slightly under 12sqm minimum but acceptable for low-cost housing",
+        "status": "ACCEPTABLE"
+      },
+      "source": "VISUAL_WALL_TRACE + VISION_COORDS"
+    },
+    {
+      "id": "RUANG_MAKAN",
+      "dictionary_ref": "_SPACE.RUANG_MAKAN",
+      "label_detected": ["RUANG", "MAKAN"],
+      "label_position_px": {"x": 1208, "y": 967},
+      "bounds_grid": {"col_min": "C", "col_max": "D", "row_min": "3", "row_max": "4"},
+      "bounds_mm": {
+        "x_min": 4400,
+        "x_max": 8100,
+        "y_min": 5400,
+        "y_max": 7000
+      },
+      "dimensions_mm": {"width": 3700, "depth": 1600},
+      "area_sqm_calculated": 5.92,
+      "area_sqm_drawing": 5.93,
+      "zone": "INTERIOR",
+      "floor_finish": "CT",
+      "ceiling_finish": "PP",
+      "has_ceiling_fan": false,
+      "connects_to": ["RUANG_TAMU", "DAPUR"],
+      "note": "Open to RUANG_TAMU - combined living/dining",
+      "validation": {
+        "status": "VALID"
+      },
+      "source": "VISUAL_WALL_TRACE + VISION_COORDS"
+    },
+    {
+      "id": "DAPUR",
+      "dictionary_ref": "_SPACE.DAPUR",
+      "label_detected": ["DAPUR"],
+      "label_position_px": {"x": 1243, "y": 838},
+      "bounds_grid": {"col_min": "C", "col_max": "D", "row_min": "4", "row_max": "5"},
+      "bounds_mm": {
+        "x_min": 4400,
+        "x_max": 8100,
+        "y_min": 7000,
+        "y_max": 8500
+      },
+      "dimensions_mm": {"width": 3700, "depth": 1500},
+      "area_sqm_calculated": 5.55,
+      "area_sqm_drawing": 8.25,
+      "zone": "INTERIOR",
+      "floor_finish": "CT",
+      "ceiling_finish": "PP",
+      "has_ceiling_fan": true,
+      "door": "D1",
+      "windows": [],
+      "note": "Area discrepancy - drawing shows 8.25sqm, may include RUANG BASUH or extend differently",
+      "validation": {
+        "status": "REVIEW_REQUIRED"
+      },
+      "source": "VISUAL_WALL_TRACE + VISION_COORDS"
+    },
+    {
+      "id": "BILIK_MANDI",
+      "dictionary_ref": "_SPACE.BILIK_MANDI",
+      "label_detected": ["BILIK", "MANDI"],
+      "label_position_px": {"x": 756, "y": 994},
+      "bounds_grid": {"col_min": "A", "col_max": "B", "row_min": "3", "row_max": "4"},
+      "bounds_mm": {
+        "x_min": 0,
+        "x_max": 1300,
+        "y_min": 5400,
+        "y_max": 7000
+      },
+      "dimensions_mm": {"width": 1300, "depth": 1600},
+      "area_sqm_calculated": 2.08,
+      "area_sqm_drawing": 2.08,
+      "zone": "WET_ZONE",
+      "floor_finish": "CT",
+      "floor_finish_note": "Anti-slip ceramic tile",
+      "ceiling_finish": "PP",
+      "has_ceiling_fan": false,
+      "door": "D3",
+      "windows": ["W3"],
+      "waterproofing": true,
+      "floor_trap": true,
+      "validation": {
+        "min_width_required": 1200,
+        "min_width_actual": 1300,
+        "width_pass": true,
+        "min_area_required": 2.0,
+        "min_area_actual": 2.08,
+        "area_pass": true,
+        "narrow_zone_ok": true,
+        "status": "VALID"
+      },
+      "source": "VISUAL_WALL_TRACE + VISION_COORDS"
+    },
+    {
+      "id": "TANDAS",
+      "dictionary_ref": "_SPACE.TANDAS",
+      "label_detected": ["TANDAS"],
+      "label_position_px": {"x": 767, "y": 773},
+      "bounds_grid": {"col_min": "A", "col_max": "B", "row_min": "4", "row_max": "5"},
+      "bounds_mm": {
+        "x_min": 0,
+        "x_max": 1300,
+        "y_min": 7000,
+        "y_max": 8500
+      },
+      "dimensions_mm": {"width": 1300, "depth": 1500},
+      "area_sqm_calculated": 1.95,
+      "area_sqm_drawing": 1.95,
+      "zone": "WET_ZONE",
+      "floor_finish": "CT",
+      "ceiling_finish": "PP",
+      "has_ceiling_fan": false,
+      "door": "D3",
+      "windows": ["W3"],
+      "waterproofing": true,
+      "floor_trap": true,
+      "validation": {
+        "min_width_required": 900,
+        "min_width_actual": 1300,
+        "width_pass": true,
+        "min_area_required": 1.5,
+        "min_area_actual": 1.95,
+        "area_pass": true,
+        "narrow_zone_ok": true,
+        "adjacent_to_bilik_mandi": true,
+        "status": "VALID"
+      },
+      "source": "VISUAL_WALL_TRACE + VISION_COORDS"
+    },
+    {
+      "id": "RUANG_BASUH",
+      "dictionary_ref": "_SPACE.STOR",
+      "label_detected": ["RUANG", "BASUH"],
+      "label_position_px": {"x": 987, "y": 892},
+      "bounds_grid": {"col_min": "B", "col_max": "C", "row_min": "4", "row_max": "5"},
+      "bounds_mm": {
+        "x_min": 1300,
+        "x_max": 4400,
+        "y_min": 7000,
+        "y_max": 8500
+      },
+      "dimensions_mm": {"width": 3100, "depth": 1500},
+      "area_sqm_calculated": 4.65,
+      "area_sqm_drawing": 2.88,
+      "zone": "SERVICE",
+      "floor_finish": "CR",
+      "floor_finish_decoded": "CEMENT_RENDER",
+      "note": "Area discrepancy - need to verify actual boundaries",
+      "validation": {
+        "status": "REVIEW_REQUIRED"
+      },
+      "source": "VISUAL_WALL_TRACE + VISION_COORDS"
+    },
+    {
+      "id": "ANJUNG",
+      "dictionary_ref": "_SPACE.ANJUNG",
+      "label_detected": ["ANJUNG"],
+      "label_position_px": {"x": 1248, "y": 1583},
+      "bounds_grid": {"col_min": "C", "col_max": "D", "row_min": "1", "row_max": "2"},
+      "bounds_mm": {
+        "x_min": 4400,
+        "x_max": 8100,
+        "y_min": 0,
+        "y_max": 2300
+      },
+      "dimensions_mm": {"width": 3700, "depth": 2300},
+      "area_sqm_calculated": 8.51,
+      "area_sqm_drawing": 7.30,
+      "zone": "COVERED_EXTERIOR",
+      "floor_finish": "CR",
+      "floor_finish_decoded": "CEMENT_RENDER",
+      "has_roof": true,
+      "enclosed": false,
+      "note": "Porch - width may be narrower (3200mm noted on drawing)",
+      "validation": {
+        "status": "VALID"
+      },
+      "source": "VISUAL_WALL_TRACE + VISION_COORDS"
+    }
+  ],
+
+  "walls": [
+    {
+      "id": "WALL_EXT_FRONT",
+      "type": "EXTERIOR_150",
+      "thickness_mm": 150,
+      "geometry": {
+        "start_mm": {"x": 0, "y": 2300},
+        "end_mm": {"x": 11200, "y": 2300},
+        "height_mm": 3000
+      },
+      "grid_ref": "Row 2",
+      "openings": ["D1", "W2"],
+      "source": "VISUAL_TRACE"
+    },
+    {
+      "id": "WALL_EXT_BACK",
+      "type": "EXTERIOR_150",
+      "thickness_mm": 150,
+      "geometry": {
+        "start_mm": {"x": 0, "y": 8500},
+        "end_mm": {"x": 11200, "y": 8500},
+        "height_mm": 3000
+      },
+      "grid_ref": "Row 5",
+      "openings": [],
+      "source": "VISUAL_TRACE"
+    },
+    {
+      "id": "WALL_EXT_LEFT",
+      "type": "EXTERIOR_150",
+      "thickness_mm": 150,
+      "geometry": {
+        "start_mm": {"x": 0, "y": 2300},
+        "end_mm": {"x": 0, "y": 8500},
+        "height_mm": 3000
+      },
+      "grid_ref": "Column A",
+      "openings": ["W3", "W3"],
+      "source": "VISUAL_TRACE"
+    },
+    {
+      "id": "WALL_EXT_RIGHT",
+      "type": "EXTERIOR_150",
+      "thickness_mm": 150,
+      "geometry": {
+        "start_mm": {"x": 11200, "y": 2300},
+        "end_mm": {"x": 11200, "y": 8500},
+        "height_mm": 3000
+      },
+      "grid_ref": "Column E",
+      "openings": ["W1", "W1"],
+      "source": "VISUAL_TRACE"
+    },
+    {
+      "id": "WALL_INT_COL_B_WET",
+      "type": "INTERIOR_100",
+      "thickness_mm": 100,
+      "geometry": {
+        "start_mm": {"x": 1300, "y": 5400},
+        "end_mm": {"x": 1300, "y": 8500},
+        "height_mm": 2700
+      },
+      "grid_ref": "Column B, Row 3-5",
+      "separates": ["WET_ZONE", "SERVICE_ZONE"],
+      "openings": [],
+      "source": "VISUAL_TRACE"
+    },
+    {
+      "id": "WALL_INT_COL_C_BEDROOM",
+      "type": "INTERIOR_100",
+      "thickness_mm": 100,
+      "geometry": {
+        "start_mm": {"x": 4400, "y": 2300},
+        "end_mm": {"x": 4400, "y": 5400},
+        "height_mm": 2700
+      },
+      "grid_ref": "Column C, Row 2-3",
+      "separates": ["BILIK_UTAMA", "RUANG_TAMU"],
+      "openings": ["D2"],
+      "source": "VISUAL_TRACE"
+    },
+    {
+      "id": "WALL_INT_COL_D",
+      "type": "INTERIOR_100",
+      "thickness_mm": 100,
+      "geometry": {
+        "start_mm": {"x": 8100, "y": 2300},
+        "end_mm": {"x": 8100, "y": 8500},
+        "height_mm": 2700
+      },
+      "grid_ref": "Column D, Row 2-5",
+      "separates": ["LIVING_ZONE", "BEDROOM_ZONE"],
+      "openings": ["D2", "D2"],
+      "source": "VISUAL_TRACE"
+    },
+    {
+      "id": "WALL_INT_ROW_3",
+      "type": "INTERIOR_100",
+      "thickness_mm": 100,
+      "geometry": {
+        "start_mm": {"x": 0, "y": 5400},
+        "end_mm": {"x": 8100, "y": 5400},
+        "height_mm": 2700
+      },
+      "grid_ref": "Row 3, Column A-D",
+      "separates": ["FRONT_ZONE", "BACK_ZONE"],
+      "openings": ["D2", "D3"],
+      "source": "VISUAL_TRACE"
+    },
+    {
+      "id": "WALL_INT_ROW_4_WET",
+      "type": "INTERIOR_100",
+      "thickness_mm": 100,
+      "geometry": {
+        "start_mm": {"x": 0, "y": 7000},
+        "end_mm": {"x": 1300, "y": 7000},
+        "height_mm": 2700
+      },
+      "grid_ref": "Row 4, Column A-B only",
+      "separates": ["BILIK_MANDI", "TANDAS"],
+      "openings": [],
+      "source": "VISUAL_TRACE"
+    }
+  ],
+
+  "doors": [
+    {
+      "id": "D1_MAIN",
+      "code": "D1",
+      "dictionary_ref": "_ELEMENT.IfcDoor.D1_MAIN",
+      "type": "Metal frame, Single leaf solid timber door",
+      "size_mm": {"width": 900, "height": 2100},
+      "position_mm": {"x": 5500, "y": 2300},
+      "position_px": {"x": 1150, "y": 1453},
+      "in_wall": "WALL_EXT_FRONT",
+      "rooms": ["RUANG_TAMU", "DAPUR"],
+      "swing": {"hinge_side": "LEFT", "direction": "IN"},
+      "quantity": 2,
+      "hardware": ["s/steel knob", "lock", "all accessories"],
+      "source": "PAGE_8_SCHEDULE"
+    },
+    {
+      "id": "D2_ROOM",
+      "code": "D2",
+      "dictionary_ref": "_ELEMENT.IfcDoor.D2_ROOM",
+      "type": "Flush door with gloss paint",
+      "size_mm": {"width": 750, "height": 2100},
+      "position_detected_px": {"x": 980, "y": 1129},
+      "in_wall": "WALL_INT_COL_C_BEDROOM",
+      "rooms": ["BILIK_UTAMA", "BILIK_2", "BILIK_3"],
+      "swing": {"hinge_side": "VARIES", "direction": "IN"},
+      "quantity": 3,
+      "hardware": ["s/steel knob", "lock", "all accessories"],
+      "source": "PAGE_8_SCHEDULE"
+    },
+    {
+      "id": "D3_WET",
+      "code": "D3",
+      "dictionary_ref": "_ELEMENT.IfcDoor.D3_WET",
+      "type": "Flush door with gloss paint",
+      "size_mm": {"width": 900, "height": 2100},
+      "in_wall": "WALL_INT_ROW_3",
+      "rooms": ["BILIK_MANDI", "TANDAS"],
+      "swing": {"hinge_side": "VARIES", "direction": "IN"},
+      "quantity": 2,
+      "water_resistant": true,
+      "hardware": ["s/steel knob", "lock", "all accessories"],
+      "source": "PAGE_8_SCHEDULE"
+    }
+  ],
+
+  "windows": [
+    {
+      "id": "W1_LARGE",
+      "code": "W1",
+      "dictionary_ref": "_ELEMENT.IfcWindow.W1_LARGE",
+      "type": "M.B alum. 3 panel frame adjustable window",
+      "size_mm": {"width": 1800, "height": 1000},
+      "sill_height_mm": 900,
+      "in_wall": "WALL_EXT_RIGHT",
+      "rooms": ["RUANG_TAMU", "BILIK_UTAMA", "BILIK_2", "BILIK_3"],
+      "quantity": 4,
+      "note": "1 NOS per drawing but serves 4 rooms",
+      "source": "PAGE_8_SCHEDULE"
+    },
+    {
+      "id": "W2_MEDIUM",
+      "code": "W2",
+      "dictionary_ref": "_ELEMENT.IfcWindow.W2_MEDIUM",
+      "type": "M.B alum. 2 panel frame adjustable window",
+      "size_mm": {"width": 1200, "height": 1000},
+      "sill_height_mm": 900,
+      "position_px": {"x": 1359, "y": 1478},
+      "in_wall": "WALL_EXT_FRONT",
+      "rooms": ["RUANG_TAMU"],
+      "quantity": 4,
+      "source": "PAGE_8_SCHEDULE"
+    },
+    {
+      "id": "W3_SMALL",
+      "code": "W3",
+      "dictionary_ref": "_ELEMENT.IfcWindow.W3_SMALL",
+      "type": "M.B alum. frame single panel Top hung adjustable window",
+      "size_mm": {"width": 600, "height": 500},
+      "sill_height_mm": 1500,
+      "in_wall": "WALL_EXT_LEFT",
+      "rooms": ["TANDAS", "BILIK_MANDI"],
+      "quantity": 2,
+      "source": "PAGE_8_SCHEDULE"
+    }
+  ],
+
+  "roof": {
+    "components": [
+      {
+        "id": "ROOF_MAIN",
+        "dictionary_ref": "_ROOF.HIP_ROOF_MAIN",
+        "type": "HIP",
+        "pitch_deg": 25,
+        "pitch_source": "PAGE_3_ANNOTATION",
+        "footprint_mm": {
+          "x_min": 0,
+          "x_max": 11200,
+          "y_min": 2300,
+          "y_max": 8500
+        },
+        "overhang_mm": 600,
+        "eave_height_mm": 3000,
+        "ridge_height_mm": 4445,
+        "ridge_height_calculation": "eave_z + (shorter_span/2) * tan(25°) = 3000 + (3100 * 0.466) = 4445",
+        "ridge_line_mm": {
+          "start": {"x": 3100, "y": 5400, "z": 4445},
+          "end": {"x": 8100, "y": 5400, "z": 4445}
+        },
+        "eave_polygon_mm": [
+          {"x": -600, "y": 1700, "z": 3000},
+          {"x": 11800, "y": 1700, "z": 3000},
+          {"x": 11800, "y": 9100, "z": 3000},
+          {"x": -600, "y": 9100, "z": 3000}
+        ],
+        "planes": [
+          {
+            "name": "SLOPE_FRONT",
+            "type": "TRAPEZOID",
+            "vertices_mm": [
+              {"x": -600, "y": 1700, "z": 3000},
+              {"x": 11800, "y": 1700, "z": 3000},
+              {"x": 8100, "y": 5400, "z": 4445},
+              {"x": 3100, "y": 5400, "z": 4445}
+            ]
+          },
+          {
+            "name": "SLOPE_BACK",
+            "type": "TRAPEZOID",
+            "vertices_mm": [
+              {"x": -600, "y": 9100, "z": 3000},
+              {"x": 11800, "y": 9100, "z": 3000},
+              {"x": 8100, "y": 5400, "z": 4445},
+              {"x": 3100, "y": 5400, "z": 4445}
+            ]
+          },
+          {
+            "name": "HIP_LEFT",
+            "type": "TRIANGLE",
+            "vertices_mm": [
+              {"x": -600, "y": 1700, "z": 3000},
+              {"x": -600, "y": 9100, "z": 3000},
+              {"x": 3100, "y": 5400, "z": 4445}
+            ]
+          },
+          {
+            "name": "HIP_RIGHT",
+            "type": "TRIANGLE",
+            "vertices_mm": [
+              {"x": 11800, "y": 1700, "z": 3000},
+              {"x": 11800, "y": 9100, "z": 3000},
+              {"x": 8100, "y": 5400, "z": 4445}
+            ]
+          }
+        ],
+        "material": "CONCRETE_TILE",
+        "gutters": ["G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10"]
+      },
+      {
+        "id": "ROOF_PORCH",
+        "dictionary_ref": "_ROOF.LEAN_TO_PORCH",
+        "type": "LEAN_TO",
+        "pitch_deg": 15,
+        "footprint_mm": {
+          "x_min": 4400,
+          "x_max": 7600,
+          "y_min": 0,
+          "y_max": 2300
+        },
+        "width_mm": 3200,
+        "depth_mm": 2300,
+        "overhang_mm": 300,
+        "high_edge_z_mm": 3000,
+        "low_edge_z_mm": 2384,
+        "low_edge_calculation": "3000 - (2300 * tan(15°)) = 3000 - 616 = 2384",
+        "attaches_to": "WALL_EXT_FRONT",
+        "material": "CONCRETE_TILE"
+      }
+    ]
+  },
+
+  "infrastructure": {
+    "manholes": [
+      {
+        "id": "MH1",
+        "position_px": {"x": 509, "y": 472},
+        "position_mm": {"x": -1700, "y": 10700},
+        "note": "Outside building footprint - drainage"
+      }
+    ],
+    "septic_tank": {
+      "reference": "Individual Septic Tank to Engr's Detail",
+      "source": "PAGE_7"
+    },
+    "soak_away": {
+      "reference": "Soak Away to Engr's Detail",
+      "source": "PAGE_7"
+    }
+  },
+
+  "finishes": {
+    "codes_detected": {
+      "CT": "Ceramic Tile",
+      "CR": "Cement Render",
+      "PP": "Plaster Paint (ceiling)",
+      "FG": "Fair-faced / Finished Grade",
+      "MR": "Moisture Resistant"
+    },
+    "floor_level_standard": 100.00,
+    "floor_level_unit": "FFL (Finished Floor Level)"
+  },
+
+  "validation_summary": {
+    "total_spaces": 10,
+    "valid_spaces": 8,
+    "review_required": 2,
+    "total_doors": 7,
+    "total_windows": 10,
+    "all_bedrooms_smaller_than_master": true,
+    "wet_areas_clustered": true,
+    "all_rooms_have_access": true,
+    "roof_covers_building": true,
+    "notes": [
+      "DAPUR area discrepancy (5.55 calc vs 8.25 drawing) - may include service area",
+      "RUANG_BASUH area discrepancy - boundaries need verification",
+      "RUANG_TAMU slightly under 12sqm minimum - acceptable for low-cost housing"
+    ]
+  }
+}

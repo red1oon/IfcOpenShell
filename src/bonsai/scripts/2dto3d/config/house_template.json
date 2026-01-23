@@ -1,0 +1,103 @@
+{
+  "template_version": "2.0",
+  "house_elements": {
+    "outside_drain": {
+      "exists": null,
+      "offset_from_wall_mm": 600,
+      "width_mm": 150,
+      "depth_mm": 150,
+      "source_page": 1,
+      "source_type": "default"
+    },
+    "outer_walls": {
+      "count": 4,
+      "thickness_mm": 150,
+      "height_mm": 3000,
+      "corners_px": {
+        "A1": [null, null],
+        "E1": [null, null],
+        "E5": [null, null],
+        "A5": [null, null]
+      },
+      "corners_m": {
+        "A1": [0, 0],
+        "E1": [null, null],
+        "E5": [null, null],
+        "A5": [null, null]
+      },
+      "source_page": 1,
+      "source_type": "grid_pixels"
+    },
+    "main_door": {
+      "label": "D1",
+      "width_mm": 900,
+      "height_mm": 2100,
+      "position_px": [null, null],
+      "position_m": [null, null, 0],
+      "host_wall": "FRONT",
+      "derived_from": "ANJUNG",
+      "source_page": 8,
+      "source_type": "schedule_plus_room"
+    },
+    "outer_windows": {
+      "count": null,
+      "types": {
+        "W1": {
+          "width_mm": 1800,
+          "height_mm": 1000,
+          "sill_mm": 900,
+          "instances": []
+        },
+        "W2": {
+          "width_mm": 1200,
+          "height_mm": 1000,
+          "sill_mm": 900,
+          "instances": []
+        },
+        "W3": {
+          "width_mm": 600,
+          "height_mm": 500,
+          "sill_mm": 1500,
+          "instances": []
+        }
+      },
+      "source_page": 8,
+      "source_type": "schedule_plus_room"
+    },
+    "roof": {
+      "type": "hip",
+      "pitch_degrees": 25,
+      "overhang_mm": 600,
+      "eave_height_mm": 3000,
+      "ridge_height_mm": null,
+      "source_page": 2,
+      "source_type": "elevation_or_default"
+    },
+    "porch": {
+      "label": "ANJUNG",
+      "position_px": [null, null],
+      "position_m": [null, null, 0],
+      "width_mm": null,
+      "depth_mm": 2000,
+      "roof_height_mm": 2700,
+      "columns": 2,
+      "source_page": 1,
+      "source_type": "room_pixel"
+    }
+  },
+  "calibration": {
+    "origin_px": [null, null],
+    "scale_x_m_per_px": null,
+    "scale_y_m_per_px": null,
+    "building_width_m": null,
+    "building_depth_m": null
+  },
+  "fill_status": {
+    "outside_drain": "pending",
+    "outer_walls": "pending",
+    "main_door": "pending",
+    "outer_windows": "pending",
+    "roof": "pending",
+    "porch": "pending"
+  }
+}

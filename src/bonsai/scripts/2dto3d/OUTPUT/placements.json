@@ -1,0 +1,80 @@
+{
+  "metadata": {
+    "source": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\scripts\\2dto3d\\CACHE\\page1.png",
+    "calibration": {
+      "scale_x": 0.004145844900980937,
+      "scale_y": 0.004689655172413793,
+      "origin_px": 203.5,
+      "origin_py": 495.5,
+      "image_width": 3509,
+      "image_height": 2480,
+      "grid_cols": [
+        "A",
+        "A",
+        "B",
+        "B",
+        "B",
+        "C",
+        "D",
+        "A",
+        "A"
+      ],
+      "grid_rows": [
+        "1",
+        "1",
+        "1",
+        "1",
+        "1",
+        "5",
+        "3",
+        "4",
+        "3",
+        "2",
+        "4",
+        "3",
+        "2",
+        "2",
+        "1",
+        "1",
+        "1"
+      ],
+      "px_width": 2701.5,
+      "px_height": 1812.5,
+      "real_width": 11.2,
+      "real_height": 8.5
+    }
+  },
+  "doors": [
+    {
+      "name": "D2_x322_y-297",
+      "label": "D2",
+      "position": [
+        3.221,
+        -2.971,
+        0.0
+      ],
+      "pixel_pos": [
+        980.5,
+        1129.0
+      ],
+      "object_type": "door_single_900_lod300"
+    }
+  ],
+  "windows": [
+    {
+      "name": "W2_x479_y-461",
+      "label": "W2",
+      "position": [
+        4.791,
+        -4.61,
+        1.0
+      ],
+      "pixel_pos": [
+        1359.0,
+        1478.5
+      ],
+      "object_type": "window_aluminum_2panel_1200x1000"
+    }
+  ],
+  "fixtures": []
+}

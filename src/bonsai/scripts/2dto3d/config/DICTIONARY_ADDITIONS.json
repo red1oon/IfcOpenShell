@@ -1,0 +1,68 @@
+{
+  "_VOCABULARY_ADDITIONS": {
+    "description": "Missing vocabulary items to add to MASTER_BUILDING_DICTIONARY.json",
+    
+    "_FINISH_CODES": {
+      "floor": {
+        "CT": {"full": "Ceramic Tile", "malay": "Jubin Seramik", "typical_use": ["BILIK", "RUANG_TAMU", "DAPUR"]},
+        "CR": {"full": "Cement Render", "malay": "Simen Render", "typical_use": ["ANJUNG", "STOR", "SERVICE"]},
+        "TZ": {"full": "Terazzo", "malay": "Terazzo", "typical_use": ["CORRIDOR", "LOBBY"]},
+        "VT": {"full": "Vinyl Tile", "malay": "Jubin Vinil", "typical_use": ["OFFICE"]}
+      },
+      "ceiling": {
+        "PP": {"full": "Plaster Paint", "malay": "Cat Plaster", "typical_use": ["ALL"]},
+        "AC": {"full": "Acoustic Ceiling", "malay": "Siling Akustik", "typical_use": ["OFFICE", "HALL"]},
+        "GC": {"full": "Gypsum Ceiling", "malay": "Siling Gipsum", "typical_use": ["RESIDENTIAL", "OFFICE"]}
+      },
+      "wall": {
+        "FG": {"full": "Fair-faced / Finished Grade", "malay": "Siap Permukaan", "typical_use": ["EXTERIOR"]},
+        "MR": {"full": "Moisture Resistant", "malay": "Tahan Lembap", "typical_use": ["WET_AREA"]},
+        "CP": {"full": "Cement Plaster", "malay": "Plaster Simen", "typical_use": ["ALL"]}
+      }
+    },
+    
+    "_GUTTER_CODES": {
+      "G1": {"position": "LEFT_FRONT", "type": "EAVE_GUTTER"},
+      "G2": {"position": "LEFT_SIDE", "type": "EAVE_GUTTER"},
+      "G3": {"position": "LEFT_SIDE", "type": "EAVE_GUTTER"},
+      "G4": {"position": "LEFT_BACK", "type": "EAVE_GUTTER"},
+      "G5": {"position": "FRONT_CENTER", "type": "VALLEY_GUTTER"},
+      "G6": {"position": "RIGHT_FRONT", "type": "EAVE_GUTTER"},
+      "G7": {"position": "RIGHT_SIDE", "type": "EAVE_GUTTER"},
+      "G8": {"position": "RIGHT_SIDE", "type": "EAVE_GUTTER"},
+      "G9": {"position": "RIGHT_BACK", "type": "EAVE_GUTTER"},
+      "G10": {"position": "BACK_CENTER", "type": "EAVE_GUTTER"}
+    },
+    
+    "_PLUMBING_FIXTURES": {
+      "wc": {"full": "Water Closet", "malay": "Tandas Duduk", "ifc_class": "IfcSanitaryTerminal"},
+      "ft": {"full": "Floor Trap", "malay": "Perangkap Lantai", "ifc_class": "IfcWasteTerminal"},
+      "gt": {"full": "Gully Trap", "malay": "Perangkap Parit", "ifc_class": "IfcWasteTerminal"},
+      "basin": {"full": "Wash Basin", "malay": "Besen Basuh", "ifc_class": "IfcSanitaryTerminal"},
+      "sink": {"full": "Kitchen Sink", "malay": "Singki Dapur", "ifc_class": "IfcSanitaryTerminal"},
+      "sc": {"full": "Stop Cock", "malay": "Injap Henti", "ifc_class": "IfcValve"},
+      "m": {"full": "Water Meter", "malay": "Meter Air", "ifc_class": "IfcFlowMeter"}
+    },
+    
+    "_ELECTRICAL_FIXTURES": {
+      "FP": {"full": "Fan Point", "malay": "Titik Kipas", "ifc_class": "IfcOutlet"},
+      "FP1": {"full": "Fan Point Type 1", "malay": "Titik Kipas Jenis 1", "ifc_class": "IfcOutlet"},
+      "LP": {"full": "Light Point", "malay": "Titik Lampu", "ifc_class": "IfcLightFixture"},
+      "SP": {"full": "Switch Point", "malay": "Titik Suis", "ifc_class": "IfcSwitchingDevice"},
+      "DB": {"full": "Distribution Board", "malay": "Papan Agihan", "ifc_class": "IfcDistributionBoard"}
+    },
+    
+    "_PAGE_TYPE_INDICATORS": {
+      "PELAN_LANTAI": "FLOOR_PLAN",
+      "PELAN_SILING": "CEILING_PLAN", 
+      "PELAN_BUMBUNG": "ROOF_PLAN",
+      "PANDANGAN_HADAPAN": "FRONT_ELEVATION",
+      "PANDANGAN_SISI": "SIDE_ELEVATION",
+      "PANDANGAN_BELAKANG": "BACK_ELEVATION",
+      "KERATAN": "SECTION",
+      "JADUAL": "SCHEDULE",
+      "ELECT_PLAN": "ELECTRICAL_PLAN",
+      "PLUMBING": "PLUMBING_PLAN"
+    }
+  }
+}

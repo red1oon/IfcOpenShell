@@ -1,0 +1,257 @@
+{
+  "_meta": {
+    "template_version": "1.0",
+    "created": "2025-12-20",
+    "purpose": "Progressive extraction template for 2D architectural drawings",
+    "fill_order": ["document_info", "building_envelope", "grid_system", "rooms", "walls", "openings", "fixtures"]
+  },
+
+  "document_info": {
+    "_description": "STEP 1: Extract from title block and page headers",
+    "project_name": null,
+    "drawing_number": null,
+    "scale": null,
+    "date": null,
+    "page_count": null,
+    "page_types": {
+      "floor_plan": null,
+      "schedule": null,
+      "elevation_front": null,
+      "elevation_side": null,
+      "elevation_rear": null,
+      "section": null,
+      "site_plan": null,
+      "roof_plan": null
+    }
+  },
+
+  "building_envelope": {
+    "_description": "STEP 2: Extract overall building dimensions from grid or dimension lines",
+    "width_mm": null,
+    "depth_mm": null,
+    "height_mm": null,
+    "floor_count": 1,
+    "orientation_north": null,
+    "bounding_box": {
+      "min_x": 0,
+      "min_y": 0,
+      "max_x": null,
+      "max_y": null
+    }
+  },
+
+  "grid_system": {
+    "_description": "STEP 3: Extract grid labels and spacing",
+    "columns": {
+      "labels": ["A", "B", "C", "D", "E"],
+      "spacing_mm": [],
+      "pixel_positions": []
+    },
+    "rows": {
+      "labels": ["1", "2", "3", "4", "5"],
+      "spacing_mm": [],
+      "pixel_positions": []
+    },
+    "calibration": {
+      "scale_x_m_per_px": null,
+      "scale_y_m_per_px": null,
+      "origin_px": [null, null]
+    }
+  },
+
+  "roof": {
+    "_description": "STEP 4: Extract roof shape from roof plan or elevation",
+    "type": null,
+    "type_options": ["gable", "hip", "flat", "shed", "mansard"],
+    "ridge_direction": null,
+    "ridge_direction_options": ["parallel_to_front", "perpendicular_to_front"],
+    "overhang_mm": null,
+    "pitch_degrees": null,
+    "material": null
+  },
+
+  "rooms": {
+    "_description": "STEP 5: Extract room names, positions, and areas",
+    "count": null,
+    "list": [
+      {
+        "id": "ROOM_01",
+        "name": null,
+        "name_malay": null,
+        "grid_zone": null,
+        "area_sqm": null,
+        "floor_finish": null,
+        "ceiling_height_mm": null,
+        "bounds_px": {"x1": null, "y1": null, "x2": null, "y2": null},
+        "bounds_m": {"x1": null, "y1": null, "x2": null, "y2": null}
+      }
+    ],
+    "room_name_mappings": {
+      "DAPUR": "Kitchen",
+      "RUANG TAMU": "Living Room",
+      "BILIK TIDUR": "Bedroom",
+      "BILIK UTAMA": "Master Bedroom",
+      "BILIK MANDI": "Bathroom",
+      "TANDAS": "Toilet",
+      "ANJUNG": "Porch",
+      "RUANG MAKAN": "Dining Room",
+      "RUANG BASAH": "Wet Area"
+    }
+  },
+
+  "walls": {
+    "_description": "STEP 6: Extract wall positions from primitives or room boundaries",
+    "external": [],
+    "internal": [],
+    "wall_template": {
+      "id": "WALL_01",
+      "type": null,
+      "type_options": ["external", "internal", "partition"],
+      "thickness_mm": null,
+      "height_mm": null,
+      "start_point_m": [null, null],
+      "end_point_m": [null, null],
+      "material": null
+    }
+  },
+
+  "openings": {
+    "_description": "STEP 7: Extract doors and windows from schedule and floor plan",
+    "doors": {
+      "count": null,
+      "schedule_page": null,
+      "list": [
+        {
+          "id": "D1_1",
+          "code": "D1",
+          "instance": 1,
+          "width_mm": null,
+          "height_mm": null,
+          "type": null,
+          "type_options": ["single", "double", "sliding", "bifold"],
+          "swing_direction": null,
+          "swing_options": ["left_in", "left_out", "right_in", "right_out"],
+          "position_m": [null, null, null],
+          "position_px": [null, null],
+          "host_wall": null,
+          "room": null,
+          "library_object": null
+        }
+      ]
+    },
+    "windows": {
+      "count": null,
+      "schedule_page": null,
+      "list": [
+        {
+          "id": "W1_1",
+          "code": "W1",
+          "instance": 1,
+          "width_mm": null,
+          "height_mm": null,
+          "sill_height_mm": null,
+          "type": null,
+          "type_options": ["casement", "sliding", "fixed", "awning", "tophung"],
+          "position_m": [null, null, null],
+          "position_px": [null, null],
+          "host_wall": null,
+          "room": null,
+          "library_object": null
+        }
+      ]
+    }
+  },
+
+  "fixtures": {
+    "_description": "STEP 8: Extract fixtures from legend and floor plan",
+    "sanitary": [],
+    "electrical": [],
+    "furniture": [],
+    "fixture_template": {
+      "id": "FIX_01",
+      "type": null,
+      "type_options": ["toilet", "basin", "shower", "kitchen_sink", "floor_trap", "gully_trap"],
+      "position_m": [null, null, null],
+      "position_px": [null, null],
+      "room": null,
+      "library_object": null
+    }
+  },
+
+  "legend_symbols": {
+    "_description": "REFERENCE: Standard symbols found in legend",
+    "door_single": "line with arc",
+    "door_double": "two arcs meeting",
+    "door_sliding": "parallel lines",
+    "window": "three parallel lines in wall",
+    "toilet": "oval with tank",
+    "basin": "rounded rectangle",
+    "shower": "square with X or drain",
+    "kitchen_sink": "rectangle with circles",
+    "floor_trap": "circle with cross"
+  },
+
+  "extraction_status": {
+    "document_info": "pending",
+    "building_envelope": "pending",
+    "grid_system": "pending",
+    "roof": "pending",
+    "rooms": "pending",
+    "walls": "pending",
+    "openings": "pending",
+    "fixtures": "pending"
+  },
+
+  "library_reference": {
+    "_description": "LOD300 object mappings from Ifc_Object_Library.db",
+    "database_path": "Ifc_Object_Library.db",
+    "doors": {
+      "D1": {"object_type": "door_single", "size": "900x2100", "library_match": "door_single 900x2100mm", "rotation_compensation": [0, 0, 0]},
+      "D2": {"object_type": "door_single", "size": "900x2100", "library_match": "door_single 900x2100mm", "rotation_compensation": [0, 0, 0]},
+      "D3": {"object_type": "door_louvre_750", "size": "750x2100", "library_match": "door_louvre_750 750x2100mm", "rotation_compensation": [0, 0, 0]}
+    },
+    "windows": {
+      "W1": {"object_type": "window_aluminum_3panel_1800x1000", "size": "1800x1000", "library_match": "window_aluminum_3panel_1800x1000", "rotation_compensation": [0, 1.5708, 0]},
+      "W2": {"object_type": "window_aluminum_2panel_1200x1000", "size": "1200x1000", "library_match": "window_aluminum_2panel_1200x1000", "rotation_compensation": [0, 0, 0]},
+      "W3": {"object_type": "window_aluminum_tophung_600x500", "size": "600x500", "library_match": "window_aluminum_tophung_600x500", "rotation_compensation": [0, 0, 0]}
+    },
+    "fixtures": {
+      "toilet": {"object_type": "floor_mounted_toilet_lod300", "rotation_compensation": [1.5708, 0, 0]},
+      "basin": {"object_type": "basin_residential_lod300", "rotation_compensation": [1.5708, 0, 0]},
+      "kitchen_sink": {"object_type": "kitchen_sink_single_bowl_lod200", "rotation_compensation": [0, 1.5708, 0]},
+      "shower": {"object_type": "shower_tray_900_lod300", "rotation_compensation": [0, 0, 0]}
+    },
+    "rotation_notes": {
+      "rot_x_1.5708": "Object needs to stand upright (was lying flat)",
+      "rot_y_1.5708": "Object needs to face correct direction (was sideways)"
+    }
+  },
+
+  "output_3d": {
+    "_description": "STEP 9: Generate 3D model proportionate to drawing specs",
+    "coordinate_system": {
+      "origin": "grid intersection A-1",
+      "x_axis": "columns A to E (width)",
+      "y_axis": "rows 1 to 5 (depth)",
+      "z_axis": "height (floor to ceiling)",
+      "units": "meters"
+    },
+    "floor_levels": [
+      {"name": "Ground Floor", "z_offset": 0.0, "floor_to_floor_height": 3.0}
+    ],
+    "default_heights": {
+      "floor_slab_thickness": 0.15,
+      "ceiling_height": 2.7,
+      "wall_height": 3.0,
+      "door_height": 2.1,
+      "window_sill_height": 0.9,
+      "window_head_height": 2.1
+    },
+    "blender_output": {
+      "file_path": null,
+      "collections": ["Walls", "Doors", "Windows", "Fixtures", "Roof", "Slabs"],
+      "reference_image_z": -0.01,
+      "scale_method": "width_width_1"
+    }
+  }
+}

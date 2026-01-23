@@ -1,0 +1,132 @@
+{
+  "typology": "malaysian_single_storey_3bed",
+  "description": "Standard Malaysian single-storey house with 3 bedrooms",
+
+  "layout_rules": {
+    "zones": {
+      "front": {
+        "rooms": ["ANJUNG"],
+        "function": "entry_porch",
+        "has_main_door": true
+      },
+      "center": {
+        "rooms": ["RUANG TAMU", "RUANG MAKAN"],
+        "function": "living_dining",
+        "open_plan": true,
+        "note": "No wall between living and dining"
+      },
+      "back": {
+        "rooms": ["DAPUR"],
+        "function": "kitchen",
+        "connects_to": "RUANG MAKAN"
+      },
+      "left_front": {
+        "rooms": ["BILIK UTAMA"],
+        "function": "master_bedroom",
+        "door_faces": "center"
+      },
+      "left_back": {
+        "rooms": ["BILIK MANDI", "RUANG BASAH"],
+        "function": "twin_wet_area",
+        "internal_division": true,
+        "note": "Bathroom above, wet kitchen below, with internal wall"
+      },
+      "right_front": {
+        "rooms": ["BILIK 2"],
+        "function": "bedroom",
+        "door_faces": "center"
+      },
+      "right_back": {
+        "rooms": ["BILIK 1"],
+        "function": "bedroom",
+        "door_faces": "center"
+      }
+    },
+
+    "open_plan_pairs": [
+      ["RUANG TAMU", "RUANG MAKAN"]
+    ],
+
+    "twin_rooms": [
+      {
+        "container": "wet_area_left",
+        "rooms": ["BILIK MANDI", "RUANG BASAH"],
+        "division": "horizontal",
+        "ratio": [0.5, 0.5]
+      }
+    ]
+  },
+
+  "door_rules": {
+    "D1": {
+      "type": "main_entry",
+      "location": "front_wall_center",
+      "leads_to": "RUANG TAMU",
+      "width_mm": 900
+    },
+    "D2": {
+      "type": "bedroom_door",
+      "location": "facing_corridor",
+      "rooms": ["BILIK UTAMA", "BILIK 1", "BILIK 2", "DAPUR"],
+      "width_mm": 900
+    },
+    "D3": {
+      "type": "wet_area_door",
+      "style": "louvre",
+      "location": "facing_corridor",
+      "rooms": ["BILIK MANDI"],
+      "width_mm": 750
+    }
+  },
+
+  "window_rules": {
+    "W1": {
+      "type": "large_window",
+      "rooms": ["BILIK UTAMA"],
+      "wall": "exterior_side",
+      "width_mm": 1800
+    },
+    "W2": {
+      "type": "medium_window",
+      "rooms": ["BILIK 1", "BILIK 2", "DAPUR"],
+      "wall": "exterior",
+      "width_mm": 1200
+    },
+    "W3": {
+      "type": "small_high_window",
+      "rooms": ["BILIK MANDI"],
+      "wall": "exterior",
+      "width_mm": 600,
+      "sill_mm": 1500
+    }
+  },
+
+  "grid_mapping": {
+    "columns": {
+      "A": {"x": 0, "zone": "left_edge"},
+      "B": {"x": 1.3, "zone": "left_rooms"},
+      "C": {"x": 4.4, "zone": "center"},
+      "D": {"x": 8.1, "zone": "right_rooms"},
+      "E": {"x": 11.2, "zone": "right_edge"}
+    },
+    "rows": {
+      "1": {"y": 0, "zone": "back"},
+      "5": {"y": -1.5, "zone": "back_corridor"},
+      "3": {"y": -3.3, "zone": "middle"},
+      "4": {"y": -6.4, "zone": "front_corridor"},
+      "2": {"y": -8.5, "zone": "front"}
+    }
+  },
+
+  "room_grid_cells": {
+    "BILIK MANDI": {"col": ["A", "B"], "row": ["1", "5"], "portion": "upper"},
+    "RUANG BASAH": {"col": ["A", "B"], "row": ["1", "5"], "portion": "lower"},
+    "DAPUR": {"col": ["B", "D"], "row": ["1", "5"]},
+    "BILIK 1": {"col": ["D", "E"], "row": ["1", "3"]},
+    "BILIK UTAMA": {"col": ["A", "B"], "row": ["5", "4"]},
+    "RUANG MAKAN": {"col": ["B", "D"], "row": ["5", "3"]},
+    "RUANG TAMU": {"col": ["B", "D"], "row": ["3", "4"]},
+    "BILIK 2": {"col": ["D", "E"], "row": ["3", "4"]},
+    "ANJUNG": {"col": ["C", "D"], "row": ["4", "2"], "type": "porch"}
+  }
+}

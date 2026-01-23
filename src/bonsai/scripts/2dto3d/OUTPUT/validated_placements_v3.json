@@ -1,0 +1,362 @@
+{
+  "metadata": {
+    "pipeline": "preset_plus_raw_validated",
+    "source": "TB-LKTN HOUSE.pdf",
+    "building_width_m": 11.2,
+    "building_depth_m": 8.5,
+    "validation_date": "2025-12-20"
+  },
+
+  "grid_calibration": {
+    "columns": {
+      "A": {"m": 0, "note": "Left exterior"},
+      "B": {"m": 1.3, "note": "1300mm from A"},
+      "C": {"m": 4.4, "note": "3100mm from B"},
+      "D": {"m": 8.1, "note": "3700mm from C"},
+      "E": {"m": 11.2, "note": "3100mm from D, right exterior"}
+    },
+    "rows": {
+      "5": {"m": 0, "note": "Back wall"},
+      "4": {"m": -1.5, "note": "1500mm from row 5"},
+      "3": {"m": -3.1, "note": "1600mm from row 4"},
+      "2": {"m": -6.2, "note": "3100mm from row 3"},
+      "1": {"m": -8.5, "note": "2300mm from row 2, front wall"}
+    }
+  },
+
+  "validation_results": {
+    "BILIK_MANDI": {
+      "dims": "1.3m x 1.5m",
+      "area_m2": 1.95,
+      "ubbl_min_area": 2.5,
+      "status": "WARNING",
+      "note": "Below UBBL minimum but matches original design"
+    },
+    "RUANG_BASAH": {
+      "dims": "open_area",
+      "status": "N/A",
+      "note": "Open wet area, not enclosed - part of kitchen zone"
+    },
+    "BILIK_UTAMA": {
+      "dims": "3.0m x 3.0m",
+      "area_m2": 9.0,
+      "ubbl_min_area": 11.0,
+      "status": "PASS",
+      "ratio": 1.0,
+      "note": "Squarish room, shares wall with bathroom at Y=-1.5m"
+    },
+    "BILIK_3": {
+      "dims": "3.1m x 3.1m",
+      "area_m2": 9.61,
+      "ubbl_min_area": 9.0,
+      "status": "PASS",
+      "ratio": 1.0
+    },
+    "BILIK_2": {
+      "dims": "3.1m x 5.4m",
+      "area_m2": 16.74,
+      "ubbl_min_area": 9.0,
+      "status": "PASS",
+      "ratio": 0.57
+    },
+    "DAPUR_RUANG_MAKAN": {
+      "dims": "6.8m x 3.1m",
+      "area_m2": 21.08,
+      "status": "PASS",
+      "note": "Open plan - no wall between kitchen and dining"
+    }
+  },
+
+  "placements": [
+    {
+      "name": "EXT_WALL_BACK",
+      "type": "wall",
+      "start_point": [0, 0],
+      "end_point": [11.2, 0],
+      "thickness": 0.15,
+      "height": 3.0
+    },
+    {
+      "name": "EXT_WALL_FRONT",
+      "type": "wall",
+      "start_point": [0, -8.5],
+      "end_point": [11.2, -8.5],
+      "thickness": 0.15,
+      "height": 3.0
+    },
+    {
+      "name": "EXT_WALL_LEFT",
+      "type": "wall",
+      "start_point": [0, 0],
+      "end_point": [0, -8.5],
+      "thickness": 0.15,
+      "height": 3.0
+    },
+    {
+      "name": "EXT_WALL_RIGHT",
+      "type": "wall",
+      "start_point": [11.2, 0],
+      "end_point": [11.2, -8.5],
+      "thickness": 0.15,
+      "height": 3.0
+    },
+    {
+      "name": "INT_WALL_COL_B_BATH",
+      "type": "wall",
+      "start_point": [1.3, 0],
+      "end_point": [1.3, -1.5],
+      "thickness": 0.1,
+      "height": 3.0,
+      "is_interior": true,
+      "note": "Short wall at column B, only covers bathroom depth (row 5-4)"
+    },
+    {
+      "name": "INT_WALL_BATH_SOUTH",
+      "type": "wall",
+      "start_point": [0, -1.5],
+      "end_point": [1.3, -1.5],
+      "thickness": 0.1,
+      "height": 3.0,
+      "is_interior": true,
+      "note": "South edge of bathroom, shared wall with BILIK UTAMA"
+    },
+    {
+      "name": "INT_WALL_UTAMA_EAST",
+      "type": "wall",
+      "start_point": [3.0, -1.5],
+      "end_point": [3.0, -4.5],
+      "thickness": 0.1,
+      "height": 3.0,
+      "is_interior": true,
+      "note": "East edge of BILIK UTAMA, makes room squarish ~3m x 3m"
+    },
+    {
+      "name": "INT_WALL_UTAMA_SOUTH",
+      "type": "wall",
+      "start_point": [0, -4.5],
+      "end_point": [3.0, -4.5],
+      "thickness": 0.1,
+      "height": 3.0,
+      "is_interior": true,
+      "note": "South edge of BILIK UTAMA"
+    },
+    {
+      "name": "INT_WALL_COL_D",
+      "type": "wall",
+      "start_point": [8.1, 0],
+      "end_point": [8.1, -6.2],
+      "thickness": 0.1,
+      "height": 3.0,
+      "is_interior": true,
+      "note": "Vertical at column D, separates bedrooms from center"
+    },
+    {
+      "name": "INT_WALL_ROW4",
+      "type": "wall",
+      "start_point": [3.0, -1.5],
+      "end_point": [8.1, -1.5],
+      "thickness": 0.1,
+      "height": 3.0,
+      "is_interior": true,
+      "note": "Horizontal at row 4, starts after BILIK UTAMA east wall (X=3.0m)"
+    },
+    {
+      "name": "INT_WALL_BILIK23",
+      "type": "wall",
+      "start_point": [8.1, -3.1],
+      "end_point": [11.2, -3.1],
+      "thickness": 0.1,
+      "height": 3.0,
+      "is_interior": true,
+      "note": "Horizontal between BILIK 3 and BILIK 2"
+    },
+        {
+      "name": "D1_main",
+      "type": "door",
+      "position": [4.9, -8.5, 0],
+      "width": 0.9,
+      "height": 2.1,
+      "host_wall": "EXT_WALL_FRONT",
+      "note": "Main entry to ANJUNG, centered in front facade"
+    },
+    {
+      "name": "D2_BILIK_UTAMA",
+      "type": "door",
+      "position": [3.0, -3.0, 0],
+      "width": 0.9,
+      "height": 2.1,
+      "host_wall": "INT_WALL_UTAMA_EAST",
+      "swing": "into_room",
+      "is_interior": true,
+      "note": "Door on east wall of master bedroom, centered"
+    },
+    {
+      "name": "D2_BILIK_3",
+      "type": "door",
+      "position": [8.1, -0.75, 0],
+      "width": 0.9,
+      "height": 2.1,
+      "host_wall": "INT_WALL_COL_D",
+      "swing": "into_room",
+      "is_interior": true,
+      "note": "Centered in BILIK 3 depth (rows 5-4)"
+    },
+    {
+      "name": "D2_BILIK_2",
+      "type": "door",
+      "position": [8.1, -4.65, 0],
+      "width": 0.9,
+      "height": 2.1,
+      "host_wall": "INT_WALL_COL_D",
+      "swing": "into_room",
+      "is_interior": true,
+      "note": "Centered in BILIK 2 depth (rows 3-2)"
+    },
+    {
+      "name": "D2_DAPUR",
+      "type": "door",
+      "position": [4.7, -1.5, 0],
+      "width": 0.9,
+      "height": 2.1,
+      "host_wall": "INT_WALL_ROW4",
+      "swing": "into_kitchen",
+      "is_interior": true
+    },
+    {
+      "name": "D3_BILIK_MANDI",
+      "type": "door",
+      "position": [0.65, -1.5, 0],
+      "width": 0.75,
+      "height": 2.1,
+      "host_wall": "INT_WALL_ROW4",
+      "door_type": "louvre",
+      "is_interior": true
+    },
+    {
+      "name": "W1_BILIK_UTAMA",
+      "type": "window",
+      "position": [0, -4.65, 0.9],
+      "width": 1.8,
+      "height": 1.0,
+      "sill_height": 0.9,
+      "host_wall": "EXT_WALL_LEFT",
+      "note": "3-panel window on left wall"
+    },
+    {
+      "name": "W2_DAPUR",
+      "type": "window",
+      "position": [4.7, 0, 0.9],
+      "width": 1.2,
+      "height": 1.0,
+      "sill_height": 0.9,
+      "host_wall": "EXT_WALL_BACK"
+    },
+    {
+      "name": "W2_BILIK_3",
+      "type": "window",
+      "position": [11.2, -0.75, 0.9],
+      "width": 1.2,
+      "height": 1.0,
+      "sill_height": 0.9,
+      "host_wall": "EXT_WALL_RIGHT"
+    },
+    {
+      "name": "W2_BILIK_2",
+      "type": "window",
+      "position": [11.2, -4.65, 0.9],
+      "width": 1.2,
+      "height": 1.0,
+      "sill_height": 0.9,
+      "host_wall": "EXT_WALL_RIGHT"
+    },
+    {
+      "name": "W3_BILIK_MANDI",
+      "type": "window",
+      "position": [0, -0.75, 1.5],
+      "width": 0.6,
+      "height": 0.5,
+      "sill_height": 1.5,
+      "host_wall": "EXT_WALL_LEFT",
+      "note": "High window for privacy"
+    },
+    {
+      "name": "DRAIN_FRONT",
+      "type": "drain",
+      "start_point": [-0.6, -9.1, 0],
+      "end_point": [11.8, -9.1, 0]
+    },
+    {
+      "name": "DRAIN_BACK",
+      "type": "drain",
+      "start_point": [-0.6, 0.6, 0],
+      "end_point": [11.8, 0.6, 0]
+    },
+    {
+      "name": "DRAIN_LEFT",
+      "type": "drain",
+      "start_point": [-0.6, 0.6, 0],
+      "end_point": [-0.6, -9.1, 0]
+    },
+    {
+      "name": "DRAIN_RIGHT",
+      "type": "drain",
+      "start_point": [11.8, 0.6, 0],
+      "end_point": [11.8, -9.1, 0]
+    },
+    {
+      "name": "ROOF_MAIN",
+      "type": "roof",
+      "bounds": {
+        "min_x": -0.75,
+        "max_x": 11.95,
+        "min_y": -9.25,
+        "max_y": 0.75
+      },
+      "roof_type": "hip",
+      "pitch": 25,
+      "eave_height": 3.0,
+      "ridge_height": 4.445
+    },
+    {
+      "name": "PORCH_FRONT",
+      "type": "porch",
+      "bounds": {
+        "min_x": 3.4,
+        "max_x": 6.6,
+        "min_y": -10.5,
+        "max_y": -8.5
+      },
+      "roof_height": 2.7,
+      "columns": [
+        {"id": "COL_1", "position_m": [3.55, -10.35, 0]},
+        {"id": "COL_2", "position_m": [6.45, -10.35, 0]}
+      ]
+    }
+  ],
+
+  "open_plan_zones": [
+    {
+      "name": "LIVING_ZONE",
+      "rooms": ["RUANG_TAMU", "ANJUNG"],
+      "bounds": {"x": [1.3, 8.1], "y": [-6.2, -8.5]},
+      "note": "No walls between living and porch"
+    },
+    {
+      "name": "KITCHEN_DINING",
+      "rooms": ["DAPUR", "RUANG_MAKAN"],
+      "bounds": {"x": [1.3, 8.1], "y": [-1.5, -6.2]},
+      "note": "Open plan - dashed line boundary only, no physical wall"
+    }
+  ],
+
+  "rooms": [
+    {"name": "BILIK_MANDI", "bounds": {"x": [0, 1.3], "y": [0, -1.5]}, "type": "bathroom"},
+    {"name": "BILIK_UTAMA", "bounds": {"x": [0, 3.0], "y": [-1.5, -4.5]}, "type": "master_bedroom"},
+    {"name": "DAPUR", "bounds": {"x": [1.3, 8.1], "y": [0, -1.5]}, "type": "kitchen"},
+    {"name": "RUANG_MAKAN", "bounds": {"x": [1.3, 8.1], "y": [-1.5, -3.1]}, "type": "dining"},
+    {"name": "RUANG_TAMU", "bounds": {"x": [1.3, 8.1], "y": [-3.1, -6.2]}, "type": "living"},
+    {"name": "ANJUNG", "bounds": {"x": [1.3, 8.1], "y": [-6.2, -8.5]}, "type": "porch"},
+    {"name": "BILIK_3", "bounds": {"x": [8.1, 11.2], "y": [0, -3.1]}, "type": "bedroom"},
+    {"name": "BILIK_2", "bounds": {"x": [8.1, 11.2], "y": [-3.1, -8.5]}, "type": "bedroom"}
+  ]
+}

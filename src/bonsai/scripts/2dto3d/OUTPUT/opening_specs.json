@@ -1,0 +1,46 @@
+{
+  "doors": {
+    "D1": {
+      "width_mm": 900,
+      "height_mm": 1800,
+      "type": "single",
+      "material": "metal_frame"
+    },
+    "D2": {
+      "width_mm": 900,
+      "height_mm": 1200,
+      "type": "single",
+      "material": "metal_frame"
+    },
+    "D3": {
+      "width_mm": 750,
+      "height_mm": 600,
+      "type": "louvre",
+      "material": "timber"
+    }
+  },
+  "windows": {
+    "W1": {
+      "width_mm": 900,
+      "height_mm": 1800,
+      "sill_mm": 900,
+      "type": "3panel",
+      "material": "aluminum"
+    },
+    "W2": {
+      "width_mm": 900,
+      "height_mm": 1200,
+      "sill_mm": 900,
+      "type": "2panel",
+      "material": "aluminum"
+    },
+    "W3": {
+      "width_mm": 750,
+      "height_mm": 600,
+      "sill_mm": 1500,
+      "type": "tophung",
+      "material": "aluminum"
+    }
+  },
+  "source": "CACHE/page8_raw.json"
+}

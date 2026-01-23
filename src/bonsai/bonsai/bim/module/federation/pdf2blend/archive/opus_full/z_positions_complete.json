@@ -1,0 +1,798 @@
+{
+  "metadata": {
+    "source": "tile_test.png (400x400 crop from survey)",
+    "method": "Complete raster scan by Claude",
+    "strip_size": 40,
+    "h_step": 10,
+    "v_step": 20,
+    "total_h_strips": 17,
+    "total_v_strips": 9,
+    "point_count": 49
+  },
+  "points": [
+    {
+      "z": 43.001,
+      "x": 40.0,
+      "y": 175.0,
+      "y_blender": 225.0,
+      "x_range": [
+        0,
+        40
+      ],
+      "y_range": [
+        150,
+        160
+      ],
+      "h_sightings": 2,
+      "v_sightings": 3
+    },
+    {
+      "z": 43.004,
+      "x": 140.0,
+      "y": 175.0,
+      "y_blender": 225.0,
+      "x_range": [
+        120,
+        120
+      ],
+      "y_range": [
+        150,
+        160
+      ],
+      "h_sightings": 2,
+      "v_sightings": 1
+    },
+    {
+      "z": 43.013,
+      "x": 180.0,
+      "y": 175.0,
+      "y_blender": 225.0,
+      "x_range": [
+        160,
+        160
+      ],
+      "y_range": [
+        150,
+        160
+      ],
+      "h_sightings": 2,
+      "v_sightings": 1
+    },
+    {
+      "z": 43.072,
+      "x": 180.0,
+      "y": 175.0,
+      "y_blender": 225.0,
+      "x_range": [
+        160,
+        160
+      ],
+      "y_range": [
+        150,
+        160
+      ],
+      "h_sightings": 2,
+      "v_sightings": 1
+    },
+    {
+      "z": 43.105,
+      "x": 120.0,
+      "y": 180.0,
+      "y_blender": 220.0,
+      "x_range": [
+        100,
+        100
+      ],
+      "y_range": [
+        160,
+        160
+      ],
+      "h_sightings": 1,
+      "v_sightings": 1
+    },
+    {
+      "z": 43.137,
+      "x": 130.0,
+      "y": 135.0,
+      "y_blender": 265.0,
+      "x_range": [
+        100,
+        120
+      ],
+      "y_range": [
+        100,
+        130
+      ],
+      "h_sightings": 4,
+      "v_sightings": 2
+    },
+    {
+      "z": 43.354,
+      "x": 140.0,
+      "y": 170.0,
+      "y_blender": 230.0,
+      "x_range": [
+        120,
+        120
+      ],
+      "y_range": [
+        140,
+        160
+      ],
+      "h_sightings": 3,
+      "v_sightings": 1
+    },
+    {
+      "z": 43.385,
+      "x": 40.0,
+      "y": 120.0,
+      "y_blender": 280.0,
+      "x_range": [
+        20,
+        20
+      ],
+      "y_range": [
+        90,
+        110
+      ],
+      "h_sightings": 3,
+      "v_sightings": 1
+    },
+    {
+      "z": 43.509,
+      "x": 50.0,
+      "y": 130.0,
+      "y_blender": 270.0,
+      "x_range": [
+        20,
+        40
+      ],
+      "y_range": [
+        90,
+        130
+      ],
+      "h_sightings": 5,
+      "v_sightings": 2
+    },
+    {
+      "z": 43.589,
+      "x": 80.0,
+      "y": 125.0,
+      "y_blender": 275.0,
+      "x_range": [
+        40,
+        80
+      ],
+      "y_range": [
+        90,
+        120
+      ],
+      "h_sightings": 4,
+      "v_sightings": 3
+    },
+    {
+      "z": 43.606,
+      "x": 160.0,
+      "y": 80.0,
+      "y_blender": 320.0,
+      "x_range": [
+        120,
+        160
+      ],
+      "y_range": [
+        50,
+        70
+      ],
+      "h_sightings": 3,
+      "v_sightings": 3
+    },
+    {
+      "z": 43.617,
+      "x": 80.0,
+      "y": 155.0,
+      "y_blender": 245.0,
+      "x_range": [
+        20,
+        100
+      ],
+      "y_range": [
+        120,
+        150
+      ],
+      "h_sightings": 4,
+      "v_sightings": 4
+    },
+    {
+      "z": 43.628,
+      "x": 150.0,
+      "y": 180.0,
+      "y_blender": 220.0,
+      "x_range": [
+        120,
+        140
+      ],
+      "y_range": [
+        160,
+        160
+      ],
+      "h_sightings": 1,
+      "v_sightings": 2
+    },
+    {
+      "z": 43.688,
+      "x": 70.0,
+      "y": 130.0,
+      "y_blender": 270.0,
+      "x_range": [
+        40,
+        60
+      ],
+      "y_range": [
+        100,
+        120
+      ],
+      "h_sightings": 3,
+      "v_sightings": 2
+    },
+    {
+      "z": 43.704,
+      "x": 70.0,
+      "y": 140.0,
+      "y_blender": 260.0,
+      "x_range": [
+        40,
+        60
+      ],
+      "y_range": [
+        100,
+        140
+      ],
+      "h_sightings": 4,
+      "v_sightings": 2
+    },
+    {
+      "z": 43.764,
+      "x": 100.0,
+      "y": 175.0,
+      "y_blender": 225.0,
+      "x_range": [
+        80,
+        80
+      ],
+      "y_range": [
+        150,
+        160
+      ],
+      "h_sightings": 2,
+      "v_sightings": 1
+    },
+    {
+      "z": 43.806,
+      "x": 50.0,
+      "y": 155.0,
+      "y_blender": 245.0,
+      "x_range": [
+        20,
+        40
+      ],
+      "y_range": [
+        120,
+        150
+      ],
+      "h_sightings": 4,
+      "v_sightings": 2
+    },
+    {
+      "z": 43.879,
+      "x": 100.0,
+      "y": 95.0,
+      "y_blender": 305.0,
+      "x_range": [
+        60,
+        100
+      ],
+      "y_range": [
+        60,
+        90
+      ],
+      "h_sightings": 4,
+      "v_sightings": 3
+    },
+    {
+      "z": 43.987,
+      "x": 150.0,
+      "y": 170.0,
+      "y_blender": 230.0,
+      "x_range": [
+        120,
+        140
+      ],
+      "y_range": [
+        140,
+        160
+      ],
+      "h_sightings": 3,
+      "v_sightings": 2
+    },
+    {
+      "z": 44.004,
+      "x": 120.0,
+      "y": 135.0,
+      "y_blender": 265.0,
+      "x_range": [
+        100,
+        100
+      ],
+      "y_range": [
+        100,
+        130
+      ],
+      "h_sightings": 4,
+      "v_sightings": 1
+    },
+    {
+      "z": 44.008,
+      "x": 80.0,
+      "y": 25.0,
+      "y_blender": 375.0,
+      "x_range": [
+        60,
+        60
+      ],
+      "y_range": [
+        0,
+        10
+      ],
+      "h_sightings": 2,
+      "v_sightings": 1
+    },
+    {
+      "z": 44.018,
+      "x": 20.0,
+      "y": 70.0,
+      "y_blender": 330.0,
+      "x_range": [
+        0,
+        0
+      ],
+      "y_range": [
+        40,
+        60
+      ],
+      "h_sightings": 3,
+      "v_sightings": 1
+    },
+    {
+      "z": 44.041,
+      "x": 110.0,
+      "y": 30.0,
+      "y_blender": 370.0,
+      "x_range": [
+        60,
+        120
+      ],
+      "y_range": [
+        0,
+        20
+      ],
+      "h_sightings": 3,
+      "v_sightings": 3
+    },
+    {
+      "z": 44.078,
+      "x": 140.0,
+      "y": 70.0,
+      "y_blender": 330.0,
+      "x_range": [
+        100,
+        140
+      ],
+      "y_range": [
+        30,
+        70
+      ],
+      "h_sightings": 4,
+      "v_sightings": 3
+    },
+    {
+      "z": 44.112,
+      "x": 180.0,
+      "y": 35.0,
+      "y_blender": 365.0,
+      "x_range": [
+        160,
+        160
+      ],
+      "y_range": [
+        0,
+        30
+      ],
+      "h_sightings": 4,
+      "v_sightings": 1
+    },
+    {
+      "z": 44.148,
+      "x": 50.0,
+      "y": 85.0,
+      "y_blender": 315.0,
+      "x_range": [
+        20,
+        40
+      ],
+      "y_range": [
+        50,
+        80
+      ],
+      "h_sightings": 4,
+      "v_sightings": 2
+    },
+    {
+      "z": 44.154,
+      "x": 30.0,
+      "y": 20.0,
+      "y_blender": 380.0,
+      "x_range": [
+        0,
+        20
+      ],
+      "y_range": [
+        0,
+        0
+      ],
+      "h_sightings": 1,
+      "v_sightings": 2
+    },
+    {
+      "z": 44.165,
+      "x": 90.0,
+      "y": 50.0,
+      "y_blender": 350.0,
+      "x_range": [
+        60,
+        80
+      ],
+      "y_range": [
+        20,
+        40
+      ],
+      "h_sightings": 3,
+      "v_sightings": 2
+    },
+    {
+      "z": 44.178,
+      "x": 180.0,
+      "y": 60.0,
+      "y_blender": 340.0,
+      "x_range": [
+        160,
+        160
+      ],
+      "y_range": [
+        40,
+        40
+      ],
+      "h_sightings": 1,
+      "v_sightings": 1
+    },
+    {
+      "z": 44.186,
+      "x": 150.0,
+      "y": 55.0,
+      "y_blender": 345.0,
+      "x_range": [
+        100,
+        160
+      ],
+      "y_range": [
+        30,
+        40
+      ],
+      "h_sightings": 2,
+      "v_sightings": 2
+    },
+    {
+      "z": 44.187,
+      "x": 40.0,
+      "y": 75.0,
+      "y_blender": 325.0,
+      "x_range": [
+        20,
+        20
+      ],
+      "y_range": [
+        50,
+        60
+      ],
+      "h_sightings": 2,
+      "v_sightings": 1
+    },
+    {
+      "z": 44.206,
+      "x": 140.0,
+      "y": 125.0,
+      "y_blender": 275.0,
+      "x_range": [
+        120,
+        120
+      ],
+      "y_range": [
+        100,
+        110
+      ],
+      "h_sightings": 2,
+      "v_sightings": 1
+    },
+    {
+      "z": 44.207,
+      "x": 180.0,
+      "y": 45.0,
+      "y_blender": 355.0,
+      "x_range": [
+        160,
+        160
+      ],
+      "y_range": [
+        20,
+        30
+      ],
+      "h_sightings": 2,
+      "v_sightings": 1
+    },
+    {
+      "z": 44.211,
+      "x": 180.0,
+      "y": 165.0,
+      "y_blender": 235.0,
+      "x_range": [
+        160,
+        160
+      ],
+      "y_range": [
+        130,
+        160
+      ],
+      "h_sightings": 4,
+      "v_sightings": 1
+    },
+    {
+      "z": 44.232,
+      "x": 140.0,
+      "y": 55.0,
+      "y_blender": 345.0,
+      "x_range": [
+        100,
+        140
+      ],
+      "y_range": [
+        30,
+        40
+      ],
+      "h_sightings": 2,
+      "v_sightings": 3
+    },
+    {
+      "z": 44.271,
+      "x": 80.0,
+      "y": 40.0,
+      "y_blender": 360.0,
+      "x_range": [
+        40,
+        80
+      ],
+      "y_range": [
+        10,
+        30
+      ],
+      "h_sightings": 3,
+      "v_sightings": 3
+    },
+    {
+      "z": 44.279,
+      "x": 70.0,
+      "y": 50.0,
+      "y_blender": 350.0,
+      "x_range": [
+        20,
+        80
+      ],
+      "y_range": [
+        10,
+        50
+      ],
+      "h_sightings": 5,
+      "v_sightings": 3
+    },
+    {
+      "z": 44.311,
+      "x": 60.0,
+      "y": 45.0,
+      "y_blender": 355.0,
+      "x_range": [
+        20,
+        60
+      ],
+      "y_range": [
+        20,
+        30
+      ],
+      "h_sightings": 2,
+      "v_sightings": 3
+    },
+    {
+      "z": 44.32,
+      "x": 80.0,
+      "y": 55.0,
+      "y_blender": 345.0,
+      "x_range": [
+        60,
+        60
+      ],
+      "y_range": [
+        30,
+        40
+      ],
+      "h_sightings": 2,
+      "v_sightings": 1
+    },
+    {
+      "z": 44.33,
+      "x": 80.0,
+      "y": 90.0,
+      "y_blender": 310.0,
+      "x_range": [
+        40,
+        80
+      ],
+      "y_range": [
+        50,
+        90
+      ],
+      "h_sightings": 5,
+      "v_sightings": 3
+    },
+    {
+      "z": 44.376,
+      "x": 70.0,
+      "y": 100.0,
+      "y_blender": 300.0,
+      "x_range": [
+        20,
+        80
+      ],
+      "y_range": [
+        70,
+        90
+      ],
+      "h_sightings": 3,
+      "v_sightings": 3
+    },
+    {
+      "z": 44.387,
+      "x": 180.0,
+      "y": 35.0,
+      "y_blender": 365.0,
+      "x_range": [
+        160,
+        160
+      ],
+      "y_range": [
+        0,
+        30
+      ],
+      "h_sightings": 4,
+      "v_sightings": 1
+    },
+    {
+      "z": 44.501,
+      "x": 130.0,
+      "y": 30.0,
+      "y_blender": 370.0,
+      "x_range": [
+        100,
+        120
+      ],
+      "y_range": [
+        0,
+        20
+      ],
+      "h_sightings": 3,
+      "v_sightings": 2
+    },
+    {
+      "z": 44.561,
+      "x": 140.0,
+      "y": 35.0,
+      "y_blender": 365.0,
+      "x_range": [
+        120,
+        120
+      ],
+      "y_range": [
+        10,
+        20
+      ],
+      "h_sightings": 2,
+      "v_sightings": 1
+    },
+    {
+      "z": 44.673,
+      "x": 70.0,
+      "y": 25.0,
+      "y_blender": 375.0,
+      "x_range": [
+        40,
+        60
+      ],
+      "y_range": [
+        0,
+        10
+      ],
+      "h_sightings": 2,
+      "v_sightings": 2
+    },
+    {
+      "z": 44.714,
+      "x": 50.0,
+      "y": 30.0,
+      "y_blender": 370.0,
+      "x_range": [
+        20,
+        40
+      ],
+      "y_range": [
+        0,
+        20
+      ],
+      "h_sightings": 3,
+      "v_sightings": 2
+    },
+    {
+      "z": 44.718,
+      "x": 130.0,
+      "y": 20.0,
+      "y_blender": 380.0,
+      "x_range": [
+        80,
+        140
+      ],
+      "y_range": [
+        0,
+        0
+      ],
+      "h_sightings": 1,
+      "v_sightings": 2
+    },
+    {
+      "z": 44.786,
+      "x": 130.0,
+      "y": 60.0,
+      "y_blender": 340.0,
+      "x_range": [
+        80,
+        140
+      ],
+      "y_range": [
+        0,
+        80
+      ],
+      "h_sightings": 2,
+      "v_sightings": 2
+    },
+    {
+      "z": 44.788,
+      "x": 150.0,
+      "y": 35.0,
+      "y_blender": 365.0,
+      "x_range": [
+        120,
+        140
+      ],
+      "y_range": [
+        10,
+        20
+      ],
+      "h_sightings": 2,
+      "v_sightings": 2
+    }
+  ]
+}

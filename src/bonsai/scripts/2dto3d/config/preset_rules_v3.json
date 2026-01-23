@@ -1,0 +1,140 @@
+{
+  "preset_name": "RUMAH_RAKYAT_3BILIK",
+  "description": "Malaysian affordable housing - 3 bedroom single storey",
+
+  "rule_priority": {
+    "1_vision_ai": "Grid dimensions from Vision API are PRIMARY source",
+    "2_preset_pattern": "Layout pattern (which rooms where) from preset",
+    "3_minimum_override": "Only override if dimension is functionally impossible"
+  },
+
+  "layout_pattern": {
+    "entry": "CENTER_FRONT via porch",
+    "circulation": "Living hall is main circulation, bedrooms open to it",
+    "wet_areas": "Back-left corner (bathroom + wet kitchen)",
+    "kitchen": "Back-center, SEPARATE room with door to dining",
+    "bedrooms": "Left side (master) and right side (bed 1, bed 2)"
+  },
+
+  "wall_placement_rules": {
+    "rule_1": {
+      "name": "LEFT_VERTICAL",
+      "description": "Separates left rooms from center hall",
+      "position": "At grid column B (or adjusted if bathroom too narrow)",
+      "extent": "From back wall (Y=0) to front row (Y=-6.4)",
+      "confidence": 0.85
+    },
+    "rule_2": {
+      "name": "RIGHT_VERTICAL",
+      "description": "Separates right bedrooms from center hall",
+      "position": "At grid column D",
+      "extent": "From back wall (Y=0) to front row (Y=-6.4)",
+      "confidence": 0.90
+    },
+    "rule_3": {
+      "name": "BACK_HORIZONTAL",
+      "description": "Separates kitchen/wet areas from living areas",
+      "position": "At grid row 5",
+      "extent": "From left wall (X=0) to column D (NOT full width - BILIK 1 extends back)",
+      "confidence": 0.85
+    },
+    "rule_4": {
+      "name": "BILIK_DIVIDER",
+      "description": "Divides BILIK 1 from BILIK 2 on right side",
+      "position": "At grid row 3",
+      "extent": "From column D to right wall",
+      "confidence": 0.90
+    },
+    "rule_5": {
+      "name": "FRONT_SEGMENTS",
+      "description": "Front boundary for bedrooms only - CENTER IS OPEN",
+      "position": "At grid row 4",
+      "extent": "LEFT segment (0 to col B) + RIGHT segment (col D to end)",
+      "note": "NO WALL in center - living connects to porch",
+      "confidence": 0.95
+    },
+    "rule_6": {
+      "name": "TWIN_WET_DIVIDER",
+      "description": "Divides bathroom from wet kitchen within left-back zone",
+      "position": "Horizontal, mid-height of zone",
+      "confidence": 0.70
+    }
+  },
+
+  "open_plan_zones": {
+    "LIVING_DINING_PORCH": {
+      "rooms": ["RUANG MAKAN", "RUANG TAMU", "ANJUNG"],
+      "rule": "NO interior walls within this zone",
+      "bounds": "From row 5 wall to front, between col B and col D",
+      "confidence": 0.95
+    }
+  },
+
+  "door_placement_rules": {
+    "D1_MAIN": {
+      "location": "Front exterior wall, centered on porch",
+      "host": "EXT_WALL_FRONT",
+      "rule": "Use porch center X position"
+    },
+    "D2_BEDROOMS": {
+      "location": "On vertical wall facing living hall",
+      "rule": "Centered in room's Y extent",
+      "applies_to": ["BILIK UTAMA", "BILIK 1", "BILIK 2"]
+    },
+    "D2_KITCHEN": {
+      "location": "On back horizontal wall",
+      "rule": "Centered in kitchen's X extent",
+      "opens_to": "RUANG MAKAN"
+    },
+    "D3_BATHROOM": {
+      "location": "On back horizontal wall, near corner",
+      "type": "louvre",
+      "rule": "Within 1m of corner for privacy"
+    }
+  },
+
+  "window_placement_rules": {
+    "W1_LARGE": {
+      "rooms": ["BILIK UTAMA"],
+      "wall": "Exterior side wall",
+      "position": "Centered in room extent",
+      "size": "1800x1000mm"
+    },
+    "W2_MEDIUM": {
+      "rooms": ["BILIK 1", "BILIK 2", "DAPUR"],
+      "wall": "Exterior wall",
+      "position": "Centered in room extent",
+      "size": "1200x1000mm"
+    },
+    "W3_SMALL": {
+      "rooms": ["BILIK MANDI"],
+      "wall": "Exterior wall (left or back)",
+      "position": "High placement for privacy",
+      "size": "600x500mm",
+      "sill": "1500mm"
+    }
+  },
+
+  "dimension_constraints": {
+    "bathroom_min_width": {
+      "value_m": 1.3,
+      "note": "RUMAH RAKYAT allows compact 1.3m bathroom",
+      "override_threshold_m": 1.0,
+      "override_to_m": 1.5
+    },
+    "bedroom_min_width": {
+      "value_m": 2.5,
+      "override_threshold_m": 2.0
+    },
+    "kitchen_min_depth": {
+      "value_m": 1.5,
+      "override_threshold_m": 1.2
+    }
+  },
+
+  "confidence_scoring": {
+    "high_0.9+": "Direct from Vision API (grid lines, room labels)",
+    "medium_0.7-0.9": "Preset rule applied with Vision AI validation",
+    "low_0.5-0.7": "Estimated/interpolated position"
+  }
+}

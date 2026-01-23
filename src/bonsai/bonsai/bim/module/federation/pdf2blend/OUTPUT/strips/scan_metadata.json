@@ -1,0 +1,10 @@
+{
+  "source_image": "INPUT/survey_highres.png",
+  "image_width": 9934,
+  "image_height": 7017,
+  "strip_size": 40,
+  "step_size": 10,
+  "h_strip_count": 698,
+  "v_strip_count": 990,
+  "total_strips": 1688
+}

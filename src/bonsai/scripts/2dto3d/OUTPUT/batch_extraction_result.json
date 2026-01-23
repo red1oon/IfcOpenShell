@@ -1,0 +1,111 @@
+{
+  "pages": {
+    "page1": {
+      "file": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\scripts\\2dto3d\\CACHE\\page1.png",
+      "cache": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\scripts\\2dto3d\\CACHE\\page1_raw.json",
+      "text_count": 399,
+      "cached": true
+    },
+    "page2": {
+      "file": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\scripts\\2dto3d\\CACHE\\page2.png",
+      "cache": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\scripts\\2dto3d\\CACHE\\page2_raw.json",
+      "text_count": 209,
+      "cached": false
+    },
+    "page3": {
+      "file": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\scripts\\2dto3d\\CACHE\\page3.png",
+      "cache": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\scripts\\2dto3d\\CACHE\\page3_raw.json",
+      "text_count": 312,
+      "cached": false
+    },
+    "page4": {
+      "file": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\scripts\\2dto3d\\CACHE\\page4.png",
+      "cache": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\scripts\\2dto3d\\CACHE\\page4_raw.json",
+      "text_count": 182,
+      "cached": false
+    },
+    "page5": {
+      "file": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\scripts\\2dto3d\\CACHE\\page5.png",
+      "cache": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\scripts\\2dto3d\\CACHE\\page5_raw.json",
+      "text_count": 182,
+      "cached": false
+    },
+    "page6": {
+      "file": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\scripts\\2dto3d\\CACHE\\page6.png",
+      "cache": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\scripts\\2dto3d\\CACHE\\page6_raw.json",
+      "text_count": 200,
+      "cached": false
+    },
+    "page7": {
+      "file": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\scripts\\2dto3d\\CACHE\\page7.png",
+      "cache": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\scripts\\2dto3d\\CACHE\\page7_raw.json",
+      "text_count": 342,
+      "cached": false
+    },
+    "page8": {
+      "file": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\scripts\\2dto3d\\CACHE\\page8.png",
+      "cache": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\scripts\\2dto3d\\CACHE\\page8_raw.json",
+      "text_count": 328,
+      "cached": true
+    }
+  },
+  "stats": {
+    "total_pages": 8,
+    "new_api_calls": 6,
+    "from_cache": 2,
+    "api_usage": {
+      "total_calls": 6,
+      "quota_limit": 1000,
+      "calls": [
+        {
+          "timestamp": "2025-12-20T05:43:41.657529",
+          "page": "page1",
+          "cached": true,
+          "api_call": false
+        },
+        {
+          "timestamp": "2025-12-20T05:43:46.414521",
+          "page": "page2",
+          "cached": false,
+          "api_call": true
+        },
+        {
+          "timestamp": "2025-12-20T05:43:50.462628",
+          "page": "page3",
+          "cached": false,
+          "api_call": true
+        },
+        {
+          "timestamp": "2025-12-20T05:43:54.019803",
+          "page": "page4",
+          "cached": false,
+          "api_call": true
+        },
+        {
+          "timestamp": "2025-12-20T05:43:56.572018",
+          "page": "page5",
+          "cached": false,
+          "api_call": true
+        },
+        {
+          "timestamp": "2025-12-20T05:44:01.530777",
+          "page": "page6",
+          "cached": false,
+          "api_call": true
+        },
+        {
+          "timestamp": "2025-12-20T05:44:05.605573",
+          "page": "page7",
+          "cached": false,
+          "api_call": true
+        },
+        {
+          "timestamp": "2025-12-20T05:44:05.605573",
+          "page": "page8",
+          "cached": true,
+          "api_call": false
+        }
+      ]
+    }
+  }
+}

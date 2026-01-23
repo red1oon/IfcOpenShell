@@ -1,0 +1,141 @@
+{
+  "method": "claude_visual_analysis",
+  "description": "Interior layout from Claude AI visual recognition of floor plan",
+
+  "grid": {
+    "columns": {"A": 0, "B": 1.3, "C": 4.4, "D": 8.1, "E": 11.2},
+    "rows": {"1": 0, "5": -1.5, "3": -3.3, "4": -6.4, "2": -8.5}
+  },
+
+  "interior_walls": [
+    {
+      "name": "INT_WALL_COL_B",
+      "type": "wall",
+      "start_point": [1.3, 0],
+      "end_point": [1.3, -6.4],
+      "thickness": 0.1,
+      "height": 3.0,
+      "is_interior": true,
+      "visual_note": "Vertical wall at column B, separates left rooms from center"
+    },
+    {
+      "name": "INT_WALL_COL_D",
+      "type": "wall",
+      "start_point": [8.1, 0],
+      "end_point": [8.1, -6.4],
+      "thickness": 0.1,
+      "height": 3.0,
+      "is_interior": true,
+      "visual_note": "Vertical wall at column D, separates right bedrooms from center"
+    },
+    {
+      "name": "INT_WALL_ROW5",
+      "type": "wall",
+      "start_point": [0, -1.5],
+      "end_point": [8.1, -1.5],
+      "thickness": 0.1,
+      "height": 3.0,
+      "is_interior": true,
+      "visual_note": "Horizontal wall at row 5, separates kitchen/bath from living - stops at col D"
+    },
+    {
+      "name": "INT_WALL_BILIK12",
+      "type": "wall",
+      "start_point": [8.1, -3.3],
+      "end_point": [11.2, -3.3],
+      "thickness": 0.1,
+      "height": 3.0,
+      "is_interior": true,
+      "visual_note": "Horizontal wall between BILIK 1 and BILIK 2 on right side only"
+    },
+    {
+      "name": "INT_WALL_BATH_DIV",
+      "type": "wall",
+      "start_point": [0, -0.75],
+      "end_point": [1.3, -0.75],
+      "thickness": 0.1,
+      "height": 3.0,
+      "is_interior": true,
+      "visual_note": "Divides BILIK MANDI from RUANG BASAH within bathroom zone"
+    }
+  ],
+
+  "open_areas": [
+    {
+      "name": "LIVING_DINING_PORCH",
+      "description": "No wall between RUANG MAKAN, RUANG TAMU, and ANJUNG",
+      "bounds": {"x": [1.3, 8.1], "y": [-1.5, -8.5]},
+      "visual_note": "I see continuous open space from kitchen wall to front - no internal walls"
+    }
+  ],
+
+  "interior_doors": [
+    {
+      "name": "D2_BILIK_UTAMA",
+      "type": "door",
+      "position": [1.3, -3.95, 0],
+      "width": 0.9,
+      "height": 2.1,
+      "host_wall": "INT_WALL_COL_B",
+      "swing": "left_into_room",
+      "is_interior": true,
+      "visual_note": "Arc swings INTO bedroom (westward)"
+    },
+    {
+      "name": "D2_BILIK_1",
+      "type": "door",
+      "position": [8.1, -1.65, 0],
+      "width": 0.9,
+      "height": 2.1,
+      "host_wall": "INT_WALL_COL_D",
+      "swing": "right_into_room",
+      "is_interior": true,
+      "visual_note": "Arc swings INTO bedroom (eastward), centered in BILIK 1"
+    },
+    {
+      "name": "D2_BILIK_2",
+      "type": "door",
+      "position": [8.1, -4.85, 0],
+      "width": 0.9,
+      "height": 2.1,
+      "host_wall": "INT_WALL_COL_D",
+      "swing": "right_into_room",
+      "is_interior": true,
+      "visual_note": "Arc swings INTO bedroom (eastward), centered in BILIK 2"
+    },
+    {
+      "name": "D2_DAPUR",
+      "type": "door",
+      "position": [4.7, -1.5, 0],
+      "width": 0.9,
+      "height": 2.1,
+      "host_wall": "INT_WALL_ROW5",
+      "swing": "north_into_kitchen",
+      "is_interior": true,
+      "visual_note": "Arc swings INTO kitchen (northward)"
+    },
+    {
+      "name": "D3_BILIK_MANDI",
+      "type": "door",
+      "position": [0.65, -1.5, 0],
+      "width": 0.75,
+      "height": 2.1,
+      "host_wall": "INT_WALL_ROW5",
+      "door_type": "louvre",
+      "is_interior": true,
+      "visual_note": "Small louvre door near corner"
+    }
+  ],
+
+  "rooms_identified": [
+    {"name": "BILIK MANDI", "cell": "A-B, row1-mid", "area_m2": 0.975},
+    {"name": "RUANG BASAH", "cell": "A-B, mid-row5", "area_m2": 0.975},
+    {"name": "DAPUR", "cell": "B-D, row1-row5", "area_m2": 10.2},
+    {"name": "BILIK 1", "cell": "D-E, row1-row3", "area_m2": 10.23},
+    {"name": "BILIK UTAMA", "cell": "A-B, row5-row4", "area_m2": 6.37},
+    {"name": "RUANG MAKAN", "cell": "B-D, row5-row3", "area_m2": 12.24},
+    {"name": "RUANG TAMU", "cell": "B-D, row3-row4", "area_m2": 21.08},
+    {"name": "BILIK 2", "cell": "D-E, row3-row4", "area_m2": 9.61},
+    {"name": "ANJUNG", "cell": "B-D, row4-row2", "area_m2": 14.28}
+  ]
+}

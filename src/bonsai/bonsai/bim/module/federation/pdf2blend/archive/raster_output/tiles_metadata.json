@@ -1,0 +1,289 @@
+{
+  "source_image": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\survey_highres.png",
+  "image_width": 9934,
+  "image_height": 7017,
+  "tile_size": 1500,
+  "tile_count": 35,
+  "tiles": [
+    {
+      "id": 0,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_000_x0_y0.png",
+      "x_offset": 0,
+      "y_offset": 0,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 1,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_001_x1500_y0.png",
+      "x_offset": 1500,
+      "y_offset": 0,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 2,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_002_x3000_y0.png",
+      "x_offset": 3000,
+      "y_offset": 0,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 3,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_003_x4500_y0.png",
+      "x_offset": 4500,
+      "y_offset": 0,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 4,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_004_x6000_y0.png",
+      "x_offset": 6000,
+      "y_offset": 0,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 5,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_005_x7500_y0.png",
+      "x_offset": 7500,
+      "y_offset": 0,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 6,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_006_x9000_y0.png",
+      "x_offset": 9000,
+      "y_offset": 0,
+      "width": 934,
+      "height": 1500
+    },
+    {
+      "id": 7,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_007_x0_y1500.png",
+      "x_offset": 0,
+      "y_offset": 1500,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 8,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_008_x1500_y1500.png",
+      "x_offset": 1500,
+      "y_offset": 1500,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 9,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_009_x3000_y1500.png",
+      "x_offset": 3000,
+      "y_offset": 1500,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 10,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_010_x4500_y1500.png",
+      "x_offset": 4500,
+      "y_offset": 1500,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 11,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_011_x6000_y1500.png",
+      "x_offset": 6000,
+      "y_offset": 1500,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 12,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_012_x7500_y1500.png",
+      "x_offset": 7500,
+      "y_offset": 1500,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 13,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_013_x9000_y1500.png",
+      "x_offset": 9000,
+      "y_offset": 1500,
+      "width": 934,
+      "height": 1500
+    },
+    {
+      "id": 14,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_014_x0_y3000.png",
+      "x_offset": 0,
+      "y_offset": 3000,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 15,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_015_x1500_y3000.png",
+      "x_offset": 1500,
+      "y_offset": 3000,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 16,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_016_x3000_y3000.png",
+      "x_offset": 3000,
+      "y_offset": 3000,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 17,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_017_x4500_y3000.png",
+      "x_offset": 4500,
+      "y_offset": 3000,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 18,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_018_x6000_y3000.png",
+      "x_offset": 6000,
+      "y_offset": 3000,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 19,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_019_x7500_y3000.png",
+      "x_offset": 7500,
+      "y_offset": 3000,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 20,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_020_x9000_y3000.png",
+      "x_offset": 9000,
+      "y_offset": 3000,
+      "width": 934,
+      "height": 1500
+    },
+    {
+      "id": 21,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_021_x0_y4500.png",
+      "x_offset": 0,
+      "y_offset": 4500,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 22,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_022_x1500_y4500.png",
+      "x_offset": 1500,
+      "y_offset": 4500,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 23,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_023_x3000_y4500.png",
+      "x_offset": 3000,
+      "y_offset": 4500,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 24,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_024_x4500_y4500.png",
+      "x_offset": 4500,
+      "y_offset": 4500,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 25,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_025_x6000_y4500.png",
+      "x_offset": 6000,
+      "y_offset": 4500,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 26,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_026_x7500_y4500.png",
+      "x_offset": 7500,
+      "y_offset": 4500,
+      "width": 1500,
+      "height": 1500
+    },
+    {
+      "id": 27,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_027_x9000_y4500.png",
+      "x_offset": 9000,
+      "y_offset": 4500,
+      "width": 934,
+      "height": 1500
+    },
+    {
+      "id": 28,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_028_x0_y6000.png",
+      "x_offset": 0,
+      "y_offset": 6000,
+      "width": 1500,
+      "height": 1017
+    },
+    {
+      "id": 29,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_029_x1500_y6000.png",
+      "x_offset": 1500,
+      "y_offset": 6000,
+      "width": 1500,
+      "height": 1017
+    },
+    {
+      "id": 30,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_030_x3000_y6000.png",
+      "x_offset": 3000,
+      "y_offset": 6000,
+      "width": 1500,
+      "height": 1017
+    },
+    {
+      "id": 31,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_031_x4500_y6000.png",
+      "x_offset": 4500,
+      "y_offset": 6000,
+      "width": 1500,
+      "height": 1017
+    },
+    {
+      "id": 32,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_032_x6000_y6000.png",
+      "x_offset": 6000,
+      "y_offset": 6000,
+      "width": 1500,
+      "height": 1017
+    },
+    {
+      "id": 33,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_033_x7500_y6000.png",
+      "x_offset": 7500,
+      "y_offset": 6000,
+      "width": 1500,
+      "height": 1017
+    },
+    {
+      "id": 34,
+      "path": "C:\\Dev\\bonsai-extensions\\IfcOpenShell\\src\\bonsai\\bonsai\\bim\\module\\federation\\pdf2blend\\raster_output\\tiles\\tile_034_x9000_y6000.png",
+      "x_offset": 9000,
+      "y_offset": 6000,
+      "width": 934,
+      "height": 1017
+    }
+  ]
+}

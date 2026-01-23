@@ -1,0 +1,206 @@
+{
+  "template_version": "2.0",
+  "house_elements": {
+    "outside_drain": {
+      "exists": true,
+      "offset_from_wall_mm": 600,
+      "width_mm": 150,
+      "depth_mm": 150,
+      "source_page": 1,
+      "source_type": "default"
+    },
+    "outer_walls": {
+      "count": 4,
+      "thickness_mm": 150,
+      "height_mm": 3000,
+      "corners_px": {
+        "A1": [
+          681.0,
+          1719.5
+        ],
+        "E1": [
+          null,
+          null
+        ],
+        "E5": [
+          null,
+          null
+        ],
+        "A5": [
+          681.0,
+          732.0
+        ]
+      },
+      "corners_m": {
+        "A1": [
+          0,
+          0
+        ],
+        "E1": [
+          11.2,
+          0
+        ],
+        "E5": [
+          11.2,
+          -8.5
+        ],
+        "A5": [
+          0,
+          -8.5
+        ]
+      },
+      "source_page": 1,
+      "source_type": "grid_pixels"
+    },
+    "main_door": {
+      "label": "D1",
+      "width_mm": 900,
+      "height_mm": 2100,
+      "position_px": [
+        1248.5,
+        1583.0
+      ],
+      "position_m": [
+        4.332,
+        -8.5,
+        0
+      ],
+      "host_wall": "FRONT",
+      "derived_from": "ANJUNG",
+      "source_page": 8,
+      "source_type": "schedule_plus_room"
+    },
+    "outer_windows": {
+      "count": 5,
+      "types": {
+        "W1": {
+          "width_mm": 1800,
+          "height_mm": 1000,
+          "sill_mm": 900,
+          "instances": [
+            {
+              "room": "BILIK UTAMA",
+              "wall": "LEFT",
+              "position_m": [
+                0,
+                -3.604,
+                0.9
+              ],
+              "position_px": [
+                769.5,
+                1264.0
+              ]
+            }
+          ]
+        },
+        "W2": {
+          "width_mm": 1200,
+          "height_mm": 1000,
+          "sill_mm": 900,
+          "instances": [
+            {
+              "room": "DAPUR",
+              "wall": "BACK",
+              "position_m": [
+                4.31,
+                0,
+                0.9
+              ],
+              "position_px": [
+                1243.0,
+                838.0
+              ]
+            },
+            {
+              "room": "BILIK 2",
+              "wall": "RIGHT",
+              "position_m": [
+                11.2,
+                -4.85,
+                0.9
+              ],
+              "position_px": [
+                1670.5,
+                1250.5
+              ]
+            },
+            {
+              "room": "BILIK 1",
+              "wall": "RIGHT",
+              "position_m": [
+                11.2,
+                -1.65,
+                0.9
+              ],
+              "position_px": null
+            }
+          ]
+        },
+        "W3": {
+          "width_mm": 600,
+          "height_mm": 500,
+          "sill_mm": 1500,
+          "instances": [
+            {
+              "room": "BILIK MANDI",
+              "wall": "LEFT",
+              "position_m": [
+                0,
+                -0.75,
+                1.5
+              ],
+              "position_px": null
+            }
+          ]
+        }
+      },
+      "source_page": 8,
+      "source_type": "schedule_plus_room"
+    },
+    "roof": {
+      "type": "hip",
+      "pitch_degrees": 25,
+      "overhang_mm": 600,
+      "eave_height_mm": 3000,
+      "ridge_height_mm": 5000,
+      "source_page": 2,
+      "source_type": "elevation_or_default"
+    },
+    "porch": {
+      "label": "ANJUNG",
+      "position_px": [
+        1248.5,
+        1583.0
+      ],
+      "position_m": [
+        4.332,
+        -5.1,
+        0
+      ],
+      "width_mm": null,
+      "depth_mm": 2000,
+      "roof_height_mm": 2700,
+      "columns": 2,
+      "source_page": 1,
+      "source_type": "room_pixel"
+    }
+  },
+  "calibration": {
+    "origin_px": [
+      203.5,
+      495.5
+    ],
+    "scale_x_m_per_px": 0.004145844900980937,
+    "scale_y_m_per_px": 0.004689655172413793,
+    "building_width_m": 11.2,
+    "building_depth_m": 8.5
+  },
+  "fill_status": {
+    "outside_drain": "filled",
+    "outer_walls": "filled",
+    "main_door": "filled",
+    "outer_windows": "filled",
+    "roof": "filled",
+    "porch": "filled"
+  }
+}

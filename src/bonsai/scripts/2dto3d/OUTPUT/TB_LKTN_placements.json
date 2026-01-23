@@ -1,0 +1,245 @@
+{
+  "metadata": {
+    "pipeline": "TB_LKTN_INSTANCE_converted",
+    "source": "TB_LKTN_INSTANCE.json",
+    "building_width_m": 11.2,
+    "building_depth_m": 8.5
+  },
+  "placements": [
+    {
+      "name": "DRAIN_FRONT",
+      "type": "drain",
+      "start_point": [-0.6, 0, 0],
+      "end_point": [11.8, 0, 0]
+    },
+    {
+      "name": "DRAIN_BACK",
+      "type": "drain",
+      "start_point": [-0.6, -9.1, 0],
+      "end_point": [11.8, -9.1, 0]
+    },
+    {
+      "name": "DRAIN_LEFT",
+      "type": "drain",
+      "start_point": [-0.6, 0, 0],
+      "end_point": [-0.6, -9.1, 0]
+    },
+    {
+      "name": "DRAIN_RIGHT",
+      "type": "drain",
+      "start_point": [11.8, 0, 0],
+      "end_point": [11.8, -9.1, 0]
+    },
+    {
+      "name": "WALL_EXT_FRONT",
+      "type": "wall",
+      "start_point": [0, -2.3],
+      "end_point": [11.2, -2.3],
+      "thickness": 0.15,
+      "height": 3.0
+    },
+    {
+      "name": "WALL_EXT_BACK",
+      "type": "wall",
+      "start_point": [0, -8.5],
+      "end_point": [11.2, -8.5],
+      "thickness": 0.15,
+      "height": 3.0
+    },
+    {
+      "name": "WALL_EXT_LEFT",
+      "type": "wall",
+      "start_point": [0, -2.3],
+      "end_point": [0, -8.5],
+      "thickness": 0.15,
+      "height": 3.0
+    },
+    {
+      "name": "WALL_EXT_RIGHT",
+      "type": "wall",
+      "start_point": [11.2, -2.3],
+      "end_point": [11.2, -8.5],
+      "thickness": 0.15,
+      "height": 3.0
+    },
+    {
+      "name": "WALL_INT_COL_B_WET",
+      "type": "wall",
+      "start_point": [1.3, -5.4],
+      "end_point": [1.3, -8.5],
+      "thickness": 0.1,
+      "height": 2.7,
+      "is_interior": true
+    },
+    {
+      "name": "WALL_INT_COL_C_BEDROOM",
+      "type": "wall",
+      "start_point": [4.4, -2.3],
+      "end_point": [4.4, -5.4],
+      "thickness": 0.1,
+      "height": 2.7,
+      "is_interior": true
+    },
+    {
+      "name": "WALL_INT_COL_D",
+      "type": "wall",
+      "start_point": [8.1, -2.3],
+      "end_point": [8.1, -8.5],
+      "thickness": 0.1,
+      "height": 2.7,
+      "is_interior": true
+    },
+    {
+      "name": "WALL_INT_ROW_3",
+      "type": "wall",
+      "start_point": [0, -5.4],
+      "end_point": [8.1, -5.4],
+      "thickness": 0.1,
+      "height": 2.7,
+      "is_interior": true
+    },
+    {
+      "name": "WALL_INT_ROW_4_WET",
+      "type": "wall",
+      "start_point": [0, -7.0],
+      "end_point": [1.3, -7.0],
+      "thickness": 0.1,
+      "height": 2.7,
+      "is_interior": true
+    },
+    {
+      "name": "D1_MAIN",
+      "type": "door",
+      "position": [5.5, -2.3, 0],
+      "width": 0.9,
+      "height": 2.1,
+      "host_wall": "WALL_EXT_FRONT"
+    },
+    {
+      "name": "D2_BILIK_UTAMA",
+      "type": "door",
+      "position": [4.4, -3.85, 0],
+      "width": 0.75,
+      "height": 2.1,
+      "host_wall": "WALL_INT_COL_C_BEDROOM",
+      "is_interior": true
+    },
+    {
+      "name": "D2_BILIK_2",
+      "type": "door",
+      "position": [8.1, -3.85, 0],
+      "width": 0.75,
+      "height": 2.1,
+      "host_wall": "WALL_INT_COL_D",
+      "is_interior": true
+    },
+    {
+      "name": "D2_BILIK_3",
+      "type": "door",
+      "position": [8.1, -6.95, 0],
+      "width": 0.75,
+      "height": 2.1,
+      "host_wall": "WALL_INT_COL_D",
+      "is_interior": true
+    },
+    {
+      "name": "D3_BILIK_MANDI",
+      "type": "door",
+      "position": [0.65, -5.4, 0],
+      "width": 0.9,
+      "height": 2.1,
+      "host_wall": "WALL_INT_ROW_3",
+      "is_interior": true
+    },
+    {
+      "name": "D3_TANDAS",
+      "type": "door",
+      "position": [0.65, -7.0, 0],
+      "width": 0.9,
+      "height": 2.1,
+      "host_wall": "WALL_INT_ROW_4_WET",
+      "is_interior": true
+    },
+    {
+      "name": "W1_BILIK_UTAMA",
+      "type": "window",
+      "position": [0, -3.85, 0.9],
+      "width": 1.8,
+      "height": 1.0,
+      "sill_height": 0.9,
+      "host_wall": "WALL_EXT_LEFT"
+    },
+    {
+      "name": "W1_BILIK_2",
+      "type": "window",
+      "position": [11.2, -3.85, 0.9],
+      "width": 1.8,
+      "height": 1.0,
+      "sill_height": 0.9,
+      "host_wall": "WALL_EXT_RIGHT"
+    },
+    {
+      "name": "W1_BILIK_3",
+      "type": "window",
+      "position": [11.2, -6.95, 0.9],
+      "width": 1.8,
+      "height": 1.0,
+      "sill_height": 0.9,
+      "host_wall": "WALL_EXT_RIGHT"
+    },
+    {
+      "name": "W2_RUANG_TAMU",
+      "type": "window",
+      "position": [6.0, -2.3, 0.9],
+      "width": 1.2,
+      "height": 1.0,
+      "sill_height": 0.9,
+      "host_wall": "WALL_EXT_FRONT"
+    },
+    {
+      "name": "W3_BILIK_MANDI",
+      "type": "window",
+      "position": [0, -6.2, 1.5],
+      "width": 0.6,
+      "height": 0.5,
+      "sill_height": 1.5,
+      "host_wall": "WALL_EXT_LEFT"
+    },
+    {
+      "name": "W3_TANDAS",
+      "type": "window",
+      "position": [0, -7.75, 1.5],
+      "width": 0.6,
+      "height": 0.5,
+      "sill_height": 1.5,
+      "host_wall": "WALL_EXT_LEFT"
+    },
+    {
+      "name": "ROOF_MAIN",
+      "type": "roof",
+      "bounds": {
+        "min_x": -0.6,
+        "max_x": 11.8,
+        "min_y": -9.1,
+        "max_y": -1.7
+      },
+      "eave_height": 3.0,
+      "ridge_height": 4.445
+    },
+    {
+      "name": "PORCH_FRONT",
+      "type": "porch",
+      "bounds": {
+        "min_x": 4.4,
+        "max_x": 7.6,
+        "min_y": -2.3,
+        "max_y": 0
+      },
+      "roof_height": 2.7,
+      "columns": [
+        {"id": "COL_1", "position_m": [4.55, -0.15, 0]},
+        {"id": "COL_2", "position_m": [7.45, -0.15, 0]}
+      ]
+    }
+  ]
+}

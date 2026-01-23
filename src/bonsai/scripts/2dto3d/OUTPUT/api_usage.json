@@ -1,0 +1,54 @@
+{
+  "total_calls": 6,
+  "quota_limit": 1000,
+  "calls": [
+    {
+      "timestamp": "2025-12-20T05:43:41.657529",
+      "page": "page1",
+      "cached": true,
+      "api_call": false
+    },
+    {
+      "timestamp": "2025-12-20T05:43:46.414521",
+      "page": "page2",
+      "cached": false,
+      "api_call": true
+    },
+    {
+      "timestamp": "2025-12-20T05:43:50.462628",
+      "page": "page3",
+      "cached": false,
+      "api_call": true
+    },
+    {
+      "timestamp": "2025-12-20T05:43:54.019803",
+      "page": "page4",
+      "cached": false,
+      "api_call": true
+    },
+    {
+      "timestamp": "2025-12-20T05:43:56.572018",
+      "page": "page5",
+      "cached": false,
+      "api_call": true
+    },
+    {
+      "timestamp": "2025-12-20T05:44:01.530777",
+      "page": "page6",
+      "cached": false,
+      "api_call": true
+    },
+    {
+      "timestamp": "2025-12-20T05:44:05.605573",
+      "page": "page7",
+      "cached": false,
+      "api_call": true
+    },
+    {
+      "timestamp": "2025-12-20T05:44:05.605573",
+      "page": "page8",
+      "cached": true,
+      "api_call": false
+    }
+  ]
+}
