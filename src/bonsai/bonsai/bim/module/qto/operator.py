@@ -22,7 +22,6 @@ import ifcopenshell.api
 import bonsai.tool as tool
 import bonsai.core.qto as core
 from bonsai.bim.module.qto import helper
-from ifcopenshell.util.profiler import Profiler
 
 
 class CalculateCircleRadius(bpy.types.Operator):
@@ -149,8 +148,7 @@ class CalculateSingleQuantity(bpy.types.Operator, tool.Ifc.Operator):
         }
 
         ifc_file = tool.Ifc.get()
-        with Profiler("Quantify function time:"):
-            results = ifc5d.qto.quantify(ifc_file, elements, rules)
+        results = ifc5d.qto.quantify(ifc_file, elements, rules)
         ifc5d.qto.edit_qtos(ifc_file, results)
 
         not_quantified_elements = elements - set(results.keys())
@@ -192,8 +190,7 @@ class PerformQuantityTakeOff(bpy.types.Operator, tool.Ifc.Operator):
         ) -> set[ifcopenshell.entity_instance]:
             rules = ifc5d.qto.rules[rule]
             ifc_file = tool.Ifc.get()
-            with Profiler("Quantify function time:"):
-                results = ifc5d.qto.quantify(ifc_file, elements, rules)
+            results = ifc5d.qto.quantify(ifc_file, elements, rules)
             ifc5d.qto.edit_qtos(ifc_file, results)
             not_quantified_elements = elements - set(results.keys())
             return not_quantified_elements
