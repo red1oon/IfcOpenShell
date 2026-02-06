@@ -41,6 +41,7 @@ def extract_simple_qto(db_path: str):
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         discipline TEXT,
         ifc_class TEXT,
+        storey TEXT,
         measurement_type TEXT,  -- 'LINEAR', 'AREA', 'VOLUME', 'COUNT'
         element_count INTEGER,
         total_quantity REAL,
@@ -51,13 +52,27 @@ def extract_simple_qto(db_path: str):
     )
     """)
 
+    # Backfill storey from spatial_structure into elements_meta if missing
+    print("Backfilling storey from spatial_structure...")
+    conn.execute("""
+        UPDATE elements_meta SET storey = (
+            SELECT ss.storey FROM spatial_structure ss
+            WHERE ss.guid = elements_meta.guid AND ss.storey IS NOT NULL
+        ) WHERE storey IS NULL AND EXISTS (
+            SELECT 1 FROM spatial_structure ss
+            WHERE ss.guid = elements_meta.guid AND ss.storey IS NOT NULL
+        )
+    """)
+    conn.commit()
+
     # Extract LINEAR quantities (ducts, pipes, beams, cables)
     print("Extracting linear elements...")
     conn.execute("""
-    INSERT INTO simple_qto (discipline, ifc_class, measurement_type, element_count, total_quantity, uom, avg_quantity)
+    INSERT INTO simple_qto (discipline, ifc_class, storey, measurement_type, element_count, total_quantity, uom, avg_quantity)
     SELECT
         e.discipline,
         e.ifc_class,
+        e.storey,
         'LINEAR' AS measurement_type,
         COUNT(*) AS element_count,
         ROUND(SUM(r.maxZ - r.minZ), 2) AS total_quantity,
@@ -71,16 +86,17 @@ def extract_simple_qto(db_path: str):
         'IfcCableCarrier', 'IfcCableCarrierSegment',
         'IfcBeam', 'IfcColumn'
     )
-    GROUP BY e.discipline, e.ifc_class
+    GROUP BY e.discipline, e.ifc_class, e.storey
     """)
 
     # Extract AREA quantities (slabs, walls, roofs)
     print("Extracting area elements...")
     conn.execute("""
-    INSERT INTO simple_qto (discipline, ifc_class, measurement_type, element_count, total_quantity, uom, avg_quantity)
+    INSERT INTO simple_qto (discipline, ifc_class, storey, measurement_type, element_count, total_quantity, uom, avg_quantity)
     SELECT
         e.discipline,
         e.ifc_class,
+        e.storey,
         'AREA' AS measurement_type,
         COUNT(*) AS element_count,
         ROUND(SUM((r.maxX - r.minX) * (r.maxY - r.minY)), 2) AS total_quantity,
@@ -92,16 +108,17 @@ def extract_simple_qto(db_path: str):
         'IfcSlab', 'IfcRoof', 'IfcCovering',
         'IfcWall', 'IfcWallStandardCase', 'IfcCurtainWall'
     )
-    GROUP BY e.discipline, e.ifc_class
+    GROUP BY e.discipline, e.ifc_class, e.storey
     """)
 
     # Extract VOLUME quantities (concrete, spaces)
     print("Extracting volume elements...")
     conn.execute("""
-    INSERT INTO simple_qto (discipline, ifc_class, measurement_type, element_count, total_quantity, uom, avg_quantity)
+    INSERT INTO simple_qto (discipline, ifc_class, storey, measurement_type, element_count, total_quantity, uom, avg_quantity)
     SELECT
         e.discipline,
         e.ifc_class,
+        e.storey,
         'VOLUME' AS measurement_type,
         COUNT(*) AS element_count,
         ROUND(SUM((r.maxX - r.minX) * (r.maxY - r.minY) * (r.maxZ - r.minZ)), 2) AS total_quantity,
@@ -110,16 +127,17 @@ def extract_simple_qto(db_path: str):
     FROM elements_meta e
     JOIN elements_rtree r ON e.id = r.id
     WHERE e.ifc_class IN ('IfcSpace', 'IfcFooting', 'IfcPile')
-    GROUP BY e.discipline, e.ifc_class
+    GROUP BY e.discipline, e.ifc_class, e.storey
     """)
 
     # Extract COUNT quantities (doors, windows, fixtures)
     print("Extracting count elements...")
     conn.execute("""
-    INSERT INTO simple_qto (discipline, ifc_class, measurement_type, element_count, total_quantity, uom, avg_quantity)
+    INSERT INTO simple_qto (discipline, ifc_class, storey, measurement_type, element_count, total_quantity, uom, avg_quantity)
     SELECT
         e.discipline,
         e.ifc_class,
+        e.storey,
         'COUNT' AS measurement_type,
         COUNT(*) AS element_count,
         COUNT(*) AS total_quantity,
@@ -131,7 +149,7 @@ def extract_simple_qto(db_path: str):
         'IfcLightFixture', 'IfcOutlet',
         'IfcFlowTerminal', 'IfcBuildingElementProxy'
     )
-    GROUP BY e.discipline, e.ifc_class
+    GROUP BY e.discipline, e.ifc_class, e.storey
     """)
 
     conn.commit()

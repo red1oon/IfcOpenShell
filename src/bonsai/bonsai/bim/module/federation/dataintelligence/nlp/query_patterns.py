@@ -304,12 +304,11 @@ MATERIAL_PATTERNS = [
     QueryPattern(
         pattern=r"area on (?:level|storey|floor|aras) (?P<storey_name>[\w\s]+)",
         sql_template="""
-            SELECT s.storey, SUM(q.total_quantity) as total_area, q.uom
-            FROM simple_qto q
-            JOIN spatial_structure s ON q.guid = s.guid
-            WHERE LOWER(s.storey) LIKE LOWER('%{storey_name}%')
-            AND q.measurement_type = 'AREA'
-            GROUP BY s.storey, q.uom
+            SELECT storey, SUM(total_quantity) as total_area, uom
+            FROM simple_qto
+            WHERE LOWER(storey) LIKE LOWER('%{storey_name}%')
+            AND measurement_type = 'AREA'
+            GROUP BY storey, uom
         """,
         description="Calculate area for specific storey"
     ),
