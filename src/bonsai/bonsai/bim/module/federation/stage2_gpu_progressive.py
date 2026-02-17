@@ -203,18 +203,45 @@ def create_semantic_shapes_progressive(db_conn: sqlite3.Connection,
 
     if use_database_materials:
         print("  ✓ Querying with Revit material data from database...")
-        cursor.execute("""
-            SELECT
-                m.guid,
-                m.ifc_class,
-                m.discipline,
-                r.minX, r.minY, r.minZ,
-                r.maxX, r.maxY, r.maxZ,
-                m.material_name,
-                m.material_rgba
-            FROM elements_meta m
-            JOIN elements_rtree r ON m.id = r.id
-        """)
+        # Check if surface_styles table exists (enriched DBs have it)
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='surface_styles'")
+        has_styles = cursor.fetchone() is not None
+        if has_styles:
+            print("  ✓ surface_styles table found — using rich PBR materials")
+            cursor.execute("""
+                SELECT
+                    m.guid,
+                    m.ifc_class,
+                    m.discipline,
+                    r.minX, r.minY, r.minZ,
+                    r.maxX, r.maxY, r.maxZ,
+                    m.material_name,
+                    m.material_rgba,
+                    s.transparency,
+                    s.specular_ratio,
+                    s.specular_exponent,
+                    s.specular_r, s.specular_g, s.specular_b,
+                    s.reflectance_method,
+                    s.surface_r, s.surface_g, s.surface_b
+                FROM elements_meta m
+                JOIN elements_rtree r ON m.id = r.id
+                LEFT JOIN surface_styles s ON m.material_name = s.style_name
+            """)
+        else:
+            print("  ✓ No surface_styles table — using flat RGBA only")
+            cursor.execute("""
+                SELECT
+                    m.guid,
+                    m.ifc_class,
+                    m.discipline,
+                    r.minX, r.minY, r.minZ,
+                    r.maxX, r.maxY, r.maxZ,
+                    m.material_name,
+                    m.material_rgba,
+                    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+                FROM elements_meta m
+                JOIN elements_rtree r ON m.id = r.id
+            """)
     else:
         print("  ✓ Using discipline colors (fast mode)...")
         cursor.execute("""
@@ -305,7 +332,18 @@ def create_semantic_shapes_progressive(db_conn: sqlite3.Connection,
         for idx, elem in enumerate(batch):
             guid, ifc_class, discipline = elem[0], elem[1], elem[2]
             min_x, min_y, min_z, max_x, max_y, max_z = elem[3:9]
-            material_name, material_rgba = elem[9], elem[10]  # NEW: Material data from DB
+            material_name, material_rgba = elem[9], elem[10]
+            # Rich surface style columns (NULL when surface_styles table absent)
+            style_transparency = elem[11] if len(elem) > 11 else None
+            style_spec_ratio = elem[12] if len(elem) > 12 else None
+            style_spec_exp = elem[13] if len(elem) > 13 else None
+            style_spec_r = elem[14] if len(elem) > 14 else None
+            style_spec_g = elem[15] if len(elem) > 15 else None
+            style_spec_b = elem[16] if len(elem) > 16 else None
+            style_refl_method = elem[17] if len(elem) > 17 else None
+            style_surf_r = elem[18] if len(elem) > 18 else None
+            style_surf_g = elem[19] if len(elem) > 19 else None
+            style_surf_b = elem[20] if len(elem) > 20 else None
             bbox = (min_x, min_y, min_z, max_x, max_y, max_z)
 
             # DEBUG: Print first few elements to verify discipline + material data
@@ -342,11 +380,27 @@ def create_semantic_shapes_progressive(db_conn: sqlite3.Connection,
 
             # Assign material to instance (object-level override)
             if use_database_materials and material_rgba:
+                # Build rich style_data dict if surface_styles data exists
+                style_data = None
+                if style_transparency is not None or style_spec_exp is not None:
+                    style_data = {
+                        'transparency': style_transparency,
+                        'specular_ratio': style_spec_ratio,
+                        'specular_exponent': style_spec_exp,
+                        'specular_r': style_spec_r,
+                        'specular_g': style_spec_g,
+                        'specular_b': style_spec_b,
+                        'reflectance_method': style_refl_method,
+                        'surface_r': style_surf_r,
+                        'surface_g': style_surf_g,
+                        'surface_b': style_surf_b,
+                    }
                 # Get cached material from database
                 material = stage2_tessellation_loader.get_or_create_db_material(
                     material_name or "<Unnamed>",
                     material_rgba,
-                    discipline
+                    discipline,
+                    style_data=style_data
                 )
                 # Ensure mesh has at least one material slot
                 if len(instance.data.materials) == 0:

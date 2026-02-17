@@ -57,17 +57,26 @@ def parse_rgba_string(rgba_str: str) -> Tuple[float, float, float, float]:
     except:
         return (0.5, 0.5, 0.5, 1.0)  # Fallback gray
 
-def get_or_create_db_material(material_name: str, rgba_str: str, discipline: str) -> bpy.types.Material:
+def get_or_create_db_material(material_name: str, rgba_str: str, discipline: str,
+                              style_data: dict = None) -> bpy.types.Material:
     """
-    Get or create material from database RGBA values.
+    Get or create material from database RGBA values + optional rich surface style.
 
     Uses real Revit material colors from extraction database.
+    When style_data is provided (from surface_styles table), applies:
+    - Transparency (glass, water, etc.)
+    - Specular properties (exponent → roughness, ratio → specular level)
+    - Reflectance method hints
+
     Falls back to discipline color if RGBA is missing.
 
     Args:
-        material_name: Material name from Revit (e.g., "Metal Deck", "Concrete")
+        material_name: Material name from Revit (e.g., "Metal Deck", "Glass")
         rgba_str: Comma-separated RGBA string (e.g., "0.5,0.7,0.5,1.0")
         discipline: Discipline code (fallback if RGBA missing)
+        style_data: Optional dict from surface_styles table with keys:
+            transparency, specular_ratio, specular_exponent,
+            specular_r/g/b, reflectance_method, surface_r/g/b
 
     Returns:
         Blender material with shader setup
@@ -75,9 +84,14 @@ def get_or_create_db_material(material_name: str, rgba_str: str, discipline: str
     # Create cache key (material name + rgba for uniqueness)
     cache_key = f"{material_name}_{rgba_str}" if rgba_str else f"Discipline_{discipline}"
 
-    # Check cache
+    # Check cache (validate reference is still alive)
     if cache_key in _DB_MATERIAL_CACHE:
-        return _DB_MATERIAL_CACHE[cache_key]
+        try:
+            cached = _DB_MATERIAL_CACHE[cache_key]
+            _ = cached.name  # Triggers ReferenceError if removed
+            return cached
+        except ReferenceError:
+            del _DB_MATERIAL_CACHE[cache_key]
 
     # Parse RGBA
     if rgba_str:
@@ -127,8 +141,51 @@ def get_or_create_db_material(material_name: str, rgba_str: str, discipline: str
         _DB_MATERIAL_CACHE[cache_key] = mat
         return mat
 
-    # Create new material
+    # Derive PBR properties from surface_styles data (if available)
+    transparency = 0.0
+    metallic = 0.2
+    roughness = 0.5
+    specular_level = 0.5
+
+    if style_data:
+        # Transparency from IFC (0=opaque, 1=fully transparent)
+        transparency = style_data.get('transparency') or 0.0
+
+        # Specular exponent → roughness (higher exponent = sharper highlight = lower roughness)
+        # IFC range: 0 (flat) to 128+ (mirror-like). Blender roughness: 0 (mirror) to 1 (diffuse)
+        spec_exp = style_data.get('specular_exponent')
+        if spec_exp is not None and spec_exp > 0:
+            # Inverse mapping: exp=128 → roughness≈0.05, exp=12 → roughness≈0.35, exp=0 → roughness=1.0
+            roughness = max(0.02, 1.0 / (1.0 + spec_exp * 0.07))
+
+        # Specular ratio → specular IOR level
+        spec_ratio = style_data.get('specular_ratio')
+        if spec_ratio is not None:
+            specular_level = float(spec_ratio)
+
+        # Use surface_styles RGB instead of element RGBA when available (more accurate)
+        sr = style_data.get('surface_r')
+        sg = style_data.get('surface_g')
+        sb = style_data.get('surface_b')
+        if sr is not None and sg is not None and sb is not None:
+            rgba = (sr, sg, sb, 1.0 - transparency)
+
+        # Reflectance method hints
+        method = style_data.get('reflectance_method', '')
+        if method == 'METAL':
+            metallic = 0.9
+        elif method == 'GLASS':
+            metallic = 0.0
+            roughness = min(roughness, 0.1)
+
+    # Create new material (fake_user prevents orphan cleanup in background mode)
     mat = bpy.data.materials.new(name=mat_name)
+    mat.use_fake_user = True
+
+    # Set viewport solid color WITH alpha (matches IFC loader: tool/loader.py:118)
+    # This ensures transparency shows in Solid viewport mode too
+    mat.diffuse_color = (rgba[0], rgba[1], rgba[2], 1.0 - transparency if transparency > 0.01 else rgba[3])
+
     mat.use_nodes = True
     nodes = mat.node_tree.nodes
     links = mat.node_tree.links
@@ -143,15 +200,28 @@ def get_or_create_db_material(material_name: str, rgba_str: str, discipline: str
     bsdf_node = nodes.new(type='ShaderNodeBsdfPrincipled')
     bsdf_node.location = (0, 0)
 
-    # Set material properties from Revit RGBA or discipline override
-    bsdf_node.inputs['Base Color'].default_value = rgba
-    bsdf_node.inputs['Metallic'].default_value = 0.2  # Slightly metallic
-    bsdf_node.inputs['Roughness'].default_value = 0.5  # Medium roughness
-    bsdf_node.inputs['Specular IOR Level'].default_value = 0.5  # Add specular highlights
+    # Set material properties from surface_styles or fallback
+    # Use defensive input access for Blender version compatibility
+    def _set_input(name, value):
+        if name in bsdf_node.inputs:
+            bsdf_node.inputs[name].default_value = value
 
-    # Set blend mode for proper X-ray rendering (Alt+Z)
-    mat.blend_method = 'OPAQUE'
-    mat.shadow_method = 'OPAQUE'
+    _set_input('Base Color', rgba)
+    _set_input('Metallic', metallic)
+    _set_input('Roughness', roughness)
+    # Blender 4.0+ renamed Specular → Specular IOR Level
+    if 'Specular IOR Level' in bsdf_node.inputs:
+        bsdf_node.inputs['Specular IOR Level'].default_value = specular_level
+    elif 'Specular' in bsdf_node.inputs:
+        bsdf_node.inputs['Specular'].default_value = specular_level
+
+    # Transparency support (glass, water, etc.)
+    # Matches Bonsai IFC loader: tool/loader.py line 229-231
+    if transparency > 0.01:
+        _set_input('Alpha', 1.0 - transparency)
+        mat.use_backface_culling = False
+        mat.blend_method = 'BLEND'  # CRITICAL: without this, Alpha is ignored
+        print(f"  [MATERIAL] {mat_name}: TRANSPARENT alpha={1.0 - transparency:.2f}, blend_method=BLEND")
 
     # Link nodes
     links.new(bsdf_node.outputs['BSDF'], output_node.inputs['Surface'])
@@ -479,20 +549,49 @@ def load_tessellated_shapes_instanced(db_path: str,
 
     # Query all elements with geometry AND material data
     print("\nQuerying database...")
-    cursor.execute("""
-        SELECT
-            m.guid,
-            m.ifc_class,
-            m.discipline,
-            g.geometry_hash,
-            t.center_x, t.center_y, t.center_z,
-            m.material_name,
-            m.material_rgba
-        FROM elements_meta m
-        JOIN element_geometry g ON m.guid = g.guid
-        JOIN element_transforms t ON m.guid = t.guid
-        ORDER BY g.geometry_hash, m.discipline
-    """)
+    # Check if surface_styles table exists (enriched DBs have it)
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='surface_styles'")
+    has_styles = cursor.fetchone() is not None
+    if has_styles:
+        print("  ✓ surface_styles table found — using rich PBR materials")
+        cursor.execute("""
+            SELECT
+                m.guid,
+                m.ifc_class,
+                m.discipline,
+                g.geometry_hash,
+                t.center_x, t.center_y, t.center_z,
+                m.material_name,
+                m.material_rgba,
+                s.transparency,
+                s.specular_ratio,
+                s.specular_exponent,
+                s.specular_r, s.specular_g, s.specular_b,
+                s.reflectance_method,
+                s.surface_r, s.surface_g, s.surface_b
+            FROM elements_meta m
+            JOIN element_geometry g ON m.guid = g.guid
+            JOIN element_transforms t ON m.guid = t.guid
+            LEFT JOIN surface_styles s ON m.material_name = s.style_name
+            ORDER BY g.geometry_hash, m.discipline
+        """)
+    else:
+        print("  ✓ No surface_styles table — using flat RGBA only")
+        cursor.execute("""
+            SELECT
+                m.guid,
+                m.ifc_class,
+                m.discipline,
+                g.geometry_hash,
+                t.center_x, t.center_y, t.center_z,
+                m.material_name,
+                m.material_rgba,
+                NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+            FROM elements_meta m
+            JOIN element_geometry g ON m.guid = g.guid
+            JOIN element_transforms t ON m.guid = t.guid
+            ORDER BY g.geometry_hash, m.discipline
+        """)
 
     elements = cursor.fetchall()
     total = len(elements)
@@ -578,7 +677,18 @@ def load_tessellated_shapes_instanced(db_path: str,
     instances_by_discipline = {}
 
     for idx, elem in enumerate(elements):
-        guid, ifc_class, discipline, geom_hash, center_x, center_y, center_z, material_name, material_rgba = elem
+        guid, ifc_class, discipline, geom_hash, center_x, center_y, center_z, material_name, material_rgba = elem[:9]
+        # Rich surface style columns (NULL when surface_styles table absent)
+        style_transparency = elem[9] if len(elem) > 9 else None
+        style_spec_ratio = elem[10] if len(elem) > 10 else None
+        style_spec_exp = elem[11] if len(elem) > 11 else None
+        style_spec_r = elem[12] if len(elem) > 12 else None
+        style_spec_g = elem[13] if len(elem) > 13 else None
+        style_spec_b = elem[14] if len(elem) > 14 else None
+        style_refl_method = elem[15] if len(elem) > 15 else None
+        style_surf_r = elem[16] if len(elem) > 16 else None
+        style_surf_g = elem[17] if len(elem) > 17 else None
+        style_surf_b = elem[18] if len(elem) > 18 else None
 
         # Get template (template_key is now just geom_hash)
         template_key = geom_hash
@@ -602,10 +712,26 @@ def load_tessellated_shapes_instanced(db_path: str,
         # INLINE MATERIAL ASSIGNMENT (best cache locality, fastest overall)
         # Assign material to instance with hybrid color system
         if material_rgba:
+            # Build rich style_data dict if surface_styles data exists
+            style_data = None
+            if style_transparency is not None or style_spec_exp is not None:
+                style_data = {
+                    'transparency': style_transparency,
+                    'specular_ratio': style_spec_ratio,
+                    'specular_exponent': style_spec_exp,
+                    'specular_r': style_spec_r,
+                    'specular_g': style_spec_g,
+                    'specular_b': style_spec_b,
+                    'reflectance_method': style_refl_method,
+                    'surface_r': style_surf_r,
+                    'surface_g': style_surf_g,
+                    'surface_b': style_surf_b,
+                }
             material = get_or_create_db_material(
                 material_name or "<Unnamed>",
                 material_rgba,
-                discipline
+                discipline,
+                style_data=style_data
             )
             # Ensure mesh has at least one material slot (can be None)
             if len(instance.data.materials) == 0:

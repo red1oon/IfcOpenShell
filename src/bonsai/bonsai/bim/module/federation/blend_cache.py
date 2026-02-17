@@ -172,30 +172,72 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='base_geometries'")
     is_gi_schema = cursor.fetchone() is not None
 
+    # Check if surface_styles table exists (enriched DBs have it)
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='surface_styles'")
+    has_styles = cursor.fetchone() is not None
+    if has_styles:
+        print("  ✓ surface_styles table found — using rich PBR materials")
+
     if is_gi_schema:
         # New GI schema: base_geometries + element_instances
         print("  Detected GI schema (base_geometries + element_instances)")
-        cursor.execute("""
-            SELECT bg.geometry_hash, bg.vertices, bg.faces,
-                   ei.guid, em.ifc_class, em.discipline,
-                   et.center_x, et.center_y, et.center_z
-            FROM base_geometries bg
-            JOIN element_instances ei ON bg.geometry_hash = ei.geometry_hash
-            JOIN elements_meta em ON ei.guid = em.guid
-            LEFT JOIN element_transforms et ON ei.guid = et.guid
-        """)
+        if has_styles:
+            cursor.execute("""
+                SELECT bg.geometry_hash, bg.vertices, bg.faces,
+                       ei.guid, em.ifc_class, em.discipline,
+                       et.center_x, et.center_y, et.center_z,
+                       em.material_name, em.material_rgba,
+                       s.transparency, s.specular_ratio, s.specular_exponent,
+                       s.specular_r, s.specular_g, s.specular_b,
+                       s.reflectance_method, s.surface_r, s.surface_g, s.surface_b
+                FROM base_geometries bg
+                JOIN element_instances ei ON bg.geometry_hash = ei.geometry_hash
+                JOIN elements_meta em ON ei.guid = em.guid
+                LEFT JOIN element_transforms et ON ei.guid = et.guid
+                LEFT JOIN surface_styles s ON em.material_name = s.style_name
+            """)
+        else:
+            cursor.execute("""
+                SELECT bg.geometry_hash, bg.vertices, bg.faces,
+                       ei.guid, em.ifc_class, em.discipline,
+                       et.center_x, et.center_y, et.center_z,
+                       em.material_name, em.material_rgba,
+                       NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+                FROM base_geometries bg
+                JOIN element_instances ei ON bg.geometry_hash = ei.geometry_hash
+                JOIN elements_meta em ON ei.guid = em.guid
+                LEFT JOIN element_transforms et ON ei.guid = et.guid
+            """)
     else:
         # Legacy schema: element_geometry
         print("  Detected legacy schema (element_geometry)")
-        cursor.execute("""
-            SELECT DISTINCT eg.geometry_hash, eg.vertices, eg.faces,
-                   em.guid, em.ifc_class, em.discipline,
-                   et.center_x, et.center_y, et.center_z
-            FROM element_geometry eg
-            JOIN elements_meta em ON eg.guid = em.guid
-            LEFT JOIN element_transforms et ON eg.guid = et.guid
-            WHERE eg.geometry_hash IS NOT NULL
-        """)
+        if has_styles:
+            cursor.execute("""
+                SELECT DISTINCT eg.geometry_hash, eg.vertices, eg.faces,
+                       em.guid, em.ifc_class, em.discipline,
+                       et.center_x, et.center_y, et.center_z,
+                       em.material_name, em.material_rgba,
+                       s.transparency, s.specular_ratio, s.specular_exponent,
+                       s.specular_r, s.specular_g, s.specular_b,
+                       s.reflectance_method, s.surface_r, s.surface_g, s.surface_b
+                FROM element_geometry eg
+                JOIN elements_meta em ON eg.guid = em.guid
+                LEFT JOIN element_transforms et ON eg.guid = et.guid
+                LEFT JOIN surface_styles s ON em.material_name = s.style_name
+                WHERE eg.geometry_hash IS NOT NULL
+            """)
+        else:
+            cursor.execute("""
+                SELECT DISTINCT eg.geometry_hash, eg.vertices, eg.faces,
+                       em.guid, em.ifc_class, em.discipline,
+                       et.center_x, et.center_y, et.center_z,
+                       em.material_name, em.material_rgba,
+                       NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+                FROM element_geometry eg
+                JOIN elements_meta em ON eg.guid = em.guid
+                LEFT JOIN element_transforms et ON eg.guid = et.guid
+                WHERE eg.geometry_hash IS NOT NULL
+            """)
 
     geom_data = cursor.fetchall()
     total = len(geom_data)
@@ -208,12 +250,22 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
     # Map: geometry_hash -> (vertices_blob, faces_blob, [(guid, ifc_class, discipline, transform), ...])
     unique_geoms = {}
     for row in geom_data:
-        if len(row) == 9:  # With transforms
-            geom_hash, verts_blob, faces_blob, guid, ifc_class, discipline, cx, cy, cz = row
-            transform = (cx, cy, cz) if cx is not None else None
-        else:  # Legacy without transforms
-            geom_hash, verts_blob, faces_blob, guid, ifc_class, discipline = row
-            transform = None
+        geom_hash, verts_blob, faces_blob, guid, ifc_class, discipline = row[:6]
+        cx, cy, cz = row[6], row[7], row[8]
+        transform = (cx, cy, cz) if cx is not None else None
+        material_name = row[9] if len(row) > 9 else None
+        material_rgba = row[10] if len(row) > 10 else None
+        # Rich surface style columns
+        style_transparency = row[11] if len(row) > 11 else None
+        style_spec_ratio = row[12] if len(row) > 12 else None
+        style_spec_exp = row[13] if len(row) > 13 else None
+        style_spec_r = row[14] if len(row) > 14 else None
+        style_spec_g = row[15] if len(row) > 15 else None
+        style_spec_b = row[16] if len(row) > 16 else None
+        style_refl_method = row[17] if len(row) > 17 else None
+        style_surf_r = row[18] if len(row) > 18 else None
+        style_surf_g = row[19] if len(row) > 19 else None
+        style_surf_b = row[20] if len(row) > 20 else None
 
         if geom_hash not in unique_geoms:
             unique_geoms[geom_hash] = {
@@ -225,7 +277,21 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
             'guid': guid,
             'ifc_class': ifc_class or 'Unknown',
             'discipline': discipline or 'Unknown',
-            'transform': transform
+            'transform': transform,
+            'material_name': material_name,
+            'material_rgba': material_rgba,
+            'style_data': {
+                'transparency': style_transparency,
+                'specular_ratio': style_spec_ratio,
+                'specular_exponent': style_spec_exp,
+                'specular_r': style_spec_r,
+                'specular_g': style_spec_g,
+                'specular_b': style_spec_b,
+                'reflectance_method': style_refl_method,
+                'surface_r': style_surf_r,
+                'surface_g': style_surf_g,
+                'surface_b': style_surf_b,
+            } if (style_transparency is not None or style_spec_exp is not None) else None
         })
 
     total_unique = len(unique_geoms)
@@ -277,11 +343,15 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
 
     discipline_collections = {}
 
-    # Create objects organized by discipline
-    print(f"Creating objects organized by discipline...")
+    # Import material creator for rich PBR materials
+    from .stage2_tessellation_loader import get_or_create_db_material
+
+    # Create objects organized by discipline (with material assignment)
+    print(f"Creating objects organized by discipline (with materials)...")
     obj_start = time.time()
 
     obj_count = 0
+    mat_count = 0
     for i, (geom_hash, geom_info) in enumerate(meshes.items()):
         mesh = geom_info['mesh']
         elements = geom_info['elements']
@@ -311,6 +381,24 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
             if transform and all(t is not None for t in transform):
                 obj.location = transform  # (center_x, center_y, center_z)
 
+            # Assign material from database (with rich surface styles if available)
+            material_rgba = element.get('material_rgba')
+            if material_rgba:
+                material_name = element.get('material_name') or "<Unnamed>"
+                style_data = element.get('style_data')
+                material = get_or_create_db_material(
+                    material_name, material_rgba, discipline,
+                    style_data=style_data
+                )
+                # Ensure mesh has at least one material slot
+                if len(obj.data.materials) == 0:
+                    obj.data.materials.append(None)
+                # Object-level material override (doesn't affect other instances)
+                if len(obj.material_slots) > 0:
+                    obj.material_slots[0].link = 'OBJECT'
+                    obj.material_slots[0].material = material
+                mat_count += 1
+
             disc_coll.objects.link(obj)
             obj_count += 1
 
@@ -319,6 +407,7 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
 
     obj_time = time.time() - obj_start
     print(f"✓ Created {obj_count:,} objects in {len(discipline_collections)} disciplines in {obj_time:.2f}s")
+    print(f"  Materials assigned: {mat_count:,} (unique Blender materials: {len(bpy.data.materials):,})")
     print(f"  Disciplines: {', '.join(sorted(discipline_collections.keys()))}")
 
     # Store database path in scene properties (absolute path)
