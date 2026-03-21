@@ -21,18 +21,52 @@ import bonsai.tool as tool
 
 
 # =============================================================================
+# 0. WEB UI SYNC BAR (top of addon — bidirectional Bonsai ↔ Web UI)
+# =============================================================================
+
+class BIM_PT_webui_sync(Panel):
+    """Web UI Sync — two-way Bonsai ↔ browser link"""
+    bl_label = "Web UI Sync"
+    bl_idname = "BIM_PT_webui_sync"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "scene"
+    bl_parent_id = "BIM_PT_tabs"
+    bl_order = 0  # First panel — always visible at top
+
+    def draw(self, context):
+        layout = self.layout
+        is_syncing = getattr(bpy.app, '_webui_sync_active', False)
+
+        row = layout.row(align=True)
+        row.scale_y = 1.4
+        if is_syncing:
+            row.operator("bim.stop_webui_sync", text="Stop Sync", icon='PAUSE')
+            op = row.operator("bim.start_webui_sync", text="Open Web UI", icon='URL')
+            op.open_browser = True
+            row.label(text="", icon='CHECKMARK')
+        else:
+            op = row.operator("bim.start_webui_sync", text="Start Sync + Open Web UI", icon='LINKED')
+            op.open_browser = True
+
+        if is_syncing:
+            info = layout.row()
+            info.label(text="Two-way sync active: selection, color, compile → auto-load", icon='INFO')
+
+
+# =============================================================================
 # 1. FEDERATION SETUP
 # =============================================================================
 
 class BIM_PT_federation_setup(Panel):
     """Federation Setup - Model sources and database"""
-    bl_label = "1. Federation Setup"
+    bl_label = "3D. Federation (IFC Extract / IFCtoBOM / Preview / Full Load)"
     bl_idname = "BIM_PT_federation_setup"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
     bl_parent_id = "BIM_PT_tabs"
-    bl_order = 1
+    bl_order = 3
 
     # No poll needed - always show in Project Overview
 
@@ -69,6 +103,21 @@ class BIM_PT_federation_setup(Panel):
         row.operator("bim.extract_full_database", icon="TIME", text="Extract Full")
         row.operator("bim.extract_sample_database", icon="QUESTION", text="Extract Sample")
 
+        # Preview / Full Load section
+        layout.separator()
+        box = layout.box()
+        box.label(text="Preview / Full Load", icon="HIDE_OFF")
+
+        box.prop(props, "federation_database_path", text="DB Path")
+
+        row = box.row(align=True)
+        row.scale_y = 1.3
+        row.operator("bim.preview_federation_viewport", icon="MESH_CUBE", text="Preview BBoxes")
+        row.operator("bim.load_full_federation_viewport_gi", icon="MESH_DATA", text="Full Load")
+        row.operator("bim.unload_federation_viewport", icon="X", text="Clear")
+
+        draw_web_ui_button(layout, "3d")
+
 
 # =============================================================================
 # 2. VISUALIZATION CONTROL
@@ -76,13 +125,13 @@ class BIM_PT_federation_setup(Panel):
 
 class BIM_PT_visualization_control(Panel):
     """Visualization Control - Database and display modes"""
-    bl_label = "2. Visualization Control"
+    bl_label = "3b. Preview / Full Load (merged into 3D)"
     bl_idname = "BIM_PT_visualization_control"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
     bl_parent_id = "BIM_PT_tabs"
-    bl_order = 2
+    bl_order = 94
 
     # No poll needed - always show in Project Overview
 
@@ -133,14 +182,14 @@ class BIM_PT_visualization_control(Panel):
 
 class BIM_PT_mep_coordination(Panel):
     """MEP Coordination - Routing tools"""
-    bl_label = "3. MEP Coordination"
+    bl_label = "MEP Coordination (archived — absorbed into BIM Designer)"
     bl_idname = "BIM_PT_mep_coordination"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
     bl_parent_id = "BIM_PT_tabs"
     bl_options = {"DEFAULT_CLOSED"}
-    bl_order = 3
+    bl_order = 91
 
     # No poll needed - always show in Project Overview
 
@@ -246,14 +295,14 @@ class BIM_PT_mep_coordination(Panel):
 
 class BIM_PT_clash_detection(Panel):
     """Clash Detection with resolution management"""
-    bl_label = "4. Clash Detection"
+    bl_label = "Clash Detection (archived — will be redone)"
     bl_idname = "BIM_PT_clash_detection"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
     bl_parent_id = "BIM_PT_tabs"
     bl_options = {"DEFAULT_CLOSED"}
-    bl_order = 4
+    bl_order = 92
 
     # No poll needed - always show in Project Overview
 
@@ -363,14 +412,14 @@ class BIM_PT_clash_detection(Panel):
 
 class BIM_PT_structural_works(Panel):
     """Structural Works - Rebar and concrete"""
-    bl_label = "5. Structural Works"
+    bl_label = "Structural Works (archived — will be redone via backend verbs)"
     bl_idname = "BIM_PT_structural_works"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
     bl_parent_id = "BIM_PT_tabs"
     bl_options = {"DEFAULT_CLOSED"}
-    bl_order = 5
+    bl_order = 93
 
     # No poll needed - always show in Project Overview
 
@@ -392,14 +441,14 @@ class BIM_PT_structural_works(Panel):
 
 class BIM_PT_4d_scheduling(Panel):
     """4D Construction Scheduling"""
-    bl_label = "6. 4D Scheduling"
+    bl_label = "4D. Scheduling"
     bl_idname = "BIM_PT_4d_scheduling"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
     bl_parent_id = "BIM_PT_tabs"
     bl_options = {"DEFAULT_CLOSED"}
-    bl_order = 6
+    bl_order = 4
 
     # No poll needed - always show in Project Overview
 
@@ -420,6 +469,8 @@ class BIM_PT_4d_scheduling(Panel):
         row.scale_y = 1.3
         row.operator("bim.animate_4d_construction", text="4D Animation", icon="TIME")
 
+        draw_web_ui_button(layout, "4d")
+
 
 # =============================================================================
 # 7. 5D COST MANAGEMENT
@@ -427,14 +478,14 @@ class BIM_PT_4d_scheduling(Panel):
 
 class BIM_PT_5d_cost_management(Panel):
     """5D Cost Management - BOQ"""
-    bl_label = "7. 5D Cost Management"
+    bl_label = "5D. Costing"
     bl_idname = "BIM_PT_5d_cost_management"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
     bl_parent_id = "BIM_PT_tabs"
     bl_options = {"DEFAULT_CLOSED"}
-    bl_order = 7
+    bl_order = 5
 
     # No poll needed - always show in Project Overview
 
@@ -448,6 +499,8 @@ class BIM_PT_5d_cost_management(Panel):
         row = layout.row()
         row.operator("bim.open_boq_report", text="Export Cost Reports", icon="FILE_TICK")
 
+        draw_web_ui_button(layout, "5d")
+
 
 # =============================================================================
 # 8. 6D/7D DIGITAL TWIN
@@ -455,14 +508,14 @@ class BIM_PT_5d_cost_management(Panel):
 
 class BIM_PT_digital_twin(Panel):
     """6D/7D Digital Twin - Asset management and IoT"""
-    bl_label = "8. 6D/7D Digital Twin"
+    bl_label = "6D. Asset Maintenance"
     bl_idname = "BIM_PT_digital_twin"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
     bl_parent_id = "BIM_PT_tabs"
     bl_options = {"DEFAULT_CLOSED"}
-    bl_order = 8
+    bl_order = 6
 
     # No poll needed - always show in Project Overview
 
@@ -501,11 +554,31 @@ class BIM_PT_digital_twin(Panel):
         box.label(text="Visualization:", icon='SHADING_RENDERED')
         box.operator("bim.visualize_assets_by_condition", text="Color by Condition", icon='SHADING_SOLID')
 
-        # IoT Command Center (Phase 3) - Section that was missing after refactor
+        draw_web_ui_button(layout, "6d")
+
+
+# =============================================================================
+# 7D. TANDEM IoT
+# =============================================================================
+
+class BIM_PT_tandem_iot(Panel):
+    """7D Tandem IoT - Sensor visualization and monitoring"""
+    bl_label = "7D. Tandem IoT"
+    bl_idname = "BIM_PT_tandem_iot"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "scene"
+    bl_parent_id = "BIM_PT_tabs"
+    bl_options = {"DEFAULT_CLOSED"}
+    bl_order = 7
+
+    def draw(self, context):
+        layout = self.layout
+
+        # IoT Sensor Visualization
         box = layout.box()
         box.label(text="IoT Sensor Visualization:", icon='OUTLINER_OB_LIGHTPROBE')
 
-        # Check overlay status
         from .tandem.sensor_overlay import get_sensor_overlay
         overlay = get_sensor_overlay()
 
@@ -513,23 +586,19 @@ class BIM_PT_digital_twin(Panel):
         row.scale_y = 1.5
 
         if overlay.enabled:
-            # Enabled - show disable button
             row.operator("bim.iot_disable_sensor_overlay", text="Hide Sensors", icon='HIDE_ON')
             row.label(text=f"({len(overlay.sensors)} active)", icon='CHECKMARK')
         else:
-            # Disabled - show enable button
             row.operator("bim.iot_enable_sensor_overlay", text="Show Sensors", icon='HIDE_OFF')
 
-        # Info text
         info_col = box.column(align=True)
         info_col.scale_y = 0.6
         if overlay.enabled:
-            info_col.label(text=f"✅ Showing {len(overlay.sensors)} animated sensors in viewport")
-            info_col.label(text="   🔵 Pulsing spheres = Temperature")
-            info_col.label(text="   🟦 Rotating cubes = Pressure")
-            info_col.label(text="   🔴 Blinking red = Alerts")
+            info_col.label(text=f"Showing {len(overlay.sensors)} animated sensors in viewport")
         else:
             info_col.label(text="Enable to see animated sensor markers in 3D")
+
+        draw_web_ui_button(layout, "7d")
 
 
 # =============================================================================
@@ -538,7 +607,7 @@ class BIM_PT_digital_twin(Panel):
 
 class BIM_PT_nlp_query(Panel):
     """Natural Language Query"""
-    bl_label = "9. Natural Language Query"
+    bl_label = "9. NLP Query"
     bl_idname = "BIM_PT_nlp_query"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
@@ -628,6 +697,8 @@ class BIM_PT_nlp_query(Panel):
             row.scale_y = 1.2
             row.operator("bim.export_nlp_results", text="Export to CSV", icon="FILE_TICK")
 
+        draw_web_ui_button(layout, "9")
+
 
 # =============================================================================
 # 10. VISUALIZATION SETTINGS
@@ -635,7 +706,7 @@ class BIM_PT_nlp_query(Panel):
 
 class BIM_PT_visualization_settings(Panel):
     """Visualization Settings - Colors and materials"""
-    bl_label = "10. Visualization Settings"
+    bl_label = "10. Color Studio"
     bl_idname = "BIM_PT_visualization_settings"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
@@ -731,14 +802,120 @@ class BIM_PT_visualization_settings(Panel):
         row.operator("bim.save_color_scheme", text="Save Scheme", icon='FILE_TICK')
         row.operator("bim.load_color_scheme", text="Load Scheme", icon='FILE_FOLDER')
 
+        # Web UI Sync
+        layout.separator()
+        sync_box = layout.box()
+        sync_box.label(text="Web UI Sync:", icon='LINKED')
+        sync_row = sync_box.row(align=True)
+        sync_row.scale_y = 1.2
+        is_syncing = getattr(bpy.app, '_webui_sync_active', False)
+        if is_syncing:
+            sync_row.operator("bim.stop_webui_sync", text="Stop Sync", icon='PAUSE')
+            sync_box.label(text="Selection → Web UI (live)", icon='CHECKMARK')
+        else:
+            sync_row.operator("bim.start_webui_sync", text="Start Sync", icon='PLAY')
+            sync_box.label(text="Click to sync selection with Web UI")
+
         # Info
         info_box = layout.box()
         info_box.scale_y = 0.8
         info_text = info_box.column()
-        info_text.label(text="💡 Tips:", icon='INFO')
-        info_text.label(text="  • Use Solid shading mode")
-        info_text.label(text="  • Alt+Z for X-ray view")
-        info_text.label(text="  • Filter by discipline/type")
+        info_text.label(text="Tips:", icon='INFO')
+        info_text.label(text="  • Start Sync to link with Web UI tab 10")
+        info_text.label(text="  • Select object → appears in browser")
+        info_text.label(text="  • Apply colors from Web UI or Bonsai")
+
+        draw_web_ui_button(layout, "10")
+
+
+# =============================================================================
+# HELPER — Web UI launch button (added to every active panel)
+# =============================================================================
+
+def draw_web_ui_button(layout, tab_id):
+    """Add an 'Open in Web UI' button that launches the browser at the given tab."""
+    row = layout.row(align=True)
+    row.scale_y = 1.1
+    op = row.operator("bim.launch_web_ui", text="Open in Web UI", icon="URL")
+    op.tab = tab_id
+
+
+# =============================================================================
+# 1D. BOM DESIGNER (S56 — new Web UI tab)
+# =============================================================================
+
+class BIM_PT_1d_bom_designer(Panel):
+    """1D Order Configurator — BOM Drop, OrderLines, ASI, DocAction (§29.5)"""
+    bl_label = "1D. Order Configurator"
+    bl_idname = "BIM_PT_1d_bom_designer"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "scene"
+    bl_parent_id = "BIM_PT_tabs"
+    bl_order = 1
+
+    def draw(self, context):
+        layout = self.layout
+        box = layout.box()
+        box.label(text="Order Configurator (S57)", icon="OUTLINER")
+        info = box.column(align=True)
+        info.scale_y = 0.7
+        info.label(text="1. Select BOM template from dropdown")
+        info.label(text="2. BOM Drop creates Order + OrderLines")
+        info.label(text="3. Edit dimensions & ASI per line")
+        info.label(text="4. Save / Complete (DocAction)")
+        draw_web_ui_button(layout, "1d")
+
+
+# =============================================================================
+# 2D. IMPORT / EXPORT (S56 — new Web UI tab)
+# =============================================================================
+
+class BIM_PT_2d_import_export(Panel):
+    """2D Import/Export — IFC import, YAML export, format conversion"""
+    bl_label = "2D. Import / Export"
+    bl_idname = "BIM_PT_2d_import_export"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "scene"
+    bl_parent_id = "BIM_PT_tabs"
+    bl_options = {"DEFAULT_CLOSED"}
+    bl_order = 2
+
+    def draw(self, context):
+        layout = self.layout
+        box = layout.box()
+        box.label(text="Import / Export", icon="IMPORT")
+        info = box.column(align=True)
+        info.scale_y = 0.7
+        info.label(text="IFC import, YAML export, format conversion.")
+        info.label(text="Coming soon.")
+        draw_web_ui_button(layout, "2d")
+
+
+# =============================================================================
+# 8. ERP REPORTS (S56 — new Web UI tab)
+# =============================================================================
+
+class BIM_PT_8_erp_reports(Panel):
+    """8 ERP Reports — Portfolio, Kanban, Balanced Scorecard"""
+    bl_label = "8. ERP Reports"
+    bl_idname = "BIM_PT_8_erp_reports"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "scene"
+    bl_parent_id = "BIM_PT_tabs"
+    bl_options = {"DEFAULT_CLOSED"}
+    bl_order = 8
+
+    def draw(self, context):
+        layout = self.layout
+        box = layout.box()
+        box.label(text="Portfolio / Kanban / Scorecard", icon="FILE_TEXT")
+        info = box.column(align=True)
+        info.scale_y = 0.7
+        info.label(text="Multi-project ERP reporting dashboard.")
+        draw_web_ui_button(layout, "8")
 
 
 # =============================================================================
@@ -746,16 +923,22 @@ class BIM_PT_visualization_settings(Panel):
 # =============================================================================
 
 classes = (
-    BIM_PT_federation_setup,
-    BIM_PT_visualization_control,
-    BIM_PT_mep_coordination,
-    BIM_PT_clash_detection,
-    BIM_PT_structural_works,
-    BIM_PT_4d_scheduling,
-    BIM_PT_5d_cost_management,
-    BIM_PT_digital_twin,
-    BIM_PT_nlp_query,
-    BIM_PT_visualization_settings,
+    # Active panels (nD numbering — all 10 tabs)
+    BIM_PT_1d_bom_designer,           # 1D — NEW
+    BIM_PT_2d_import_export,          # 2D — NEW
+    BIM_PT_federation_setup,          # 3D
+    BIM_PT_4d_scheduling,             # 4D
+    BIM_PT_5d_cost_management,        # 5D
+    BIM_PT_digital_twin,              # 6D
+    BIM_PT_tandem_iot,                # 7D
+    BIM_PT_8_erp_reports,             # 8  — NEW
+    BIM_PT_nlp_query,                 # 9
+    BIM_PT_visualization_settings,    # 10
+    # Archived (pushed to bl_order 91+)
+    BIM_PT_visualization_control,     # merged into 3D
+    BIM_PT_mep_coordination,          # will be redone via backend verbs
+    BIM_PT_clash_detection,           # will be redone via backend verbs
+    BIM_PT_structural_works,          # will be redone via backend verbs
 )
 
 

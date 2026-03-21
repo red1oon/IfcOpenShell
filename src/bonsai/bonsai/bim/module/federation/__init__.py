@@ -39,7 +39,7 @@ merging, solving spatial hierarchy mismatch problems through coordinate-based qu
 import bpy
 from bpy.app.handlers import persistent
 from pathlib import Path
-from . import ui, prop, operator, discipline_legend, cache_monitor, color_palette, crud_operators
+from . import ui, prop, operator, discipline_legend, cache_monitor, color_palette, crud_operators, webui_sync
 # from . import ui_federation_tab  # Old experimental sandbox - replaced by ui_federation_project
 from . import ui_federation_project  # Clean enterprise layout under Project Overview
 from . import river  # River Equipment Monitoring - Item 11
@@ -147,6 +147,10 @@ classes = (
     operator.BIM_OT_clear_nlp_results,
     operator.BIM_OT_export_nlp_results,
 
+    # Web UI Launcher (S56)
+    operator.BIM_OT_launch_web_ui,
+
+
     # Federation CRUD (manual additions)
     crud_operators.BIM_OT_add_to_federation,
     crud_operators.BIM_OT_update_federation_element,
@@ -160,8 +164,11 @@ classes = (
     ui.BIM_UL_resolution_options,
 
     # ═══════════════════════════════════════════════════════════════
-    # CRITICAL: Register NUMBERED PANELS 1-10 (parents) BEFORE their children
+    # CRITICAL: Register NUMBERED PANELS 0-10 (parents) BEFORE their children
     # ═══════════════════════════════════════════════════════════════
+    ui_federation_project.BIM_PT_webui_sync,                   # 0 — Web UI Sync bar (S57)
+    ui_federation_project.BIM_PT_1d_bom_designer,              # 1D — BOM Designer (S56)
+    ui_federation_project.BIM_PT_2d_import_export,             # 2D — Import/Export (S56)
     ui_federation_project.BIM_PT_federation_setup,
     ui_federation_project.BIM_PT_visualization_control,
     ui_federation_project.BIM_PT_mep_coordination,           # #3 - parent for MEP
@@ -169,9 +176,11 @@ classes = (
     ui_federation_project.BIM_PT_structural_works,
     ui_federation_project.BIM_PT_4d_scheduling,
     ui_federation_project.BIM_PT_5d_cost_management,
-    ui_federation_project.BIM_PT_digital_twin,               # #8 - parent for Tandem
-    ui_federation_project.BIM_PT_nlp_query,
-    ui_federation_project.BIM_PT_visualization_settings,     # #10 - parent for Color
+    ui_federation_project.BIM_PT_digital_twin,               # 6D - Asset Maintenance
+    ui_federation_project.BIM_PT_tandem_iot,                 # 7D - Tandem IoT
+    ui_federation_project.BIM_PT_8_erp_reports,              # 8  - ERP Reports (S56)
+    ui_federation_project.BIM_PT_nlp_query,                  # 9 - NLP
+    ui_federation_project.BIM_PT_visualization_settings,     # 10 - Color Studio
 
     # River Equipment Monitoring - Item 11
     *river.classes,
@@ -216,6 +225,10 @@ classes = (
     color_palette.BIM_OT_save_color_scheme,
     color_palette.BIM_OT_load_color_scheme,
     # color_palette.BIM_PT_federation_color_palette,  # Removed - content moved to #10 parent
+
+    # WebUI Sync — Bonsai ↔ Web UI bidirectional sync (S57)
+    webui_sync.BIM_OT_start_webui_sync,
+    webui_sync.BIM_OT_stop_webui_sync,
 
     # Digital Twin (Tandem) - 6D/7D BIM Operators
     tandem_operator.BIM_OT_import_assets_from_ifc,
