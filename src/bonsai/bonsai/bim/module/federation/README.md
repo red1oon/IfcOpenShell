@@ -605,6 +605,83 @@ Run from Blender console or standalone Python.
 
 ## 🐛 Troubleshooting
 
+### Issue: ifcpatch MergeProjects segfault on write (ifcopenshell 0.8.4)
+
+**Symptom**: Merged IFC file is written but is smaller than the first input file alone, or the
+process crashes silently after merge. The merged file contains only the first discipline (base file).
+
+**Root cause**: `ifcpatch MergeProjects` calls `remove_deep2()` inside `reuse_existing_contexts()`
+to deduplicate geometry contexts after merging. In ifcopenshell 0.8.4, `remove_deep2` corrupts
+the C++ internal file state, causing a segfault when `file.write()` is subsequently called.
+See: `ifcpatch/recipes/MergeProjects.py` line 165.
+
+**Workaround**: Bypass ifcpatch entirely and use bare ifcopenshell entity-copy instead:
+
+```python
+import ifcopenshell
+
+base = ifcopenshell.open("discipline_ARC.ifc")
+for path in ["discipline_STR.ifc", "discipline_MEP.ifc", ...]:
+    other = ifcopenshell.open(path)
+    for entity in other:
+        base.add(entity)
+base.write("Federated.ifc")
+```
+
+This produces duplicate `IfcProject`/`IfcSite`/`IfcBuilding` entries (one per discipline)
+but preserves all geometry and GUIDs correctly. Downstream extractors handle multiple
+spatial roots without issue.
+
+### Issue: C++ serializer segfault on large merged models (ifcopenshell 0.8.4)
+
+**Symptom**: `file.write()` or `file.to_string()` crashes when the in-memory merged model
+exceeds ~130K products (e.g. merging 7 large MEP+ARC+STR disciplines).
+
+**Root cause**: IfcOpenShell 0.8.4 C++ serializer has a memory bug on large in-memory models.
+Not related to the MergeProjects bug above — affects the write step independently.
+
+**Workaround A**: Use a progressive text-level IFC STEP merger — concatenate the raw STEP files
+with Python ID renumbering to avoid entity ID collisions, bypassing the C++ serializer entirely.
+
+**Workaround B (preferred)**: Write-and-reload after each discipline merge. Write the intermediate
+result to a temp file after each `file.add()` loop, then reload from disk before adding the next
+discipline. This keeps each write within a freshly-loaded model under the ~1.5M entity limit:
+
+```python
+import ifcopenshell, tempfile, os
+
+files = ["ARC.ifc", "STR.ifc", "MEP.ifc", ...]
+base = ifcopenshell.open(files[0])
+for path in files[1:]:
+    other = ifcopenshell.open(path)
+    for entity in other:
+        base.add(entity)
+    # Write and reload to avoid C++ in-memory segfault
+    tmp = tempfile.mktemp(suffix=".ifc")
+    base.write(tmp)
+    base = ifcopenshell.open(tmp)
+    os.unlink(tmp)
+base.write("Federated.ifc")
+```
+
+Reference script for 7-discipline hospital merge: `DAGCompiler/lib/input/IFC/merge_hospital.py`
+
+---
+
+### Issue: Geometry iterator OOM killed on large merged IFC
+
+**Symptom**: Geometry extraction (tessellation) on a large merged IFC (>200MB) is killed by the
+OS out-of-memory killer mid-run, producing an incomplete database.
+
+**Root cause**: Running `ifcopenshell.geom.iterator` on a 200MB+ merged file loads all geometry
+into RAM simultaneously, easily exceeding 16GB on large federated models.
+
+**Workaround**: Extract geometry **per discipline from individual source files** and stream-write
+results to the shared DB, rather than extracting from the merged file. This caps RAM usage to
+one discipline at a time.
+
+---
+
 ### Issue: "rtree library required for spatial indexing"
 
 **Solution**:
@@ -683,6 +760,37 @@ hasattr(bpy.types.WindowManager, 'federation_index')
 # If False, reload from UI:
 # Properties → Quality Control → Federation → Load Federation Index
 ```
+
+---
+
+## 🏗️ BIM Compiler Pipeline: Skip the IFC Merge
+
+If your goal is extracting data for the **BIM Compiler pipeline** (producing `*_extracted.db` files),
+you do **not need to merge IFC files at all**.
+
+The companion script in the BIM Compiler repo handles per-discipline extraction and DB merging directly
+from separate source files — no merged IFC on disk, no ifcpatch, no OOM risk:
+
+**Script:** [`bim-compiler/scripts/extract_merge_disciplines.py`](https://github.com/red1oon/bim-compiler/blob/master/scripts/extract_merge_disciplines.py)
+
+```bash
+python3 scripts/extract_merge_disciplines.py \
+  --ifc-dir DAGCompiler/lib/input/IFC/UNMERGED \
+  --pattern "Hospital_IFC4_*.ifc" \
+  --output DAGCompiler/lib/input/Hospital_extracted.db
+```
+
+**How it works:**
+1. Extracts each discipline IFC separately → temp DB (bounded RAM, one file at a time)
+2. Merges all temp DBs into one combined `_extracted.db` (deduplicates geometry by hash)
+3. Cleans up temp files automatically
+
+**When you DO still need a merged IFC:**
+- Loading all disciplines in the **Bonsai viewer** as a single file
+- Running `federation_preprocessor.py` for the spatial bbox index
+- **Clash detection** across disciplines
+
+For everything else — use `extract_merge_disciplines.py` directly.
 
 ---
 
