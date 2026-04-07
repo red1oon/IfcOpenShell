@@ -16,10 +16,15 @@ from mathutils import Vector
 # Discipline color palette (bright distinct colors for easy identification)
 DISCIPLINE_COLORS = {
     'ARC': (0.7, 0.7, 0.7),      # Light gray (architecture/structure)
-    'STR': (0.5, 0.5, 0.5),      # Dark gray (structural)
+    'STR': (0.5, 0.5, 0.5),      # Dark gray (structural concrete)
+    'REB': (0.9, 0.5, 0.2),      # Rust/orange (reinforcement steel)
     'ACMV': (0.3, 0.7, 1.0),     # Sky blue (air conditioning)
     'ELEC': (1.0, 0.9, 0.2),     # Yellow (electrical)
     'FP': (1.0, 0.2, 0.2),       # Red (fire protection)
+    'PLUMB': (0.0, 0.4, 1.0),    # Dark Blue (plumbing/water)
+    'GAS': (0.8, 0.0, 0.8),      # Purple/Magenta (gas)
+    'ICT': (0.0, 1.0, 0.0),      # Green (data/communications)
+    'FURN': (0.6, 0.4, 0.2),     # Brown/wood (furniture)
     'LPG': (1.0, 0.5, 0.0),      # Orange (LPG/gas)
     'SP': (0.2, 0.8, 0.2),       # Green (sanitary/plumbing)
     'CW': (0.3, 0.3, 0.9),       # Blue (chilled water)
@@ -88,6 +93,7 @@ def load_bboxes_from_rtree(db_path):
         m.guid,
         m.discipline,
         m.ifc_class,
+        m.element_name,
         r.minX, r.maxX, r.minY, r.maxY, r.minZ, r.maxZ
     FROM elements_rtree r
     JOIN elements_meta m ON r.id = m.id
@@ -105,10 +111,10 @@ def load_bboxes_from_rtree(db_path):
 
     # Organize by discipline
     by_discipline = {}
-    for guid, discipline, ifc_class, minX, maxX, minY, maxY, minZ, maxZ in rows:
+    for guid, discipline, ifc_class, element_name, minX, maxX, minY, maxY, minZ, maxZ in rows:
         if discipline not in by_discipline:
             by_discipline[discipline] = []
-        by_discipline[discipline].append((guid, ifc_class, minX, maxX, minY, maxY, minZ, maxZ))
+        by_discipline[discipline].append((guid, ifc_class, element_name, minX, maxX, minY, maxY, minZ, maxZ))
 
     print(f"\nOrganized into {len(by_discipline)} disciplines:")
     for disc, items in sorted(by_discipline.items()):
@@ -183,14 +189,16 @@ def create_bbox_objects(by_discipline, batch_size=1000):
         color = DISCIPLINE_COLORS.get(discipline, DISCIPLINE_COLORS['DEFAULT'])
         print(f"\nProcessing {discipline}: {len(items):,} elements (color: RGB{color})")
 
-        for guid, ifc_class, minX, maxX, minY, maxY, minZ, maxZ in items:
+        for guid, ifc_class, element_name, minX, maxX, minY, maxY, minZ, maxZ in items:
             # Create bbox mesh
             mesh_name = f"{guid}_bbox"
             mesh = create_bbox_mesh(mesh_name, minX, maxX, minY, maxY, minZ, maxZ)
 
-            # Create object
-            obj = bpy.data.objects.new(guid, mesh)
+            # Create object — use descriptive element_name for Outliner, guid as fallback
+            display_name = element_name or guid
+            obj = bpy.data.objects.new(display_name, mesh)
             obj["ifc_class"] = ifc_class
+            obj["federation_guid"] = guid
             obj["discipline"] = discipline
             obj["is_bbox"] = True
 

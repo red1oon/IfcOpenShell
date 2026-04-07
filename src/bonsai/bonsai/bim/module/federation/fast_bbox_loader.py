@@ -93,6 +93,7 @@ def load_bboxes_from_rtree(db_path):
         m.guid,
         m.discipline,
         m.ifc_class,
+        m.element_name,
         r.minX, r.maxX, r.minY, r.maxY, r.minZ, r.maxZ
     FROM elements_rtree r
     JOIN elements_meta m ON r.id = m.id
@@ -110,10 +111,10 @@ def load_bboxes_from_rtree(db_path):
 
     # Organize by discipline
     by_discipline = {}
-    for guid, discipline, ifc_class, minX, maxX, minY, maxY, minZ, maxZ in rows:
+    for guid, discipline, ifc_class, element_name, minX, maxX, minY, maxY, minZ, maxZ in rows:
         if discipline not in by_discipline:
             by_discipline[discipline] = []
-        by_discipline[discipline].append((guid, ifc_class, minX, maxX, minY, maxY, minZ, maxZ))
+        by_discipline[discipline].append((guid, ifc_class, element_name, minX, maxX, minY, maxY, minZ, maxZ))
 
     print(f"\nOrganized into {len(by_discipline)} disciplines:")
     for disc, items in sorted(by_discipline.items()):
@@ -188,14 +189,16 @@ def create_bbox_objects(by_discipline, batch_size=1000):
         color = DISCIPLINE_COLORS.get(discipline, DISCIPLINE_COLORS['DEFAULT'])
         print(f"\nProcessing {discipline}: {len(items):,} elements (color: RGB{color})")
 
-        for guid, ifc_class, minX, maxX, minY, maxY, minZ, maxZ in items:
+        for guid, ifc_class, element_name, minX, maxX, minY, maxY, minZ, maxZ in items:
             # Create bbox mesh
             mesh_name = f"{guid}_bbox"
             mesh = create_bbox_mesh(mesh_name, minX, maxX, minY, maxY, minZ, maxZ)
 
-            # Create object
-            obj = bpy.data.objects.new(guid, mesh)
+            # Create object — use descriptive element_name for Outliner, guid as fallback
+            display_name = element_name or guid
+            obj = bpy.data.objects.new(display_name, mesh)
             obj["ifc_class"] = ifc_class
+            obj["federation_guid"] = guid
             obj["discipline"] = discipline
             obj["is_bbox"] = True
 

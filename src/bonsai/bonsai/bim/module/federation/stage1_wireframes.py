@@ -65,11 +65,12 @@ def create_wireframe_boxes(db_conn: sqlite3.Connection,
         offset_x = offset_y = offset_z = 0.0
         print("⚠ No site offset found in database")
 
-    # Query all elements with bbox and discipline
+    # Query all elements with bbox, discipline, and descriptive name
     cursor.execute("""
         SELECT
             m.guid,
             m.discipline,
+            m.element_name,
             r.minX, r.maxX,
             r.minY, r.maxY,
             r.minZ, r.maxZ
@@ -85,7 +86,7 @@ def create_wireframe_boxes(db_conn: sqlite3.Connection,
     wireframes = []
 
     # Process elements
-    for idx, (guid, discipline, min_x, max_x, min_y, max_y, min_z, max_z) in enumerate(elements):
+    for idx, (guid, discipline, element_name, min_x, max_x, min_y, max_y, min_z, max_z) in enumerate(elements):
         # Convert mm to meters AND apply site offset (to bring to origin)
         min_x_m = min_x / 1000.0 + offset_x
         max_x_m = max_x / 1000.0 + offset_x
@@ -115,10 +116,11 @@ def create_wireframe_boxes(db_conn: sqlite3.Connection,
         mesh.from_pydata(verts, edges, [])  # Empty faces list
         mesh.update()
 
-        # Create object
-        obj = bpy.data.objects.new(guid, mesh)
+        # Create object — use descriptive element_name for Outliner, guid as fallback
+        display_name = element_name or guid
+        obj = bpy.data.objects.new(display_name, mesh)
 
-        # Store metadata
+        # Store metadata — guid always available via custom property for lookups
         obj["federation_discipline"] = discipline
         obj["federation_stage"] = 1
         obj["federation_guid"] = guid
