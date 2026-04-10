@@ -398,6 +398,116 @@ def restore_equipment_on_load(dummy):
         print(f"⚠ Could not restore river equipment markers: {e}")
 
 
+# ── S169: Thin .blend — strip meshes on save, restore on open ────────
+
+@persistent
+def federation_save_pre(dummy):
+    """S169: Strip template meshes before save → .blend stays ~15 MB."""
+    from . import blend_cache
+    blend_cache.strip_template_meshes()
+
+@persistent
+def federation_save_post(dummy):
+    """S169: Restore template meshes after save → viewport stays full-fidelity."""
+    from . import blend_cache
+    blend_cache.restore_template_meshes()
+
+@persistent
+def federation_load_post_meshes(dummy):
+    """S169: Restore template meshes on file open from component_library.db.
+    S170: Also rebuild LOD manager index and start LOD timer."""
+    from . import blend_cache
+    blend_cache.restore_template_meshes()
+    # S170: Rebuild LOD index from database on file open
+    _init_lod_from_scene()
+
+
+# ── S170: LOD — discipline visibility tracking ──────────────────────
+
+def _init_lod_from_scene():
+    """Initialize LOD manager from scene state after file open."""
+    try:
+        root = bpy.data.collections.get('Federation_Cached')
+        if not root:
+            return
+        db_path = root.get('database_path')
+        lib_path = root.get('library_path')
+        if not db_path or not Path(db_path).exists():
+            return
+
+        from . import lod_manager
+        mgr = lod_manager.get_manager()
+        if mgr._built:
+            return  # Already initialized
+
+        mgr.build_index(db_path, library_path=lib_path)
+
+        # Detect which disciplines are currently visible
+        root_lc = None
+        for lc in bpy.context.view_layer.layer_collection.children:
+            if lc.name == 'Federation_Cached':
+                root_lc = lc
+                break
+        if root_lc:
+            for disc_lc in root_lc.children:
+                if not disc_lc.exclude:
+                    mgr.visible_disciplines.add(disc_lc.name)
+                    mgr.loaded_hashes |= mgr.disc_hashes.get(disc_lc.name, set())
+
+        mgr.candidate_hashes = mgr.get_visible_hashes()
+
+        # Count loaded templates for large model detection
+        tmpl_coll = bpy.data.collections.get('_GN_Templates')
+        total_templates = len(tmpl_coll.objects) if tmpl_coll else 0
+        mgr.distance_enabled = (total_templates >= 5000)
+
+        lod_manager.start_lod_timer()
+        print(f"[S170] LOD restored: {len(mgr.visible_disciplines)} visible disciplines, "
+              f"{len(mgr.loaded_hashes):,} loaded hashes")
+    except Exception as e:
+        print(f"[S170] LOD init skipped: {e}")
+
+
+# S170: Track previous discipline visibility state for change detection
+_prev_disc_visibility = {}
+
+@persistent
+def federation_depsgraph_update(scene, depsgraph):
+    """S170: Detect discipline collection visibility changes → trigger LOD load/unload."""
+    global _prev_disc_visibility
+
+    root_lc = None
+    try:
+        for lc in bpy.context.view_layer.layer_collection.children:
+            if lc.name == 'Federation_Cached':
+                root_lc = lc
+                break
+    except Exception:
+        return
+
+    if not root_lc:
+        return
+
+    # Check each discipline sub-collection's exclude state
+    changed = False
+    for disc_lc in root_lc.children:
+        name = disc_lc.name
+        visible = not disc_lc.exclude
+        prev = _prev_disc_visibility.get(name)
+        if prev is None:
+            # First time seeing this — just record
+            _prev_disc_visibility[name] = visible
+            continue
+        if visible != prev:
+            _prev_disc_visibility[name] = visible
+            changed = True
+            try:
+                from . import lod_manager
+                lod_manager.on_discipline_toggle(name, visible)
+            except Exception as e:
+                print(f"[S170] Discipline toggle error ({name}): {e}")
+
+
 def register():
     """Called when addon is enabled"""
     # Attach properties to Blender's Scene
@@ -456,6 +566,18 @@ def register():
     if restore_equipment_on_load not in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.append(restore_equipment_on_load)
 
+    # S169: Register save/load handlers for thin .blend
+    if federation_save_pre not in bpy.app.handlers.save_pre:
+        bpy.app.handlers.save_pre.append(federation_save_pre)
+    if federation_save_post not in bpy.app.handlers.save_post:
+        bpy.app.handlers.save_post.append(federation_save_post)
+    if federation_load_post_meshes not in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.append(federation_load_post_meshes)
+
+    # S170: Register depsgraph handler for discipline visibility tracking
+    if federation_depsgraph_update not in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.append(federation_depsgraph_update)
+
     # Register equipment context menu (right-click on equipment)
     # Note: river module handles its own context menu in river/__init__.py register()
     # bpy.types.VIEW3D_MT_object_context_menu.append(river.equipment_maintenance.menu_func)
@@ -475,6 +597,24 @@ def unregister():
         bpy.app.handlers.load_post.remove(restore_federation_index_on_load)
     if restore_equipment_on_load in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.remove(restore_equipment_on_load)
+
+    # S169: Remove save/load handlers
+    if federation_save_pre in bpy.app.handlers.save_pre:
+        bpy.app.handlers.save_pre.remove(federation_save_pre)
+    if federation_save_post in bpy.app.handlers.save_post:
+        bpy.app.handlers.save_post.remove(federation_save_post)
+    if federation_load_post_meshes in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.remove(federation_load_post_meshes)
+
+    # S170: Remove depsgraph handler + shutdown LOD
+    if federation_depsgraph_update in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.remove(federation_depsgraph_update)
+    try:
+        from . import lod_manager
+        lod_manager.stop_lod_timer()
+        lod_manager.shutdown_manager()
+    except Exception:
+        pass
 
     # Remove equipment context menu
     # Note: river module handles its own context menu in river/__init__.py unregister()

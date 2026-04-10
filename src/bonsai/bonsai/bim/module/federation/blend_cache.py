@@ -21,7 +21,134 @@ import struct
 import time
 import glob
 import subprocess
+import numpy as np
 from pathlib import Path
+
+
+GN_THRESHOLD = 50_000  # element count above which GN instances are used
+
+
+# ── S169: Thin .blend — strip meshes on save, restore on open ────────
+
+def _find_library_path():
+    """Find component_library.db from root collection custom property."""
+    root = bpy.data.collections.get('Federation_Cached')
+    if not root:
+        return None
+
+    # Explicit path stored at cache creation time
+    lib_path = root.get('library_path')
+    if lib_path and os.path.exists(lib_path):
+        return lib_path
+
+    # Fallback: walk up from database_path
+    db_path = root.get('database_path')
+    if not db_path:
+        return None
+    search_dir = os.path.dirname(db_path)
+    for _ in range(5):
+        candidate = os.path.join(search_dir, 'library', 'component_library.db')
+        if os.path.exists(candidate):
+            return candidate
+        search_dir = os.path.dirname(search_dir)
+    return None
+
+
+def strip_template_meshes():
+    """save_pre: clear geometry from GN template meshes.
+
+    Keeps mesh data-blocks (so GN references survive) but removes
+    all vertex/face data. The full hash is preserved in mesh['geometry_hash'].
+    """
+    templates = bpy.data.collections.get('_GN_Templates')
+    if not templates:
+        return 0
+
+    count = 0
+    for obj in templates.objects:
+        if obj.type == 'MESH' and obj.data and len(obj.data.vertices) > 0:
+            obj.data.clear_geometry()
+            count += 1
+    if count:
+        print(f"[S169] save_pre: stripped {count} template meshes")
+    return count
+
+
+def restore_template_meshes():
+    """save_post / load_post: re-bake meshes from component_library.db.
+
+    S170: Only restores templates that should be visible per LOD manager
+    (visible disciplines + camera distance). If no LOD manager is active,
+    falls back to restoring ALL templates (S169 behaviour).
+    """
+    templates = bpy.data.collections.get('_GN_Templates')
+    if not templates:
+        return 0
+
+    # Check if LOD manager has state — if so, only restore loaded hashes
+    lod_filter = None
+    try:
+        from . import lod_manager
+        mgr = lod_manager.get_manager()
+        if mgr._built and mgr.loaded_hashes:
+            lod_filter = mgr.loaded_hashes
+    except Exception:
+        pass
+
+    # Collect meshes that need geometry restored
+    needs_restore = []
+    for obj in templates.objects:
+        if obj.type == 'MESH' and obj.data and len(obj.data.vertices) == 0:
+            ghash = obj.data.get('geometry_hash')
+            if ghash:
+                # S170: skip hashes not in LOD loaded set
+                if lod_filter is not None and ghash not in lod_filter:
+                    continue
+                needs_restore.append((obj.data, ghash))
+
+    if not needs_restore:
+        return 0
+
+    lib_path = _find_library_path()
+    if not lib_path:
+        print("[S169] WARNING: cannot restore meshes — component_library.db not found")
+        return 0
+
+    # Batch-fetch from library
+    t0 = time.time()
+    print(f"  Opening library: {lib_path} (waiting up to 60s if locked...)")
+    lib_conn = sqlite3.connect(lib_path, timeout=60)
+    hash_to_geo = {}
+    hashes = [h for _, h in needs_restore]
+    BATCH = 5000
+    for i in range(0, len(hashes), BATCH):
+        batch = hashes[i:i + BATCH]
+        placeholders = ','.join('?' * len(batch))
+        rows = lib_conn.execute(
+            f"SELECT geometry_hash, vertices, faces "
+            f"FROM component_geometries "
+            f"WHERE geometry_hash IN ({placeholders})",
+            batch).fetchall()
+        for ghash, vblob, fblob in rows:
+            hash_to_geo[ghash] = (vblob, fblob)
+    lib_conn.close()
+
+    # Restore mesh data
+    restored = 0
+    for mesh, ghash in needs_restore:
+        geo = hash_to_geo.get(ghash)
+        if geo:
+            verts = unpack_vertices(geo[0])
+            faces = unpack_faces(geo[1])
+            mesh.from_pydata(verts, [], faces)
+            mesh.update()
+            restored += 1
+
+    elapsed = time.time() - t0
+    scope = f"LOD-filtered ({len(lod_filter):,} eligible)" if lod_filter else "ALL"
+    print(f"[S169] Restored {restored}/{len(needs_restore)} template meshes "
+          f"from {os.path.basename(lib_path)} in {elapsed:.1f}s [{scope}]")
+    return restored
 
 
 def cache_exists_in_db_folder(db_path: str) -> bool:
@@ -137,6 +264,511 @@ def unpack_faces(blob):
     return faces
 
 
+def _get_element_count(db_path):
+    """Quick element count without loading geometry."""
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+    c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='element_instances'")
+    if c.fetchone():
+        count = c.execute("SELECT COUNT(*) FROM element_instances").fetchone()[0]
+    else:
+        count = c.execute("SELECT COUNT(*) FROM elements_meta").fetchone()[0]
+    conn.close()
+    return count
+
+
+def _get_ram_mb():
+    """Current process RSS in MB (Linux)."""
+    try:
+        import resource
+        return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    except Exception:
+        return 0
+
+
+def _build_instance_node_tree(name, template_coll):
+    """
+    GN tree: Points -> Instance on Points (Pick Instance from collection).
+    Each point's 'instance_index' attribute selects which template mesh.
+    """
+    tree = bpy.data.node_groups.new(name, 'GeometryNodeTree')
+
+    tree.interface.new_socket(name='Geometry', in_out='INPUT', socket_type='NodeSocketGeometry')
+    tree.interface.new_socket(name='Geometry', in_out='OUTPUT', socket_type='NodeSocketGeometry')
+
+    inp = tree.nodes.new('NodeGroupInput')
+    out = tree.nodes.new('NodeGroupOutput')
+
+    # Collection Info — provides all template meshes as indexable instances
+    col_info = tree.nodes.new('GeometryNodeCollectionInfo')
+    col_info.inputs['Collection'].default_value = template_coll
+    col_info.inputs['Separate Children'].default_value = True
+    col_info.inputs['Reset Children'].default_value = True
+
+    # Instance on Points — places a template at each vertex
+    iop = tree.nodes.new('GeometryNodeInstanceOnPoints')
+    iop.inputs['Pick Instance'].default_value = True
+
+    # Named Attribute — reads per-point 'instance_index' to pick template
+    named_attr = tree.nodes.new('GeometryNodeInputNamedAttribute')
+    named_attr.data_type = 'INT'
+    named_attr.inputs['Name'].default_value = 'instance_index'
+
+    # Named Attribute — reads per-point 'rotation' (Euler XYZ radians)
+    rot_attr = tree.nodes.new('GeometryNodeInputNamedAttribute')
+    rot_attr.data_type = 'FLOAT_VECTOR'
+    rot_attr.inputs['Name'].default_value = 'rotation'
+
+    # Euler to Rotation — Blender 5.0 Instance on Points expects Rotation type
+    euler_to_rot = tree.nodes.new('FunctionNodeEulerToRotation')
+
+    tree.links.new(inp.outputs[0], iop.inputs['Points'])
+    tree.links.new(col_info.outputs['Instances'], iop.inputs['Instance'])
+    tree.links.new(named_attr.outputs[0], iop.inputs['Instance Index'])
+    tree.links.new(rot_attr.outputs[0], euler_to_rot.inputs[0])
+    tree.links.new(euler_to_rot.outputs[0], iop.inputs['Rotation'])
+    tree.links.new(iop.outputs['Instances'], out.inputs[0])
+
+    return tree
+
+
+def create_cache_gn_instances(context, db_path, mode="full", report_fn=None):
+    """
+    GN-instanced cache for large databases (>= GN_THRESHOLD elements).
+
+    Creates ~13 GN objects (one per discipline) instead of 1M real objects.
+    Each uses Instance on Points to place shared template meshes at element
+    positions.  108K template meshes go into a hidden collection.
+
+    Returns:
+        Number of unique meshes created
+    """
+    cache_path = get_cache_path(db_path, mode=mode)
+    log_path = os.path.join(os.path.dirname(db_path), "gn_cache_log.txt")
+    t0 = time.time()
+    log_lines = []
+
+    def log(msg):
+        elapsed = time.time() - t0
+        line = f"[{int(elapsed)//60:02d}:{elapsed%60:04.1f}] {msg}"
+        print(line)
+        log_lines.append(line)
+
+    def header(msg):
+        print(msg)
+        log_lines.append(msg)
+
+    header("=" * 64)
+    header("GN CACHE BUILD LOG")
+    header("=" * 64)
+    header(f"Date:     {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    header(f"Database: {db_path}")
+    header(f"Cache:    {cache_path}")
+    header(f"Mode:     GN instances (FULL)")
+    header("")
+
+    if report_fn:
+        report_fn("Baking GN instance cache (one-time, ~5 min)...")
+
+    # ── Phase 1: DB query ──────────────────────────────────────
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+
+    # Check if base_geometries has actual vertex BLOBs (not just the column)
+    # S168 hash-only mode: column exists but all values are NULL
+    c.execute("PRAGMA table_info(base_geometries)")
+    bg_cols = {r[1] for r in c.fetchall()}
+    has_blobs = False
+    if 'vertices' in bg_cols:
+        row = c.execute("SELECT 1 FROM base_geometries WHERE vertices IS NOT NULL LIMIT 1").fetchone()
+        has_blobs = row is not None
+
+    lib_path = None  # S169: set when using component_library.db
+
+    if has_blobs:
+        # Legacy: BLOBs embedded in federation DB
+        c.execute("""SELECT DISTINCT bg.geometry_hash, bg.vertices, bg.faces
+                     FROM base_geometries bg
+                     JOIN element_instances ei ON bg.geometry_hash = ei.geometry_hash
+                     WHERE bg.vertices IS NOT NULL""")
+        geom_rows = c.fetchall()
+    else:
+        # S168: BLOBs in component_library.db, federation DB has hashes only
+        # Walk up from db_path looking for library/component_library.db
+        lib_paths = []
+        search_dir = os.path.dirname(db_path)
+        for _ in range(5):  # max 5 levels up
+            candidate = os.path.join(search_dir, 'library', 'component_library.db')
+            lib_paths.append(candidate)
+            search_dir = os.path.dirname(search_dir)
+        # Also check same dir as DB
+        lib_paths.append(os.path.join(os.path.dirname(db_path), 'component_library.db'))
+        lib_path = None
+        for lp in lib_paths:
+            if os.path.exists(lp):
+                lib_path = lp
+                break
+
+        if not lib_path:
+            raise FileNotFoundError(
+                "No component_library.db found for mesh BLOBs. "
+                "Searched: " + ", ".join(lib_paths))
+
+        log(f"MESH_SOURCE   {lib_path}")
+        print(f"  Opening library: {lib_path} (waiting up to 60s if locked...)")
+        lib_conn = sqlite3.connect(lib_path, timeout=60)
+        lc = lib_conn.cursor()
+
+        # Get hashes needed from federation DB
+        c.execute("""SELECT DISTINCT ei.geometry_hash
+                     FROM element_instances ei
+                     JOIN base_geometries bg ON ei.geometry_hash = bg.geometry_hash""")
+        needed_hashes = [r[0] for r in c.fetchall()]
+
+        # Fetch BLOBs from library in batches
+        geom_rows = []
+        BATCH = 5000
+        for i in range(0, len(needed_hashes), BATCH):
+            batch = needed_hashes[i:i+BATCH]
+            placeholders = ','.join('?' * len(batch))
+            lc.execute(f"""SELECT geometry_hash, vertices, faces
+                          FROM component_geometries
+                          WHERE geometry_hash IN ({placeholders})""", batch)
+            geom_rows.extend(lc.fetchall())
+
+        lib_conn.close()
+        log(f"MESH_SOURCE   {len(geom_rows):,} meshes from library "
+            f"({len(needed_hashes):,} requested)")
+
+    # Check if rotation columns exist in element_transforms
+    c.execute("PRAGMA table_info(element_transforms)")
+    et_cols = {r[1] for r in c.fetchall()}
+    has_rotation = 'rotation_x' in et_cols
+
+    # Check if building column exists in elements_meta
+    c.execute("PRAGMA table_info(elements_meta)")
+    em_cols = {r[1] for r in c.fetchall()}
+    has_building = 'building' in em_cols
+
+    rot_cols = "et.rotation_x, et.rotation_y, et.rotation_z," if has_rotation else ""
+    bldg_col = "em.building," if has_building else ""
+
+    c.execute(f"""
+        SELECT ei.guid, em.discipline, ei.geometry_hash,
+               et.center_x, et.center_y, et.center_z,
+               em.material_name, em.material_rgba,
+               {rot_cols}
+               {bldg_col}
+               em.ifc_class
+        FROM element_instances ei
+        JOIN elements_meta em ON ei.guid = em.guid
+        LEFT JOIN element_transforms et ON ei.guid = et.guid
+    """)
+    element_rows = c.fetchall()
+    conn.close()
+
+    log(f"DB_QUERY      {len(element_rows):,} elements, "
+        f"{len(geom_rows):,} unique geoms"
+        f"{' (with rotation)' if has_rotation else ' (no rotation)'}"
+        f" — RAM {_get_ram_mb():.0f} MB")
+
+    # ── Phase 2: Create EMPTY template meshes (S170 lazy load) ──
+    # Meshes are created with geometry_hash but NO vertex data.
+    # Only ARC templates get filled immediately; rest loaded on demand
+    # by lod_manager based on discipline visibility + camera distance.
+    mesh_t0 = time.time()
+    wm = context.window_manager
+    wm.progress_begin(0, len(geom_rows))
+
+    hash_to_index = {}
+    baked_meshes = []   # ordered — index = Pick Instance index
+    geom_hashes = []    # parallel list for material assignment
+    hash_to_blobs = {}  # geometry_hash -> (verts_blob, faces_blob) for deferred fill
+
+    for i, (geom_hash, verts_blob, faces_blob) in enumerate(geom_rows):
+        mesh = bpy.data.meshes.new(f"T_{geom_hash[:8]}")
+        # S169: store full hash for save_pre strip / load_post restore
+        mesh['geometry_hash'] = geom_hash
+        # S170: mesh starts EMPTY — filled later by discipline/distance LOD
+
+        hash_to_index[geom_hash] = i
+        baked_meshes.append(mesh)
+        geom_hashes.append(geom_hash)
+        hash_to_blobs[geom_hash] = (verts_blob, faces_blob)
+
+        if (i + 1) % 20000 == 0:
+            wm.progress_update(i + 1)
+
+    wm.progress_end()
+    mesh_time = time.time() - mesh_t0
+    log(f"MESH_CREATE   {len(baked_meshes):,} empty templates in {mesh_time:.1f}s "
+        f"— RAM {_get_ram_mb():.0f} MB")
+
+    # ── Phase 3: Group elements by discipline ─────────────────────
+    group_t0 = time.time()
+    disc_positions = {}   # discipline -> list of (cx, cy, cz)
+    disc_rotations = {}   # discipline -> list of (rx, ry, rz)
+    disc_indices = {}     # discipline -> list of int
+    hash_materials = {}   # geometry_hash -> (material_name, rgba, discipline)
+
+    # Parse dynamic column offsets
+    col = 8
+    rot_off = col if has_rotation else None
+    if has_rotation:
+        col += 3
+
+    skipped = 0
+    for row in element_rows:
+        guid, discipline, geom_hash, cx, cy, cz = row[:6]
+        mat_name, mat_rgba = row[6], row[7]
+
+        rx = row[rot_off] if rot_off is not None else 0.0
+        ry = row[rot_off + 1] if rot_off is not None else 0.0
+        rz = row[rot_off + 2] if rot_off is not None else 0.0
+
+        disc = discipline or 'Unknown'
+        idx = hash_to_index.get(geom_hash)
+        if idx is None:
+            skipped += 1
+            continue
+
+        disc_positions.setdefault(disc, []).append(
+            (cx or 0.0, cy or 0.0, cz or 0.0))
+        disc_rotations.setdefault(disc, []).append(
+            (float(rx or 0.0), float(ry or 0.0), float(rz or 0.0)))
+        disc_indices.setdefault(disc, []).append(idx)
+
+        # First material wins per geometry hash
+        if geom_hash not in hash_materials and mat_rgba:
+            hash_materials[geom_hash] = (mat_name or "<Unnamed>",
+                                         mat_rgba, disc)
+
+    group_time = time.time() - group_t0
+    log(f"GROUPING      {len(disc_positions)} disciplines, "
+        f"{len(hash_materials):,} materials in {group_time:.1f}s"
+        + (f" ({skipped:,} skipped)" if skipped else ""))
+
+    # ── Phase 4: Template objects in hidden collection ─────────
+    tmpl_t0 = time.time()
+
+    from .stage2_tessellation_loader import get_or_create_db_material
+
+    tmpl_coll = bpy.data.collections.new("_GN_Templates")
+    context.scene.collection.children.link(tmpl_coll)
+
+    mat_assigned = 0
+    for i, mesh in enumerate(baked_meshes):
+        obj = bpy.data.objects.new(mesh.name, mesh)
+
+        # Assign material from first element using this geometry
+        mat_info = hash_materials.get(geom_hashes[i])
+        if mat_info:
+            m_name, m_rgba, m_disc = mat_info
+            material = get_or_create_db_material(m_name, m_rgba, m_disc)
+            if len(obj.data.materials) == 0:
+                obj.data.materials.append(None)
+            obj.data.materials[0] = material
+            mat_assigned += 1
+
+        tmpl_coll.objects.link(obj)
+
+    # Hide from viewport (but available for GN Collection Info)
+    for lc in context.view_layer.layer_collection.children:
+        if lc.name == tmpl_coll.name:
+            lc.exclude = True
+            break
+
+    tmpl_time = time.time() - tmpl_t0
+    log(f"TEMPLATES     {len(baked_meshes):,} objects, {mat_assigned:,} with materials "
+        f"in {tmpl_time:.1f}s — RAM {_get_ram_mb():.0f} MB")
+
+    # ── Phase 4b: S170 — Pre-fill ARC templates only ─────────────
+    # Compute which geometry_hashes are used by ARC elements
+    arc_hashes = set()
+    for row in element_rows:
+        disc = row[1] or 'Unknown'
+        if disc == 'ARC':
+            ghash = row[2]
+            if ghash in hash_to_index:
+                arc_hashes.add(ghash)
+
+    fill_t0 = time.time()
+    arc_filled = 0
+    for ghash in arc_hashes:
+        blobs = hash_to_blobs.get(ghash)
+        if blobs:
+            verts = unpack_vertices(blobs[0])
+            faces = unpack_faces(blobs[1])
+            if verts:
+                idx = hash_to_index[ghash]
+                baked_meshes[idx].from_pydata(verts, [], faces)
+                baked_meshes[idx].update()
+                arc_filled += 1
+
+    # Free blob memory — LOD manager fetches from library on demand
+    del hash_to_blobs
+
+    fill_time = time.time() - fill_t0
+    log(f"ARC_PREFILL   {arc_filled:,}/{len(arc_hashes):,} ARC templates filled "
+        f"in {fill_time:.1f}s ({len(baked_meshes) - arc_filled:,} empty/deferred) "
+        f"— RAM {_get_ram_mb():.0f} MB")
+
+    # ── Phase 5: GN node tree + per-discipline objects ───────────
+    gn_t0 = time.time()
+
+    gn_tree = _build_instance_node_tree("GN_FedInstances", tmpl_coll)
+
+    # Root collection
+    if "Federation_Cached" in bpy.data.collections:
+        bpy.data.collections.remove(bpy.data.collections["Federation_Cached"])
+
+    root_coll = bpy.data.collections.new("Federation_Cached")
+    root_coll['database_path'] = db_path
+    # S169: store library path for load_post mesh restore
+    if lib_path:
+        root_coll['library_path'] = lib_path
+
+    total_instances = 0
+    for disc in sorted(disc_positions.keys(),
+                       key=lambda d: -len(disc_positions[d])):
+        pos_list = disc_positions[disc]
+        rot_list = disc_rotations[disc]
+        idx_list = disc_indices[disc]
+        n = len(pos_list)
+
+        # Point mesh — one vertex per element instance
+        point_mesh = bpy.data.meshes.new(f"Points_{disc}")
+        point_mesh.vertices.add(n)
+
+        coords = np.array(pos_list, dtype=np.float32).ravel()
+        point_mesh.vertices.foreach_set("co", coords)
+
+        attr = point_mesh.attributes.new("instance_index", 'INT', 'POINT')
+        attr.data.foreach_set("value", np.array(idx_list, dtype=np.int32))
+
+        rot_attr = point_mesh.attributes.new("rotation", 'FLOAT_VECTOR', 'POINT')
+        rot_attr.data.foreach_set("vector",
+                                  np.array(rot_list, dtype=np.float32).ravel())
+        point_mesh.update()
+
+        # GN object with Instance on Points modifier
+        obj = bpy.data.objects.new(f"Fed_{disc}", point_mesh)
+        mod = obj.modifiers.new("GeometryNodes", 'NODES')
+        mod.node_group = gn_tree
+
+        disc_coll = bpy.data.collections.new(disc)
+        disc_coll.objects.link(obj)
+        root_coll.children.link(disc_coll)
+
+        total_instances += n
+        log(f"  GN_SETUP    {disc:8s} {n:>9,} instances")
+
+    gn_time = time.time() - gn_t0
+    log(f"GN_SETUP      {len(disc_positions)} objects, "
+        f"{total_instances:,} instances in {gn_time:.1f}s "
+        f"— RAM {_get_ram_mb():.0f} MB")
+
+    # ── Phase 6: Link to scene ─────────────────────────────────
+    link_t0 = time.time()
+    context.scene.collection.children.link(root_coll)
+
+    try:
+        props = context.scene.BIMFederationProperties
+        props.federation_database_path = str(db_path)
+    except Exception:
+        pass
+
+    # Enable discipline legend if available
+    try:
+        from . import discipline_legend
+        discipline_legend.enable_legend()
+    except Exception:
+        pass
+
+    # Double view distance for large models
+    try:
+        for screen in bpy.data.screens:
+            for area in screen.areas:
+                if area.type == 'VIEW_3D':
+                    for space in area.spaces:
+                        if space.type == 'VIEW_3D':
+                            space.clip_end = max(space.clip_end, 10000.0)
+    except Exception:
+        pass
+
+    # Hide all non-ARC disciplines to speed up initial depsgraph evaluation.
+    # User toggles other disciplines on as needed via Outliner.
+    try:
+        root_lc = None
+        for lc in context.view_layer.layer_collection.children:
+            if lc.name == "Federation_Cached":
+                root_lc = lc
+                break
+        if root_lc and total_instances >= 100_000:
+            hidden = 0
+            for disc_lc in root_lc.children:
+                if disc_lc.name != 'ARC':
+                    disc_lc.exclude = True
+                    hidden += 1
+            log(f"VISIBILITY    ARC only — {hidden} non-ARC collections hidden "
+                f"(toggle in Outliner)")
+    except Exception as e:
+        log(f"VISIBILITY    could not set: {e}")
+
+    link_time = time.time() - link_t0
+    log(f"SCENE_LINK    linked in {link_time:.2f}s")
+
+    # ── Phase 7: No auto-save (S169) ─────────────────────────────
+    # Meshes will be stripped by save_pre handler before any save.
+    # User can Ctrl+S safely — .blend will be ~15 MB (no mesh BLOBs).
+    log(f"VIEWPORT      ready — {total_instances:,} instances. "
+        f"Save is safe (S169: meshes auto-stripped, ~15 MB).")
+
+    # ── Phase 8: S170 — Initialize LOD manager ───────────────────
+    try:
+        from . import lod_manager
+        mgr = lod_manager.get_manager()
+        mgr.build_index(db_path, library_path=lib_path)
+        # Mark ARC as visible (it's the only pre-filled discipline)
+        mgr.visible_disciplines.add('ARC')
+        # Track which hashes are already loaded (the ARC ones we pre-filled)
+        mgr.loaded_hashes = set(arc_hashes)
+        mgr.candidate_hashes = mgr.get_visible_hashes()
+        # Enable distance-based loading for large models
+        mgr.distance_enabled = (total_instances >= 100_000)
+        log(f"LOD_INIT      {len(mgr.hash_centroids):,} centroids, "
+            f"ARC visible ({len(arc_hashes):,} loaded), "
+            f"distance={'ON' if mgr.distance_enabled else 'OFF'}")
+        # Start LOD timer
+        lod_manager.start_lod_timer()
+    except Exception as e:
+        log(f"LOD_INIT      WARN: {e}")
+
+    # ── Summary ────────────────────────────────────────────────
+    total_time = time.time() - t0
+    log(f"DONE          {total_time:.1f}s ({total_time/60:.1f} min) "
+        f"— peak RAM {_get_ram_mb():.0f} MB")
+
+    header("")
+    header("SUMMARY")
+    header(f"  Elements:    {total_instances:,}")
+    header(f"  Unique mesh: {len(baked_meshes):,}")
+    header(f"  GN objects:  {len(disc_positions)} (1 per discipline)")
+    header(f"  Templates:   {len(baked_meshes):,} (hidden collection)")
+    header(f"  Outliner:    Federation_Cached → discipline collections")
+    header("=" * 64)
+
+    # Write log file
+    with open(log_path, 'w') as f:
+        f.write('\n'.join(log_lines) + '\n')
+    print(f"Log: {log_path}")
+
+    if report_fn:
+        report_fn(f"GN cache: {total_instances:,} instances in {total_time:.0f}s")
+
+    return len(baked_meshes)
+
+
 def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
     """
     Create .blend cache from database.
@@ -152,6 +784,13 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
     Returns:
         Number of meshes created
     """
+    # Large DBs → GN instance path (13 objects instead of 1M)
+    element_count = _get_element_count(db_path)
+    if element_count >= GN_THRESHOLD:
+        print(f"[CACHE] {element_count:,} elements >= {GN_THRESHOLD:,} threshold "
+              f"— switching to GN instance path")
+        return create_cache_gn_instances(context, db_path, mode, report_fn)
+
     cache_path = get_cache_path(db_path, mode=mode)
 
     if report_fn:
@@ -180,34 +819,64 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
 
     if is_gi_schema:
         # New GI schema: base_geometries + element_instances
-        print("  Detected GI schema (base_geometries + element_instances)")
-        if has_styles:
-            cursor.execute("""
-                SELECT bg.geometry_hash, bg.vertices, bg.faces,
-                       ei.guid, em.ifc_class, em.discipline,
-                       et.center_x, et.center_y, et.center_z,
-                       em.material_name, em.material_rgba,
-                       s.transparency, s.specular_ratio, s.specular_exponent,
-                       s.specular_r, s.specular_g, s.specular_b,
-                       s.reflectance_method, s.surface_r, s.surface_g, s.surface_b
-                FROM base_geometries bg
-                JOIN element_instances ei ON bg.geometry_hash = ei.geometry_hash
-                JOIN elements_meta em ON ei.guid = em.guid
-                LEFT JOIN element_transforms et ON ei.guid = et.guid
-                LEFT JOIN surface_styles s ON em.material_name = s.style_name
-            """)
+        # S169: ALWAYS fetch mesh BLOBs from component_library.db (single source of truth)
+        lib_path = None
+        search_dir = os.path.dirname(db_path)
+        for _ in range(5):
+            candidate = os.path.join(search_dir, 'library', 'component_library.db')
+            if os.path.exists(candidate):
+                lib_path = candidate
+                break
+            search_dir = os.path.dirname(search_dir)
+
+        lib_mesh_map = {}
+        if lib_path:
+            print(f"  S169: Mesh source → {lib_path}")
+            needed = [r[0] for r in cursor.execute(
+                "SELECT DISTINCT ei.geometry_hash FROM element_instances ei")]
+            print(f"  Opening library: {lib_path} (waiting up to 60s if locked...)")
+            lib_conn = sqlite3.connect(lib_path, timeout=60)
+            BATCH = 5000
+            for i in range(0, len(needed), BATCH):
+                batch = needed[i:i+BATCH]
+                ph = ','.join('?' * len(batch))
+                for row in lib_conn.execute(
+                        f"SELECT geometry_hash, vertices, faces FROM component_geometries "
+                        f"WHERE geometry_hash IN ({ph})", batch):
+                    lib_mesh_map[row[0]] = (row[1], row[2])
+            lib_conn.close()
+            print(f"  S169: {len(lib_mesh_map)}/{len(needed)} meshes from library")
         else:
-            cursor.execute("""
-                SELECT bg.geometry_hash, bg.vertices, bg.faces,
-                       ei.guid, em.ifc_class, em.discipline,
-                       et.center_x, et.center_y, et.center_z,
-                       em.material_name, em.material_rgba,
-                       NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
-                FROM base_geometries bg
-                JOIN element_instances ei ON bg.geometry_hash = ei.geometry_hash
-                JOIN elements_meta em ON ei.guid = em.guid
-                LEFT JOIN element_transforms et ON ei.guid = et.guid
-            """)
+            raise FileNotFoundError(
+                "component_library.db not found — cannot load meshes. "
+                "Run extraction with --library first.")
+
+        style_join = ""
+        style_cols = "NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL"
+        if has_styles:
+            style_join = "LEFT JOIN surface_styles s ON em.material_name = s.style_name"
+            style_cols = ("s.transparency, s.specular_ratio, s.specular_exponent, "
+                         "s.specular_r, s.specular_g, s.specular_b, "
+                         "s.reflectance_method, s.surface_r, s.surface_g, s.surface_b")
+
+        # S169: Read rotation columns if present
+        cursor.execute("PRAGMA table_info(element_transforms)")
+        et_cols = {r[1] for r in cursor.fetchall()}
+        has_rot = 'rotation_x' in et_cols
+        rot_cols = ", et.rotation_x, et.rotation_y, et.rotation_z" if has_rot else ""
+
+        cursor.execute(f"""
+            SELECT ei.geometry_hash, NULL, NULL,
+                   ei.guid, em.ifc_class, em.discipline,
+                   et.center_x, et.center_y, et.center_z,
+                   em.material_name, em.material_rgba,
+                   {style_cols}
+                   {rot_cols}
+            FROM element_instances ei
+            JOIN elements_meta em ON ei.guid = em.guid
+            LEFT JOIN element_transforms et ON ei.guid = et.guid
+            {style_join}
+        """)
     else:
         # Legacy schema: element_geometry
         print("  Detected legacy schema (element_geometry)")
@@ -267,17 +936,31 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
         style_surf_g = row[19] if len(row) > 19 else None
         style_surf_b = row[20] if len(row) > 20 else None
 
+        # S169: Mesh BLOBs always from library — no bypass
+        if geom_hash not in lib_mesh_map:
+            raise RuntimeError(
+                f"Geometry hash {geom_hash} not in component_library.db — "
+                f"re-extract with --library to populate.")
+        verts_blob, faces_blob = lib_mesh_map[geom_hash]
+
         if geom_hash not in unique_geoms:
             unique_geoms[geom_hash] = {
                 'vertices': verts_blob,
                 'faces': faces_blob,
                 'elements': []
             }
+        # S170: Parse rotation from dynamic columns (after style columns)
+        rot_base = 21  # style columns end at index 20
+        rx = float(row[rot_base] or 0.0) if has_rot and len(row) > rot_base else 0.0
+        ry = float(row[rot_base + 1] or 0.0) if has_rot and len(row) > rot_base + 1 else 0.0
+        rz = float(row[rot_base + 2] or 0.0) if has_rot and len(row) > rot_base + 2 else 0.0
+
         unique_geoms[geom_hash]['elements'].append({
             'guid': guid,
             'ifc_class': ifc_class or 'Unknown',
             'discipline': discipline or 'Unknown',
             'transform': transform,
+            'rotation': (rx, ry, rz),
             'material_name': material_name,
             'material_rgba': material_rgba,
             'style_data': {
@@ -296,6 +979,10 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
 
     total_unique = len(unique_geoms)
     print(f"Found {total_unique:,} unique geometries")
+
+    # Suppress viewport redraws during bake — saves ~0.75s per 1000 meshes
+    wm = context.window_manager
+    wm.progress_begin(0, total_unique)
 
     # Create meshes
     meshes = {}
@@ -316,17 +1003,15 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
             'elements': geom_info['elements']
         }
 
-        # Progress updates
-        if (i + 1) % 1000 == 0 or (i + 1) == total_unique:
+        # Progress updates (console only — NO report_fn, NO viewport redraw)
+        if (i + 1) % 10000 == 0 or (i + 1) == total_unique:
             elapsed = time.time() - start_time
             rate = (i + 1) / elapsed
             remaining = (total_unique - i - 1) / rate if rate > 0 else 0
-
-            if report_fn:
-                report_fn(f"Baking cache: {i+1:,}/{total_unique:,} meshes ({int(remaining)}s remaining)")
-
+            wm.progress_update(i + 1)
             print(f"  {i+1:,}/{total_unique:,} meshes ({rate:.1f}/s, {remaining:.1f}s remaining)")
 
+    wm.progress_end()
     mesh_time = time.time() - start_time
     print(f"✓ Created {len(meshes):,} meshes in {mesh_time:.2f}s")
 
@@ -335,7 +1020,8 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
         bpy.data.collections.remove(bpy.data.collections["Federation_Cached"])
 
     root_coll = bpy.data.collections.new("Federation_Cached")
-    context.scene.collection.children.link(root_coll)
+    # NOTE: Do NOT link to scene yet — linking triggers depsgraph rebuild
+    # per object.  We link AFTER all objects are created (single rebuild).
 
     # Store database path in root collection custom properties
     root_coll['database_path'] = db_path
@@ -352,6 +1038,7 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
 
     obj_count = 0
     mat_count = 0
+    rot_applied = 0
     for i, (geom_hash, geom_info) in enumerate(meshes.items()):
         mesh = geom_info['mesh']
         elements = geom_info['elements']
@@ -362,10 +1049,10 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
             ifc_class = element['ifc_class']
             guid = element['guid']
 
-            # Get or create discipline collection
+            # Get or create discipline collection (NOT linked to root yet)
             if discipline not in discipline_collections:
                 disc_coll = bpy.data.collections.new(discipline)
-                root_coll.children.link(disc_coll)
+                # Defer: root_coll.children.link(disc_coll) — done after loop
                 discipline_collections[discipline] = disc_coll
             else:
                 disc_coll = discipline_collections[discipline]
@@ -380,6 +1067,12 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
             transform = element.get('transform')
             if transform and all(t is not None for t in transform):
                 obj.location = transform  # (center_x, center_y, center_z)
+
+            # S170: Apply rotation (Euler XYZ radians from IFC placement matrix)
+            rotation = element.get('rotation', (0, 0, 0))
+            if any(r != 0 for r in rotation):
+                obj.rotation_euler = rotation
+                rot_applied += 1
 
             # Assign material from database (with rich surface styles if available)
             material_rgba = element.get('material_rgba')
@@ -408,7 +1101,17 @@ def create_cache(context, db_path: str, mode: str = "full", report_fn=None):
     obj_time = time.time() - obj_start
     print(f"✓ Created {obj_count:,} objects in {len(discipline_collections)} disciplines in {obj_time:.2f}s")
     print(f"  Materials assigned: {mat_count:,} (unique Blender materials: {len(bpy.data.materials):,})")
+    print(f"  §ROTATION applied: {rot_applied:,}/{obj_count:,} objects rotated")
     print(f"  Disciplines: {', '.join(sorted(discipline_collections.keys()))}")
+
+    # NOW link all discipline collections to root, then root to scene
+    # — single depsgraph rebuild for all objects
+    link_start = time.time()
+    for disc_name, disc_coll in discipline_collections.items():
+        root_coll.children.link(disc_coll)
+    context.scene.collection.children.link(root_coll)
+    print(f"✓ Scene graph linked in {time.time() - link_start:.2f}s "
+          f"({len(discipline_collections)} disciplines, single depsgraph rebuild)")
 
     # Store database path in scene properties (absolute path)
     props = context.scene.BIMFederationProperties
