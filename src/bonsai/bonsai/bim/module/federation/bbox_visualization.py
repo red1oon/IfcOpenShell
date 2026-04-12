@@ -297,6 +297,10 @@ def draw_bboxes():
             continue
 
         color = _color_override if _color_override else DISCIPLINE_COLORS.get(discipline, DISCIPLINE_COLORS['DEFAULT'])
+        # When a building is drilled into, ghost all wireframes so the yellow
+        # envelope and white selected element read clearly against the city.
+        if _active_building:
+            color = (color[0], color[1], color[2], 0.12)
         shader.bind()
         shader.uniform_float("color", color)
         batch.draw(shader)
