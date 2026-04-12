@@ -1221,25 +1221,27 @@ def load_library_gn(db_path: str,
         except Exception:
             pass
 
-        was_halted = st.get('_halted', False)
         if cam_pos and st.get('last_cam_pos'):
             dx = sum((a - b) ** 2 for a, b in zip(cam_pos, st['last_cam_pos']))
             if dx > 1.0:  # camera moving — skip this tick
                 st['last_cam_pos'] = cam_pos
-                st['skip_orbit'] = st.get('skip_orbit', 0) + 1
-                if not was_halted:
-                    # Transition: running → halted (print once)
-                    print(f"[S178][STREAM] HALT orbit_start "
+                n = st.get('skip_orbit', 0) + 1
+                st['skip_orbit'] = n
+                # Print only every 10 skips to avoid console flood
+                if n == 1 or n % 10 == 0:
+                    print(f"[S178][STREAM] HALT skipped={n} "
                           f"pct={qi*100//max(len(queue),1)}% "
                           f"swapped={st.get('total_swapped',0):,}")
-                st['_halted'] = True
                 return STREAM_INTERVAL
-        if was_halted and cam_pos:
-            # Transition: halted → resuming (print once)
-            print(f"[S178][STREAM] §PROOF STREAM_HALT "
-                  f"skipped={st.get('skip_orbit',0)} ticks, resuming "
-                  f"pct={qi*100//max(len(queue),1)}%")
-        st['_halted'] = False
+        if st.get('skip_orbit', 0) > 0 and not (cam_pos and st.get('last_cam_pos') and
+                sum((a-b)**2 for a,b in zip(cam_pos, st.get('last_cam_pos',(0,0,0)))) > 1.0):
+            # Camera settled — print resume once
+            prev = st.get('_last_reported_skip', 0)
+            if st['skip_orbit'] != prev:
+                print(f"[S178][STREAM] §PROOF STREAM_HALT "
+                      f"total_skipped={st['skip_orbit']} resuming "
+                      f"pct={qi*100//max(len(queue),1)}%")
+                st['_last_reported_skip'] = st['skip_orbit']
         st['last_cam_pos'] = cam_pos
 
         if qi >= len(queue):
@@ -1328,7 +1330,6 @@ def load_library_gn(db_path: str,
             st['skip_no_mesh'] = 0
             st['skip_no_chunk'] = 0
             st['skip_no_tpl'] = 0
-            st['made_local'] = 0
             st['first_pop'] = True
 
         t_tick = time.time()
@@ -1348,26 +1349,17 @@ def load_library_gn(db_path: str,
                 continue
             chunk_batch.setdefault(cid, []).append((ghash, mesh))
 
-        # Process each chunk: pause → swap → resume
+        # Swap meshes — no pause/resume of GN modifiers.
+        # Forcing mod.show_viewport=False/True triggers a synchronous GN re-eval
+        # per chunk per tick (~55ms each × 6 chunks = ~330ms overhead).
+        # Swapping tpl_obj.data directly is safe: GN Collection Info reads the
+        # current object data on the next natural depsgraph update — no artifacts.
         swapped = 0
         for cid, items in chunk_batch.items():
-            # Find GN modifiers for this chunk (across all disciplines)
-            chunk_mods = []
-            for (disc, chunk_id), obj_name in st['gn_obj_by_dc'].items():
-                if chunk_id != cid:
-                    continue
-                obj = _bpy.data.objects.get(obj_name)
-                if obj:
-                    for mod in obj.modifiers:
-                        if mod.type == 'NODES' and mod.show_viewport:
-                            mod.show_viewport = False
-                            chunk_mods.append(mod)
-
-            # Swap meshes in this chunk
             for ghash, mesh in items:
-                if mesh.library:
-                    mesh.make_local()
-                    st['made_local'] += 1
+                # S177 P2: no make_local() — linked meshes work fine at CHUNK_SIZE=2000.
+                # Each chunk walks ≤2001 objects; library dereference cost is negligible.
+                # make_local() was copying 200 mesh BLOBs per tick → ~200ms overhead.
                 obj_name = st['tpl_objects'].get(ghash)
                 if obj_name:
                     tpl_obj = _bpy.data.objects.get(obj_name)
@@ -1375,16 +1367,11 @@ def load_library_gn(db_path: str,
                         tpl_obj.data = mesh
                         swapped += 1
                         if st.get('first_pop'):
-                            # Log the very first bbox→real swap so we know streaming started
                             print(f"[S178][STREAM] FIRST_POP gh={ghash[:8]} "
                                   f"chunk={cid} verts={len(mesh.vertices)}")
                             st['first_pop'] = False
                 else:
                     st['skip_no_tpl'] += 1
-
-            # Resume only this chunk's GN modifiers
-            for mod in chunk_mods:
-                mod.show_viewport = True
 
         st['queue_idx'] = batch_end
         st['total_swapped'] += swapped
