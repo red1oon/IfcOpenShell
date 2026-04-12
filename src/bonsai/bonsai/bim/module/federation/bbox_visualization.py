@@ -311,13 +311,14 @@ def draw_bboxes():
             hi_batch.draw(shader)
             gpu.state.line_width_set(1.0)
 
-    # Draw last-picked element in white (thicker)
+    # Draw last-picked element in white — semi-transparent (X-ray feel, not a cage)
     if _selected_element.get('bbox'):
         sel_verts = create_bbox_edges(_selected_element['bbox'])
         sel_batch = batch_for_shader(shader, 'LINES', {"pos": sel_verts})
         shader.bind()
-        shader.uniform_float("color", (1.0, 1.0, 1.0, 1.0))
-        gpu.state.line_width_set(4.0)
+        gpu.state.blend_set('ALPHA')
+        shader.uniform_float("color", (1.0, 1.0, 1.0, 0.35))
+        gpu.state.line_width_set(2.0)
         sel_batch.draw(shader)
         gpu.state.line_width_set(1.0)
 
