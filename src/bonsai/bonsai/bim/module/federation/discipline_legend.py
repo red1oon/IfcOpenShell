@@ -39,19 +39,19 @@ def draw_legend():
     if not disciplines:
         return
 
-    # Legend position (top-right corner, 20px padding)
+    # Legend position (bottom-right corner, clear of N-panel)
     region = bpy.context.region
-    x_start = region.width - 200
-    y_start = region.height - 40
-
     font_id = 0
     line_height = 25
     box_size = 15
+    panel_height = len(disciplines) * line_height + 55
+
+    x_start = region.width - 200
+    y_start = panel_height + 20   # grows upward from bottom
 
     # Draw semi-transparent background panel
     shader = gpu.shader.from_builtin('UNIFORM_COLOR')
 
-    panel_height = len(disciplines) * line_height + 55  # +15 for search hint line
     panel_vertices = [
         (x_start - 10, y_start - panel_height),
         (x_start + 190, y_start - panel_height),
