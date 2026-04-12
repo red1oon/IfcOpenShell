@@ -1152,15 +1152,12 @@ class FedRTreeLoadMesh(bpy.types.Operator):
             self.report({'WARNING'}, "Select a building (L1) or fly to an element (L2) first")
             return {'CANCELLED'}
 
-        # ── Deduplicate hashes — skip NULLs; carry material_rgba per hash ──
+        # ── Deduplicate hashes — skip NULLs ──
         hash_to_guid = {}
-        hash_to_rgba = {}
         for row in rows:
             row_guid, ghash = row[0], row[1]
-            rgba = row[2] if len(row) > 2 else None
             if ghash and ghash not in hash_to_guid:
                 hash_to_guid[ghash] = row_guid
-                hash_to_rgba[ghash] = rgba
         wanted_hashes = list(hash_to_guid.keys())
         if not wanted_hashes:
             raise RuntimeError(f"[S180] No valid geometry hashes for selection")
@@ -1195,8 +1192,6 @@ class FedRTreeLoadMesh(bpy.types.Operator):
 
         placed = 0
         no_transform = 0
-        mat_applied = 0
-        mat_fallback = 0
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
         for mesh in loaded_meshes:
@@ -1205,20 +1200,7 @@ class FedRTreeLoadMesh(bpy.types.Operator):
             obj = _bpy.data.objects.new(ghash, mesh)
             obj.hide_select = False
             col.objects.link(obj)
-
-            # ── Per-object colour from material_rgba (obj.color — safe on linked meshes) ──
-            # Never touch obj.data.materials — mesh is a linked library datablock (read-only).
-            # obj.color is object-level, zero cost, visible in Object Color shading mode.
-            rgba_str = hash_to_rgba.get(ghash)
-            if rgba_str:
-                try:
-                    r, g, b, a = map(float, rgba_str.split(','))
-                    obj.color = (r, g, b, a)
-                    mat_applied += 1
-                except Exception:
-                    mat_fallback += 1
-            else:
-                mat_fallback += 1
+            # Materials come from library.blend via link=True — do not touch.
 
             # Fetch transform + DB bbox in one query so we can verify placement
             cur.execute("""
@@ -1266,9 +1248,8 @@ class FedRTreeLoadMesh(bpy.types.Operator):
         props.rtree_last_loaded = label
 
         elapsed = time.time() - t0
-        print(f"[S182] §PROOF LOAD_MESH label={label} hashes={placed} "
-              f"mat_rgba={mat_applied} mat_fallback={mat_fallback} elapsed={elapsed:.1f}s")
-        self.report({'INFO'}, f"Loaded {placed} meshes ({mat_applied} with colour) in {elapsed:.1f}s")
+        print(f"[S182] §PROOF LOAD_MESH label={label} hashes={placed} elapsed={elapsed:.1f}s")
+        self.report({'INFO'}, f"Loaded {placed} meshes in {elapsed:.1f}s")
 
         # ── L2 single-element load: fly to it at inspection distance ──
         # Building load keeps current view (user already flew there).
