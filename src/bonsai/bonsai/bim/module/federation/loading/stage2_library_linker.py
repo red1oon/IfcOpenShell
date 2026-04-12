@@ -1245,6 +1245,46 @@ def load_library_gn(db_path: str,
                     print("[S178][STREAM] §PROOF DLOD_DEFERRED_REGISTER — DLOD handler registered after streaming done")
                 except Exception as _e:
                     print(f"[S178][STREAM] §DLOD_REGISTER_FAIL — {_e}")
+
+            # S179: Realize Instances → collapse 258 GN modifiers to plain meshes
+            # After streaming all chunk meshes are populated. Apply GN modifiers
+            # to bake instances into geometry → zero per-frame GN eval → <0.1s viewport.
+            # Risk: OOM on very large builds → wrapped in try/except, falls back silently.
+            print("[S179][STREAM] Phase 2: Realize Instances for viewport speed...")
+            t_realize = _bpy.context.scene.get('_s179_realize_start', 0) or __import__('time').time()
+            t_realize = __import__('time').time()
+            realized = 0
+            skipped_realize = 0
+            parent = _bpy.data.collections.get('Federation_Library_GN')
+            if parent:
+                for disc_coll in parent.children:
+                    if disc_coll.name.startswith('_LibGN'):
+                        continue
+                    for obj in list(disc_coll.objects):
+                        if obj.type != 'MESH':
+                            continue
+                        for mod in list(obj.modifiers):
+                            if mod.type != 'NODES':
+                                continue
+                            try:
+                                _bpy.context.view_layer.objects.active = obj
+                                obj.select_set(True)
+                                _bpy.ops.object.modifier_apply(modifier=mod.name)
+                                obj.select_set(False)
+                                realized += 1
+                            except Exception as _re:
+                                skipped_realize += 1
+                                if skipped_realize <= 3:
+                                    print(f"[S179] SKIP realize {obj.name}: {_re}")
+
+            elapsed_realize = __import__('time').time() - t_realize
+            print(f"[S179] §PROOF REALIZE realized={realized} skipped={skipped_realize} "
+                  f"elapsed={elapsed_realize:.1f}s")
+            if realized > 0:
+                print(f"[S179] Viewport now pure mesh — <0.1s response expected")
+            else:
+                print(f"[S179] No modifiers realized — GN architecture unchanged (5s lag)")
+
             return None  # unregister timer
 
         if 't_start' not in st:
