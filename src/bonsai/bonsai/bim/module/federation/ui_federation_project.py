@@ -103,18 +103,22 @@ class BIM_PT_federation_setup(Panel):
         row.operator("bim.extract_full_database", icon="TIME", text="Extract Full")
         row.operator("bim.extract_sample_database", icon="QUESTION", text="Extract Sample")
 
-        # Preview / Full Load section
+        # R-Tree / Library / Clear
         layout.separator()
         box = layout.box()
-        box.label(text="Preview / Full Load", icon="HIDE_OFF")
+        box.label(text="R-Tree / Library", icon="OUTLINER_DATA_POINTCLOUD")
 
         box.prop(props, "federation_database_path", text="DB Path")
 
         row = box.row(align=True)
         row.scale_y = 1.3
-        row.operator("bim.preview_federation_viewport", icon="MESH_CUBE", text="Preview BBoxes")
-        row.operator("bim.load_full_federation_viewport_gi", icon="MESH_DATA", text="Full Load")
-        row.operator("bim.unload_federation_viewport", icon="X", text="Clear")
+        row.operator("bim.preview_federation_viewport", icon="OUTLINER_DATA_POINTCLOUD", text="R-Tree")
+        row.operator("bim.link_federation_library", icon="ASSET_MANAGER", text="Library")
+        row.operator("bim.clear_federation_viewport", icon="X", text="Clear")
+
+        # S175: GN + NEAR checkbox — controls Library button mode
+        row2 = box.row(align=True)
+        row2.prop(props, "gn_mode", text="FAST", icon="GEOMETRY_NODES", toggle=True)
 
         draw_web_ui_button(layout, "3d")
 
@@ -151,12 +155,9 @@ class BIM_PT_visualization_control(Panel):
 
         row = box.row(align=True)
         row.scale_y = 1.3
-        row.operator("bim.preview_federation_viewport", icon="MESH_CUBE", text="Preview BBoxes")
-        row.operator("bim.unload_federation_viewport", icon="X", text="Clear")
-
-        row = box.row()
-        row.scale_y = 1.3
-        row.operator("bim.load_full_federation_viewport_gi", icon="MESH_DATA", text="Full Load")
+        row.operator("bim.preview_federation_viewport", icon="OUTLINER_DATA_POINTCLOUD", text="R-Tree")
+        row.operator("bim.link_federation_library", icon="ASSET_MANAGER", text="Library")
+        row.operator("bim.clear_federation_viewport", icon="X", text="Clear")
 
         # Model Management (CRUD)
         layout.separator()

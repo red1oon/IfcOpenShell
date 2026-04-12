@@ -48,8 +48,12 @@ _color_override = None       # Set by BIM Designer to grey-out in Design Mode
 # S178: Outliner discipline proxy objects + search/pick state
 _disc_proxy_objects = {}     # disc → object name (Outliner eye = hide_viewport)
 _db_path_cache = None        # stored at load time for pick/search queries
+_model_offset = None         # Vector — IFC→Blender offset, stored at load time
 _highlighted_bboxes = []     # [(minX,minY,minZ,maxX,maxY,maxZ)] yellow highlight
 _selected_element = {}       # last picked: {guid, name, disc, ifc_class, bbox}
+_search_results = []         # full list of building results from last search (L1)
+_building_elements = []      # elements within selected building matching term (L2)
+_active_building = ""        # currently drilled-into building
 
 
 def create_bbox_edges(bbox: Tuple[float, float, float, float, float, float]) -> List[Vector]:
@@ -269,11 +273,12 @@ def draw_bboxes():
 
     # Draw each discipline's batch — skip if hidden via Outliner proxy eye icon
     for discipline, batch in _bbox_batches.items():
-        # Outliner eye icon: proxy object hide_viewport takes priority
+        # Outliner eye icon: use hide_get() — respects collection eye toggle hierarchy.
+        # (hide_viewport is the monitor icon, NOT the eye icon — wrong property)
         proxy_name = _disc_proxy_objects.get(discipline)
         if proxy_name:
             proxy = bpy.data.objects.get(proxy_name)
-            if proxy and proxy.hide_viewport:
+            if proxy and proxy.hide_get():
                 continue
         # Legacy legend dict (on-screen toggle still works)
         if not _discipline_visibility.get(discipline, True):
@@ -321,7 +326,7 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
     Returns:
         (success: bool, message: str)
     """
-    global _bbox_batches, _draw_handler, _is_enabled
+    global _bbox_batches, _draw_handler, _is_enabled, _db_path_cache, _disc_proxy_objects, _model_offset
 
     # Disable first if already enabled
     if _is_enabled:
@@ -398,6 +403,8 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
     )
     _is_enabled = True
     _db_path_cache = db_path
+    _model_offset = offset
+    print(f"[RTree] §CACHE db='{Path(db_path).name}' offset=({offset.x:.1f},{offset.y:.1f},{offset.z:.1f})")
 
     # S178: Create Outliner discipline collections + proxy objects
     # Each proxy empty: eye icon in Outliner → hide_viewport → GPU skips that batch
@@ -542,72 +549,206 @@ def clear_color_override() -> None:
 # ── S178: Search + Navigate ────────────────────────────────────────────────────
 
 def navigate_to_element(search_term: str, context) -> dict:
-    """Search elements by name/guid/class/discipline, fly viewport to result.
+    """Search elements across all buildings. Returns 1 representative per building.
 
-    Returns dict with found element info, or {} if not found.
-    Highlights up to 10 matches in yellow. Flies to first match.
-    Zero bpy.data.objects created — pure SQL + viewport fly.
+    - Searches: element_name, guid, discipline, ifc_class, building name
+    - Groups by building → 1 bbox (envelope of all matches) per building
+    - Flies to the building with the most matches
+    - Highlights one bbox per building (up to 10 buildings) in yellow
     """
-    global _highlighted_bboxes, _db_path_cache
+    global _highlighted_bboxes, _db_path_cache, _model_offset, _search_results
 
-    if not _db_path_cache or not Path(_db_path_cache).exists():
+    if not _db_path_cache:
+        print("[RTree] §SEARCH FAIL _db_path_cache is None — load R-Tree first")
+        return {}
+    if not Path(_db_path_cache).exists():
+        print(f"[RTree] §SEARCH FAIL db not found: {_db_path_cache}")
         return {}
 
     _highlighted_bboxes.clear()
+    _search_results.clear()
     results = []
+    term = search_term.strip()
+    like = f"%{term}%"
+    print(f"[RTree] §SEARCH term='{term}' db='{Path(_db_path_cache).name}'")
 
     try:
         conn = sqlite3.connect(_db_path_cache)
         cur = conn.cursor()
-        term = search_term.strip()
-        like = f"%{term}%"
 
+        # One row per building: envelope bbox of all matching elements + match count.
+        # Sorted by match_count DESC so the richest building is flown to first.
         cur.execute("""
-            SELECT m.guid, m.element_name, m.discipline, m.ifc_class,
-                   r.minX, r.minY, r.minZ, r.maxX, r.maxY, r.maxZ
+            SELECT m.building,
+                   MIN(m.guid)          AS guid,
+                   MIN(m.element_name)  AS element_name,
+                   m.discipline,
+                   m.ifc_class,
+                   MIN(r.minX) AS mnX, MIN(r.minY) AS mnY, MIN(r.minZ) AS mnZ,
+                   MAX(r.maxX) AS mxX, MAX(r.maxY) AS mxY, MAX(r.maxZ) AS mxZ,
+                   COUNT(*)    AS match_count
             FROM elements_meta m
             JOIN elements_rtree r ON m.id = r.id
             WHERE m.element_name LIKE ?
-               OR m.guid = ?
-               OR m.discipline = ?
-               OR m.ifc_class LIKE ?
+               OR m.guid        =    ?
+               OR m.discipline  =    ?
+               OR m.ifc_class   LIKE ?
+               OR m.building    LIKE ?
+            GROUP BY m.building
+            ORDER BY match_count DESC
             LIMIT 10
-        """, (like, term, term.upper(), like))
+        """, (like, term, term.upper(), like, like))
 
         rows = cur.fetchall()
         conn.close()
+        print(f"[RTree] §SEARCH buildings={len(rows)} "
+              f"counts={[r[11] for r in rows]}")
 
-        for guid, name, disc, ifc_class, mnX, mnY, mnZ, mxX, mxY, mxZ in rows:
+        for building, guid, name, disc, ifc_class, mnX, mnY, mnZ, mxX, mxY, mxZ, count in rows:
             bbox = (mnX, mnY, mnZ, mxX, mxY, mxZ)
             _highlighted_bboxes.append(bbox)
-            results.append({'guid': guid, 'name': name, 'disc': disc,
-                            'ifc_class': ifc_class, 'bbox': bbox})
+            entry = {'guid': guid, 'name': name, 'disc': disc,
+                     'ifc_class': ifc_class, 'bbox': bbox,
+                     'building': building, 'count': count}
+            results.append(entry)
+            _search_results.append(entry)
 
     except Exception as e:
-        print(f"[RTree] navigate_to_element error: {e}")
+        print(f"[RTree] §SEARCH ERROR {e}")
         return {}
 
     if not results:
+        print(f"[RTree] §SEARCH MISS — no buildings matched '{term}'")
         return {}
 
-    # Fly viewport to first result's bbox centroid
+    # Fly to the building with most matches (first row after ORDER BY count DESC).
+    # IFC coords → Blender coords: subtract model offset.
     first = results[0]['bbox']
-    cx = (first[0] + first[3]) / 2
-    cy = (first[1] + first[4]) / 2
-    cz = (first[2] + first[5]) / 2
-    size = max(first[3]-first[0], first[4]-first[1], first[5]-first[2], 1.0)
+    cx_ifc = (first[0] + first[3]) / 2
+    cy_ifc = (first[1] + first[4]) / 2
+    cz_ifc = (first[2] + first[5]) / 2
+    ox = _model_offset.x if _model_offset else 0.0
+    oy = _model_offset.y if _model_offset else 0.0
+    oz = _model_offset.z if _model_offset else 0.0
+    cx, cy, cz = cx_ifc - ox, cy_ifc - oy, cz_ifc - oz
+    # view_distance: fit the building envelope, not a single element
+    size = max(first[3]-first[0], first[4]-first[1], first[5]-first[2], 10.0)
 
     for area in context.screen.areas:
         if area.type == 'VIEW_3D':
             space = area.spaces[0]
             space.region_3d.view_location = Vector((cx, cy, cz))
-            space.region_3d.view_distance = size * 4.0
+            space.region_3d.view_distance = size * 1.5
             area.tag_redraw()
             break
 
-    print(f"[RTree] §PROOF NAVIGATE found={len(results)} term='{search_term}' "
-          f"fly=({cx:.1f},{cy:.1f},{cz:.1f})")
+    print(f"[RTree] §PROOF NAVIGATE buildings={len(results)} term='{search_term}' "
+          f"best='{results[0]['building']}' count={results[0]['count']} "
+          f"blender=({cx:.1f},{cy:.1f},{cz:.1f})")
     return results[0]
+
+
+def fly_to_result(result_index: int, context) -> bool:
+    """Fly viewport to a specific building result by index in _search_results."""
+    if result_index < 0 or result_index >= len(_search_results):
+        return False
+    r = _search_results[result_index]
+    bbox = r['bbox']
+    cx_ifc = (bbox[0] + bbox[3]) / 2
+    cy_ifc = (bbox[1] + bbox[4]) / 2
+    cz_ifc = (bbox[2] + bbox[5]) / 2
+    ox = _model_offset.x if _model_offset else 0.0
+    oy = _model_offset.y if _model_offset else 0.0
+    oz = _model_offset.z if _model_offset else 0.0
+    cx, cy, cz = cx_ifc - ox, cy_ifc - oy, cz_ifc - oz
+    size = max(bbox[3]-bbox[0], bbox[4]-bbox[1], bbox[5]-bbox[2], 10.0)
+    for area in context.screen.areas:
+        if area.type == 'VIEW_3D':
+            area.spaces[0].region_3d.view_location = Vector((cx, cy, cz))
+            area.spaces[0].region_3d.view_distance = size * 1.5
+            area.tag_redraw()
+            break
+    print(f"[RTree] §FLY building='{r['building']}' blender=({cx:.1f},{cy:.1f},{cz:.1f})")
+    return True
+
+
+def fetch_building_elements(building: str, search_term: str) -> list:
+    """Drill-down L2: fetch top 10 individual elements in building matching term.
+
+    Highlights each element bbox in yellow. Clears L1 highlights.
+    Returns list of element dicts for the UI list.
+    """
+    global _highlighted_bboxes, _building_elements, _active_building, _model_offset
+
+    if not _db_path_cache or not Path(_db_path_cache).exists():
+        return []
+
+    _highlighted_bboxes.clear()
+    _building_elements.clear()
+    _active_building = building
+
+    term = search_term.strip()
+    like = f"%{term}%"
+
+    try:
+        conn = sqlite3.connect(_db_path_cache)
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT m.guid, m.element_name, m.discipline, m.ifc_class, m.storey,
+                   r.minX, r.minY, r.minZ, r.maxX, r.maxY, r.maxZ
+            FROM elements_meta m
+            JOIN elements_rtree r ON m.id = r.id
+            WHERE m.building = ?
+              AND (m.element_name LIKE ?
+                OR m.ifc_class   LIKE ?
+                OR m.discipline  =    ?)
+            LIMIT 10
+        """, (building, like, like, term.upper()))
+        rows = cur.fetchall()
+        conn.close()
+    except Exception as e:
+        print(f"[RTree] §L2 ERROR {e}")
+        return []
+
+    for guid, name, disc, ifc_class, storey, mnX, mnY, mnZ, mxX, mxY, mxZ in rows:
+        bbox = (mnX, mnY, mnZ, mxX, mxY, mxZ)
+        _highlighted_bboxes.append(bbox)
+        _building_elements.append({'guid': guid, 'name': name, 'disc': disc,
+                                   'ifc_class': ifc_class, 'storey': storey or '',
+                                   'bbox': bbox})
+
+    print(f"[RTree] §L2 building='{building}' term='{term}' elements={len(_building_elements)}")
+    return _building_elements
+
+
+def fly_to_element(elem_index: int, context) -> bool:
+    """Fly viewport to a specific element from L2 list. Highlights it white."""
+    global _selected_element
+
+    if elem_index < 0 or elem_index >= len(_building_elements):
+        return False
+
+    e = _building_elements[elem_index]
+    bbox = e['bbox']
+    cx_ifc = (bbox[0] + bbox[3]) / 2
+    cy_ifc = (bbox[1] + bbox[4]) / 2
+    cz_ifc = (bbox[2] + bbox[5]) / 2
+    ox = _model_offset.x if _model_offset else 0.0
+    oy = _model_offset.y if _model_offset else 0.0
+    oz = _model_offset.z if _model_offset else 0.0
+    cx, cy, cz = cx_ifc - ox, cy_ifc - oy, cz_ifc - oz
+    size = max(bbox[3]-bbox[0], bbox[4]-bbox[1], bbox[5]-bbox[2], 0.5)
+
+    for area in context.screen.areas:
+        if area.type == 'VIEW_3D':
+            area.spaces[0].region_3d.view_location = Vector((cx, cy, cz))
+            area.spaces[0].region_3d.view_distance = max(size * 6.0, 5.0)
+            area.tag_redraw()
+            break
+
+    _selected_element = {**e, 't': 0}
+    print(f"[RTree] §ELEMENT guid={e['guid'][:12]} class={e['ifc_class']} storey='{e['storey']}'")
+    return True
 
 
 def pick_element_at_ray(ray_origin: Vector, ray_dir: Vector) -> dict:
@@ -617,14 +758,28 @@ def pick_element_at_ray(ray_origin: Vector, ray_dir: Vector) -> dict:
     Returns element info dict or {} if nothing hit.
     Updates _selected_element global (drawn white in viewport).
     """
-    global _selected_element, _db_path_cache
+    global _selected_element, _db_path_cache, _model_offset
 
-    if not _db_path_cache or not Path(_db_path_cache).exists():
+    # ── Diagnostic guards ──
+    if not _db_path_cache:
+        print("[RTree] §PICK FAIL _db_path_cache is None — load R-Tree first")
+        return {}
+    if not Path(_db_path_cache).exists():
+        print(f"[RTree] §PICK FAIL db not found: {_db_path_cache}")
         return {}
 
-    # Build a coarse bounding box around the ray for SQL pre-filter
-    # Sample points along the ray: t = 0.5 .. 500m
-    pts = [ray_origin + ray_dir * t for t in (0.5, 5, 50, 200, 500)]
+    # Ray is in Blender space; R-tree stores IFC coords.
+    # Translate ray origin into IFC space by adding the model offset.
+    off = _model_offset if _model_offset else Vector((0, 0, 0))
+    ifc_origin = ray_origin + off
+
+    print(f"[RTree] §PICK ray_blender=({ray_origin.x:.1f},{ray_origin.y:.1f},{ray_origin.z:.1f}) "
+          f"offset=({off.x:.1f},{off.y:.1f},{off.z:.1f}) "
+          f"ray_ifc=({ifc_origin.x:.1f},{ifc_origin.y:.1f},{ifc_origin.z:.1f})")
+
+    # Build coarse bounding box around the IFC-space ray for SQL pre-filter.
+    # Sample points along ray: t = 0.5 .. 500m (direction unchanged — it's unit vec)
+    pts = [ifc_origin + ray_dir * t for t in (0.5, 5, 50, 200, 500)]
     xs = [p.x for p in pts]
     ys = [p.y for p in pts]
     zs = [p.z for p in pts]
@@ -632,6 +787,8 @@ def pick_element_at_ray(ray_origin: Vector, ray_dir: Vector) -> dict:
     q_mnX, q_mxX = min(xs) - margin, max(xs) + margin
     q_mnY, q_mxY = min(ys) - margin, max(ys) + margin
     q_mnZ, q_mxZ = min(zs) - margin, max(zs) + margin
+
+    print(f"[RTree] §PICK sql_box X=[{q_mnX:.1f},{q_mxX:.1f}] Y=[{q_mnY:.1f},{q_mxY:.1f}] Z=[{q_mnZ:.1f},{q_mxZ:.1f}]")
 
     try:
         conn = sqlite3.connect(_db_path_cache)
@@ -648,18 +805,22 @@ def pick_element_at_ray(ray_origin: Vector, ray_dir: Vector) -> dict:
         """, (q_mxX, q_mnX, q_mxY, q_mnY, q_mxZ, q_mnZ))
         candidates = cur.fetchall()
         conn.close()
+        print(f"[RTree] §PICK candidates={len(candidates)}")
     except Exception as e:
-        print(f"[RTree] pick_element_at_ray SQL error: {e}")
+        print(f"[RTree] §PICK SQL ERROR {e}")
         return {}
 
-    # Precise ray-AABB test (slab method) — find closest hit
+    if not candidates:
+        print("[RTree] §PICK MISS — 0 candidates from spatial pre-filter")
+        return {}
+
+    # Precise ray-AABB test (slab method) in IFC space — find closest hit
     best_t = float('inf')
     best = None
-    ox, oy, oz = ray_origin.x, ray_origin.y, ray_origin.z
+    ox, oy, oz = ifc_origin.x, ifc_origin.y, ifc_origin.z
     dx, dy, dz = ray_dir.x, ray_dir.y, ray_dir.z
 
     for guid, name, disc, ifc_class, mnX, mnY, mnZ, mxX, mxY, mxZ in candidates:
-        # Slab test per axis
         t_min, t_max = -float('inf'), float('inf')
         for o_ax, d_ax, lo, hi in ((ox, dx, mnX, mxX),
                                     (oy, dy, mnY, mxY),
@@ -682,6 +843,7 @@ def pick_element_at_ray(ray_origin: Vector, ray_dir: Vector) -> dict:
             best = (guid, name, disc, ifc_class, (mnX, mnY, mnZ, mxX, mxY, mxZ))
 
     if best is None:
+        print(f"[RTree] §PICK MISS — slab test: {len(candidates)} candidates, 0 hits")
         return {}
 
     guid, name, disc, ifc_class, bbox = best

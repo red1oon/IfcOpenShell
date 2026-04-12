@@ -111,6 +111,18 @@ class NLPQueryParser:
             # Singularize element_type for IFC class matching (e.g., "plates" -> "plate")
             if key == 'element_type':
                 safe_value = self._singularize(safe_value)
+                # Expand IFC class synonyms (e.g., "beam" → match both IfcBeam and IfcMember)
+                synonyms = self._get_ifc_synonyms(safe_value)
+                if synonyms:
+                    # Handle both aliased (e.ifc_class) and bare (ifc_class) patterns
+                    for prefix in ['e.', '']:
+                        col = f"{prefix}ifc_class"
+                        like_parts = [f"LOWER({col}) LIKE LOWER('%{s}%')" for s in synonyms]
+                        or_clause = f"({' OR '.join(like_parts)})"
+                        sql = sql.replace(
+                            f"LOWER({col}) LIKE LOWER('%{{{key}}}%')", or_clause
+                        )
+                    continue
 
             # Normalize storey_name for multi-language support (e.g., "first" -> matches "Aras 01" or "FIRST FLOOR")
             if key == 'storey_name':
@@ -118,13 +130,16 @@ class NLPQueryParser:
                 if '|' in normalized:
                     # Multiple alternatives - convert to SQL OR pattern
                     alternatives = normalized.split('|')
-                    like_clauses = [f"LOWER(s.storey) LIKE LOWER('%{alt}%')" for alt in alternatives]
+                    like_clauses = [f"LOWER(e.storey) LIKE LOWER('%{alt}%')" for alt in alternatives]
                     # Replace the simple LIKE with OR pattern
                     sql = sql.replace(
-                        f"LOWER(s.storey) LIKE LOWER('%{{{key}}}%')",
+                        f"LOWER(e.storey) LIKE LOWER('%{{{key}}}%')",
                         f"({' OR '.join(like_clauses)})"
                     )
                     continue  # Skip the normal replacement
+                else:
+                    # Simple normalized value (e.g., "10th" → "10") — use it for replacement
+                    safe_value = normalized
 
             sql = sql.replace(f'{{{key}}}', safe_value)
 
@@ -148,6 +163,25 @@ class NLPQueryParser:
         safe_value = re.sub(r'[^\w\s\-\.]', '', value)
 
         return safe_value.strip()
+
+    def _get_ifc_synonyms(self, element_type: str) -> Optional[List[str]]:
+        """
+        Get IFC class synonyms for common building terms.
+        Returns None if no synonyms exist (use original value).
+        """
+        synonyms = {
+            'beam': ['beam', 'member'],
+            'frame': ['member', 'frame'],
+            'lintel': ['member', 'lintel'],
+            'sprinkler': ['firesuppressionterminal', 'sprinkler'],
+            'diffuser': ['airterminal', 'diffuser'],
+            'light': ['lightfixture', 'light'],
+            'switch': ['switchingdevice', 'switch'],
+            'outlet': ['outlet'],
+            'furniture': ['furniture', 'furnishing'],
+        }
+        key = element_type.lower()
+        return synonyms.get(key)
 
     def _singularize(self, word: str) -> str:
         """

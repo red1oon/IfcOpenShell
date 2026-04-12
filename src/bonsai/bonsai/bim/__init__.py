@@ -298,7 +298,8 @@ def register():
     bpy.types.STATUSBAR_HT_header.append(ui.draw_statusbar)
 
     for mod in modules.values():
-        mod.register()
+        if mod is not None:
+            mod.register()
 
     # Delay registering classes that depend on module classes
     register_classes(late_classes)
@@ -353,7 +354,8 @@ def unregister():
     unregister_classes(late_classes)
 
     for mod in reversed(list(modules.values())):
-        mod.unregister()
+        if mod is not None:
+            mod.unregister()
 
     wm = bpy.context.window_manager
     kc = wm.keyconfigs.addon

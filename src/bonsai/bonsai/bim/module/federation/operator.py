@@ -6361,17 +6361,71 @@ class FedRTreeSearch(bpy.types.Operator):
             self.report({'WARNING'}, f"No elements found for '{term}'")
             return {'CANCELLED'}
 
-        props.rtree_result_name = result.get('name', '') or result.get('guid', '')
+        # building-aware result: show building name + per-building match count
+        building = result.get('building', '')
+        count = result.get('count', 0)
+        props.rtree_result_name = building or result.get('name', '') or result.get('guid', '')
         props.rtree_result_disc = result.get('disc', '')
         props.rtree_result_class = result.get('ifc_class', '')
         props.rtree_result_guid = result.get('guid', '')
-        props.rtree_result_count = len(bv._highlighted_bboxes)
+        props.rtree_result_count = len(bv._highlighted_bboxes)  # number of buildings highlighted
 
         for area in context.screen.areas:
             if area.type == 'VIEW_3D':
                 area.tag_redraw()
 
-        self.report({'INFO'}, f"Found {props.rtree_result_count} match(es) — flew to first")
+        n_buildings = props.rtree_result_count
+        self.report({'INFO'}, f"{n_buildings} building(s) match — flew to '{building}' ({count} elements)")
+        return {'FINISHED'}
+
+
+class FedRTreeFlyToResult(bpy.types.Operator):
+    """Fly to building and drill down to its matching elements (L2)."""
+    bl_idname = "bim.fed_rtree_fly_to_result"
+    bl_label = "Fly to Building"
+    bl_options = {'REGISTER'}
+
+    result_index: bpy.props.IntProperty(default=0)
+
+    def execute(self, context):
+        from . import bbox_visualization as bv
+        ok = bv.fly_to_result(self.result_index, context)
+        if not ok:
+            self.report({'WARNING'}, "Result index out of range — run search first")
+            return {'CANCELLED'}
+        r = bv._search_results[self.result_index]
+
+        # Drill into L2: fetch individual elements in this building
+        props = context.scene.BIMFederationProperties
+        bv.fetch_building_elements(r['building'], props.rtree_search)
+
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                area.tag_redraw()
+
+        self.report({'INFO'}, f"→ {r['building']} | {len(bv._building_elements)} elements shown")
+        return {'FINISHED'}
+
+
+class FedRTreeFlyToElement(bpy.types.Operator):
+    """Fly to a specific element from the L2 drill-down list."""
+    bl_idname = "bim.fed_rtree_fly_to_element"
+    bl_label = "Fly to Element"
+    bl_options = {'REGISTER'}
+
+    elem_index: bpy.props.IntProperty(default=0)
+
+    def execute(self, context):
+        from . import bbox_visualization as bv
+        ok = bv.fly_to_element(self.elem_index, context)
+        if not ok:
+            self.report({'WARNING'}, "Element index out of range")
+            return {'CANCELLED'}
+        e = bv._building_elements[self.elem_index]
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                area.tag_redraw()
+        self.report({'INFO'}, f"{e['ifc_class']} | {e['storey']} | {e['guid'][:16]}")
         return {'FINISHED'}
 
 

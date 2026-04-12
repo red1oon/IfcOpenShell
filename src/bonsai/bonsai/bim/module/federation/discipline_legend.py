@@ -51,7 +51,7 @@ def draw_legend():
     # Draw semi-transparent background panel
     shader = gpu.shader.from_builtin('UNIFORM_COLOR')
 
-    panel_height = len(disciplines) * line_height + 40
+    panel_height = len(disciplines) * line_height + 55  # +15 for search hint line
     panel_vertices = [
         (x_start - 10, y_start - panel_height),
         (x_start + 190, y_start - panel_height),
@@ -70,6 +70,27 @@ def draw_legend():
     blf.size(font_id, 14)
     blf.color(font_id, 1.0, 1.0, 1.0, 1.0)  # White
     blf.draw(font_id, "Federation Preview")
+
+    # Draw search hint / last result (from RTree Inspector props)
+    try:
+        props = bpy.context.scene.BIMFederationProperties
+        if props.rtree_search:
+            hint = f"Search: '{props.rtree_search}'"
+            if props.rtree_result_count:
+                hint += f"  → {props.rtree_result_count} hit(s)"
+            else:
+                hint += "  → no results"
+            blf.position(font_id, x_start, y_start - 18, 0)
+            blf.size(font_id, 10)
+            blf.color(font_id, 1.0, 1.0, 0.3, 1.0)  # Yellow hint
+            blf.draw(font_id, hint)
+        else:
+            blf.position(font_id, x_start, y_start - 18, 0)
+            blf.size(font_id, 10)
+            blf.color(font_id, 0.7, 0.7, 0.7, 0.8)
+            blf.draw(font_id, "N-panel BIM tab → RTree Inspector to search")
+    except Exception:
+        pass
 
     y_pos = y_start - 30
 

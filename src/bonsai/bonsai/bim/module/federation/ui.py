@@ -1662,7 +1662,7 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'BIM'
-    bl_order = 10
+    bl_order = 0
 
     def draw(self, context):
         layout = self.layout
@@ -1675,15 +1675,41 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
         row.operator("bim.fed_rtree_search", text="", icon='PLAY')
 
         if props.rtree_result_count:
+            from . import bbox_visualization as bv
+
+            # ── L1: Building list ──
             box = layout.box()
-            box.label(text=f"{props.rtree_result_count} match(es)  ↓ first result",
-                      icon='CHECKMARK')
+            box.label(text=f"'{props.rtree_search}'  in {props.rtree_result_count} building(s)",
+                      icon='WORLD')
             col = box.column(align=True)
-            col.scale_y = 0.8
-            col.label(text=props.rtree_result_name or "(no name)", icon='OBJECT_DATA')
-            col.label(text=f"Disc:  {props.rtree_result_disc}")
-            col.label(text=f"Class: {props.rtree_result_class}")
-            col.label(text=props.rtree_result_guid[:28], icon='COPY_ID')
+            col.scale_y = 1.05
+            for i, r in enumerate(bv._search_results):
+                building = r.get('building', '?')
+                count = r.get('count', 0)
+                # Highlight active building row
+                active = (building == bv._active_building)
+                row = col.row(align=True)
+                row.alert = active
+                op = row.operator("bim.fed_rtree_fly_to_result",
+                                  text=f"{building}  ({count})", icon='HOME')
+                op.result_index = i
+
+            # ── L2: Element list for active building ──
+            if bv._active_building and bv._building_elements:
+                layout.separator(factor=0.5)
+                box2 = layout.box()
+                box2.label(text=f"{bv._active_building} — top {len(bv._building_elements)}",
+                           icon='OBJECT_DATA')
+                col2 = box2.column(align=True)
+                col2.scale_y = 1.0
+                for j, e in enumerate(bv._building_elements):
+                    name = e.get('name') or e.get('ifc_class', '?')
+                    storey = e.get('storey', '')
+                    label = f"{name[:30]}  {storey}"
+                    op2 = col2.operator("bim.fed_rtree_fly_to_element",
+                                       text=label, icon='RESTRICT_SELECT_OFF')
+                    op2.elem_index = j
+
         elif props.rtree_search:
             layout.label(text="No results", icon='ERROR')
 

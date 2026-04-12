@@ -66,8 +66,8 @@ def normalize_storey_name(storey_input: str) -> str:
     """
     storey_lower = storey_input.strip().lower()
 
-    # Remove common prefixes/suffixes
-    storey_lower = re.sub(r'\b(st|nd|rd|th)\b', '', storey_lower).strip()
+    # Remove ordinal suffixes from numbers (e.g., "10th" → "10", "2nd" → "2")
+    storey_lower = re.sub(r'(\d+)(?:st|nd|rd|th)\b', r'\1', storey_lower).strip()
 
     # Check if it's a mapped term
     if storey_lower in STOREY_MAPPINGS:
@@ -75,8 +75,8 @@ def normalize_storey_name(storey_input: str) -> str:
         alternatives = STOREY_MAPPINGS[storey_lower]
         return '|'.join(alternatives)  # Will be processed by query executor
 
-    # Default: return as-is for fuzzy matching
-    return storey_input
+    # Default: return processed value (ordinal suffixes stripped)
+    return storey_lower
 
 
 class QueryPattern:
@@ -106,35 +106,32 @@ ELEMENT_COUNT_PATTERNS = [
     QueryPattern(
         pattern=r"(?:how many|count|total|number of) (?P<element_type>\w+) on (?:the )?(?P<storey_name>(?:aras\s+)?(?:\d+(?:st|nd|rd|th)?|first|second|third|ground|tanah|bumbung|jalan|kedai|\w+)) (?:level|storey|floor|aras)?",
         sql_template="""
-            SELECT e.ifc_class, COUNT(*) as count, s.storey
+            SELECT e.ifc_class, COUNT(*) as count, e.storey
             FROM elements_meta e
-            JOIN spatial_structure s ON e.guid = s.guid
             WHERE LOWER(e.ifc_class) LIKE LOWER('%{element_type}%')
-            AND LOWER(s.storey) LIKE LOWER('%{storey_name}%')
-            GROUP BY e.ifc_class, s.storey
+            AND LOWER(e.storey) LIKE LOWER('%{storey_name}%')
+            GROUP BY e.ifc_class, e.storey
         """,
         description="Count elements by type on specific storey"
     ),
     QueryPattern(
         pattern=r"count (?P<element_type>\w+) (?:in|on|at) (?:level|storey|floor|aras) (?P<storey_name>[\w\s]+)",
         sql_template="""
-            SELECT e.ifc_class, COUNT(*) as count, s.storey
+            SELECT e.ifc_class, COUNT(*) as count, e.storey
             FROM elements_meta e
-            JOIN spatial_structure s ON e.guid = s.guid
             WHERE LOWER(e.ifc_class) LIKE LOWER('%{element_type}%')
-            AND LOWER(s.storey) LIKE LOWER('%{storey_name}%')
-            GROUP BY e.ifc_class, s.storey
+            AND LOWER(e.storey) LIKE LOWER('%{storey_name}%')
+            GROUP BY e.ifc_class, e.storey
         """,
         description="Count elements on specific storey"
     ),
     QueryPattern(
         pattern=r"(?P<element_type>\w+) on (?:level|storey|floor|aras) (?P<storey_name>[\w\s]+)",
         sql_template="""
-            SELECT e.guid, e.ifc_class, e.element_name, s.storey
+            SELECT e.guid, e.ifc_class, e.element_name, e.storey
             FROM elements_meta e
-            JOIN spatial_structure s ON e.guid = s.guid
             WHERE LOWER(e.ifc_class) LIKE LOWER('%{element_type}%')
-            AND LOWER(s.storey) LIKE LOWER('%{storey_name}%')
+            AND LOWER(e.storey) LIKE LOWER('%{storey_name}%')
             LIMIT 100
         """,
         description="List elements on specific storey"
@@ -142,11 +139,11 @@ ELEMENT_COUNT_PATTERNS = [
     QueryPattern(
         pattern=r"(?:area|rooms?|spaces?) on (?:level|storey|floor|aras) (?P<storey_name>[\w\s]+)",
         sql_template="""
-            SELECT s.storey, COUNT(*) as space_count
-            FROM spatial_structure s
-            WHERE LOWER(s.storey) LIKE LOWER('%{storey_name}%')
-            AND s.space IS NOT NULL
-            GROUP BY s.storey
+            SELECT e.storey, COUNT(DISTINCT e.element_name) as space_count
+            FROM elements_meta e
+            WHERE LOWER(e.storey) LIKE LOWER('%{storey_name}%')
+            AND e.ifc_class = 'IfcSpace'
+            GROUP BY e.storey
         """,
         description="Count rooms/spaces on specific storey"
     ),

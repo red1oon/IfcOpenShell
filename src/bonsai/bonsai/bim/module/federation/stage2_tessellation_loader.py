@@ -568,7 +568,8 @@ def load_tessellated_shapes_instanced(db_path: str,
                 s.specular_exponent,
                 s.specular_r, s.specular_g, s.specular_b,
                 s.reflectance_method,
-                s.surface_r, s.surface_g, s.surface_b
+                s.surface_r, s.surface_g, s.surface_b,
+                t.rotation_x, t.rotation_y, t.rotation_z
             FROM elements_meta m
             JOIN element_geometry g ON m.guid = g.guid
             JOIN element_transforms t ON m.guid = t.guid
@@ -586,7 +587,8 @@ def load_tessellated_shapes_instanced(db_path: str,
                 t.center_x, t.center_y, t.center_z,
                 m.material_name,
                 m.material_rgba,
-                NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+                NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+                t.rotation_x, t.rotation_y, t.rotation_z
             FROM elements_meta m
             JOIN element_geometry g ON m.guid = g.guid
             JOIN element_transforms t ON m.guid = t.guid
@@ -675,9 +677,14 @@ def load_tessellated_shapes_instanced(db_path: str,
     instance_start = time.time()
     instances = []
     instances_by_discipline = {}
+    _rotated_count = 0
 
     for idx, elem in enumerate(elements):
         guid, ifc_class, discipline, geom_hash, center_x, center_y, center_z, material_name, material_rgba = elem[:9]
+        # S173: rotation from element_transforms (last 3 columns)
+        rot_x = float(elem[-3] or 0.0)
+        rot_y = float(elem[-2] or 0.0)
+        rot_z = float(elem[-1] or 0.0)
         # Rich surface style columns (NULL when surface_styles table absent)
         style_transparency = elem[9] if len(elem) > 9 else None
         style_spec_ratio = elem[10] if len(elem) > 10 else None
@@ -700,14 +707,13 @@ def load_tessellated_shapes_instanced(db_path: str,
         # Create instance (shares mesh with template!)
         instance = bpy.data.objects.new(guid, template_obj.data)
 
-        # Set location (apply viewport offset)
-        # Database stores GPS-aligned centers in meters (USE_WORLD_COORDS=True)
-        # Use database coords directly (no offset)
-        # Blender obj.location expects meters
-        center_m = Vector((center_x, center_y, center_z))
-        instance.location = center_m
-
-        # No scale/rotation needed - geometry is exact!
+        # S173: Set location + rotation from element_transforms
+        # Local geometry (USE_WORLD_COORDS=False) needs rotation applied
+        instance.location = Vector((center_x, center_y, center_z))
+        if abs(rot_x) > 1e-6 or abs(rot_y) > 1e-6 or abs(rot_z) > 1e-6:
+            from mathutils import Euler
+            instance.rotation_euler = Euler((rot_x, rot_y, rot_z), 'XYZ')
+            _rotated_count += 1
 
         # INLINE MATERIAL ASSIGNMENT (best cache locality, fastest overall)
         # Assign material to instance with hybrid color system
@@ -809,11 +815,84 @@ def load_tessellated_shapes_instanced(db_path: str,
     print(f"Elements loaded: {len(instances):,}")
     print(f"Unique templates: {len(templates_used):,}")
     print(f"Instancing ratio: {len(instances)/max(len(templates_used),1):.1f}×")
+    print(f"Rotated elements: {_rotated_count:,}/{len(instances):,}")
     print(f"\nTiming:")
     print(f"  Instance creation: {instance_elapsed:.2f}s ({instance_elapsed/max(len(instances),1)*1000:.2f}ms per instance)")
     print(f"  Collection linking: {link_elapsed:.2f}s")
     print(f"  Scene update: {update_elapsed:.2f}s")
     print(f"  Total: {total_elapsed:.2f}s")
+
+    # S173: §PROOF ROT_TRUTH — spot-check against IFC if available (FINE mode)
+    import os
+    log_level = os.environ.get("BIM_LOG_LEVEL", "FINE").upper()
+    if log_level == "FINE":
+        ifc_dir = Path(db_path).parent / "IFC" / "UNMERGED"
+        if not ifc_dir.exists():
+            ifc_dir = Path(db_path).parents[1] / "IFC" / "UNMERGED"
+        ifc_files = list(ifc_dir.glob("*.ifc")) if ifc_dir.exists() else []
+        if not ifc_files:
+            print(f"§PROOF ROT_TRUTH SKIPPED — no source IFCs found (decoupled mode)")
+        else:
+            try:
+                import ifcopenshell, ifcopenshell.geom
+                import numpy as np
+                import math
+
+                # Load stored transforms
+                stored_tx = {}
+                verify_cursor = sqlite3.connect(db_path)
+                for r in verify_cursor.execute("""
+                    SELECT et.guid, et.center_x, et.center_y, et.center_z,
+                           et.rotation_x, et.rotation_y, et.rotation_z, ei.geometry_hash
+                    FROM element_transforms et
+                    JOIN element_instances ei ON ei.guid = et.guid
+                """):
+                    stored_tx[r[0]] = r[1:]
+
+                rot_ok = rot_fail = 0
+                for ifc_path in ifc_files[:3]:
+                    ifc_file = ifcopenshell.open(str(ifc_path))
+                    settings = ifcopenshell.geom.settings()
+                    settings.set(settings.USE_WORLD_COORDS, False)
+                    settings.set(settings.WELD_VERTICES, True)
+                    ifc_it = ifcopenshell.geom.iterator(settings, ifc_file)
+                    if not ifc_it.initialize():
+                        continue
+                    checked = 0
+                    while checked < 10:
+                        shape = ifc_it.get()
+                        if shape.guid in stored_tx:
+                            cx, cy, cz, rx, ry, rz, ghash = stored_tx[shape.guid]
+                            mat = np.array(list(shape.transformation.matrix), dtype=np.float64).reshape(4, 4).T
+                            rot3 = mat[:3, :3]
+                            # Reconstruct R from stored Euler
+                            a, b, c = rx, ry, rz
+                            R = np.array([
+                                [math.cos(b)*math.cos(c), math.sin(a)*math.sin(b)*math.cos(c)-math.cos(a)*math.sin(c), math.cos(a)*math.sin(b)*math.cos(c)+math.sin(a)*math.sin(c)],
+                                [math.cos(b)*math.sin(c), math.sin(a)*math.sin(b)*math.sin(c)+math.cos(a)*math.cos(c), math.cos(a)*math.sin(b)*math.sin(c)-math.sin(a)*math.cos(c)],
+                                [-math.sin(b),             math.sin(a)*math.cos(b),                                      math.cos(a)*math.cos(b)]
+                            ])
+                            if np.allclose(rot3, R, atol=1e-6) and abs(mat[0, 3] - cx) < 0.01:
+                                rot_ok += 1
+                            else:
+                                rot_fail += 1
+                                if rot_fail <= 3:
+                                    print(f"  FAIL ROT_TRUTH {shape.guid[:16]} {shape.type} "
+                                          f"rot_match={np.allclose(rot3, R, atol=1e-6)} "
+                                          f"xy_match={abs(mat[0,3]-cx)<0.01}")
+                            checked += 1
+                        if not ifc_it.next():
+                            break
+
+                verify_cursor.close()
+                tag = "PASS" if rot_fail == 0 and rot_ok > 0 else ("FAIL" if rot_fail > 0 else "SKIP")
+                print(f"§PROOF ROT_TRUTH {tag}  {rot_ok} ok, {rot_fail} fail  "
+                      f"(Euler→R==IFC rot3, XY match — checked vs source IFC)")
+            except ImportError:
+                print(f"§PROOF ROT_TRUTH SKIPPED — ifcopenshell not available")
+    else:
+        print(f"§PROOF ROT_TRUTH SKIPPED — BIM_LOG_LEVEL={log_level}")
+
     print("=" * 70)
 
     db_conn.close()

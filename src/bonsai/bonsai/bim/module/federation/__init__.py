@@ -74,6 +74,8 @@ classes = (
     operator.ClearFederationViewport,       # Clear all federation data
     operator.ReloadFederationViewport,
     operator.FedRTreeSearch,                # S178: search + fly-to
+    operator.FedRTreeFlyToResult,           # S178: click building → L2 drill-down
+    operator.FedRTreeFlyToElement,          # S178: click element in L2 list
     operator.FedRTreePick,                  # S178: click-to-identify
     operator.UnloadFederationViewport,
     operator.ExtractSampleDatabase,

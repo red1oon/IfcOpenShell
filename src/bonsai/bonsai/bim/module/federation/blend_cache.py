@@ -55,35 +55,113 @@ def _find_library_path():
 
 
 def strip_template_meshes():
-    """save_pre: clear geometry from GN template meshes.
+    """save_pre: clear geometry from template meshes (GN and library-linked).
 
-    Keeps mesh data-blocks (so GN references survive) but removes
-    all vertex/face data. The full hash is preserved in mesh['geometry_hash'].
+    GN path (_GN_Templates): clear_geometry() on local meshes.
+    Library path (_Templates): swap linked meshes for empty stubs.
+    The full hash is preserved in mesh['geometry_hash'] or obj['geometry_hash'].
     """
-    templates = bpy.data.collections.get('_GN_Templates')
-    if not templates:
-        return 0
+    _TAG = "[S174][STRIP]"
+    t0 = time.time()
+    count_gn = 0
+    count_lib_tpl = 0
+    count_lib_inst = 0
 
-    count = 0
-    for obj in templates.objects:
-        if obj.type == 'MESH' and obj.data and len(obj.data.vertices) > 0:
-            obj.data.clear_geometry()
-            count += 1
-    if count:
-        print(f"[S169] save_pre: stripped {count} template meshes")
-    return count
+    # ── GN path (S169) + S175 Library-GN path ──
+    for gn_col_name in ('_GN_Templates', '_LibGN_Templates'):
+        gn_templates = bpy.data.collections.get(gn_col_name)
+        if gn_templates:
+            print(f"{_TAG} §STRIP_GN found {gn_col_name} ({len(gn_templates.objects)} objects)")
+            for obj in gn_templates.objects:
+                if obj.type == 'MESH' and obj.data and len(obj.data.vertices) > 0:
+                    verts_before = len(obj.data.vertices)
+                    obj.data.clear_geometry()
+                    count_gn += 1
+                    if count_gn <= 3:
+                        print(f"{_TAG}   §FINE cleared {obj.name} ({verts_before} verts → 0)")
+        else:
+            print(f"{_TAG} §STRIP_GN {gn_col_name} not found — skip")
+
+    # ── Library-linked path (S174) ──
+    lib_templates = bpy.data.collections.get('_Templates')
+    if lib_templates:
+        print(f"{_TAG} §STRIP_LIB found _Templates ({len(lib_templates.objects)} objects)")
+        for obj in lib_templates.objects:
+            if obj.type == 'MESH' and obj.data and obj.data.library:
+                ghash = obj.get('geometry_hash') or obj.data.name
+                stub = bpy.data.meshes.new(f"stub_{ghash[:12]}")
+                stub['geometry_hash'] = ghash
+                old_name = obj.data.name
+                obj.data = stub
+                count_lib_tpl += 1
+                if count_lib_tpl <= 3:
+                    print(f"{_TAG}   §FINE template {obj.name}: "
+                          f"{old_name} (linked) → {stub.name} (stub)")
+
+        # Also swap instances (objects in discipline collections sharing linked meshes)
+        parent = None
+        for col in bpy.data.collections:
+            if lib_templates.name in [c.name for c in col.children]:
+                parent = col
+                break
+        if parent:
+            disc_counts = {}
+            for child_col in parent.children:
+                if child_col.name.startswith('_'):
+                    continue
+                col_count = 0
+                for obj in child_col.objects:
+                    if obj.type == 'MESH' and obj.data and obj.data.library:
+                        ghash = obj.get('geometry_hash') or obj.data.name
+                        stub_name = f"stub_{ghash[:12]}"
+                        stub = bpy.data.meshes.get(stub_name)
+                        if not stub:
+                            stub = bpy.data.meshes.new(stub_name)
+                            stub['geometry_hash'] = ghash
+                        obj.data = stub
+                        count_lib_inst += 1
+                        col_count += 1
+                if col_count > 0:
+                    disc_counts[child_col.name] = col_count
+            for disc, cnt in disc_counts.items():
+                print(f"{_TAG}   §FINE disc {disc}: {cnt} instances stubbed")
+        else:
+            print(f"{_TAG}   §FINE WARNING: no parent collection found for _Templates")
+    else:
+        print(f"{_TAG} §STRIP_LIB _Templates not found — skip")
+
+    total = count_gn + count_lib_tpl + count_lib_inst
+    elapsed = (time.time() - t0) * 1000
+    print(f"{_TAG} §PROOF STRIP total={total} "
+          f"(gn={count_gn} lib_tpl={count_lib_tpl} lib_inst={count_lib_inst}) "
+          f"{elapsed:.0f}ms")
+    return total
 
 
 def restore_template_meshes():
-    """save_post / load_post: re-bake meshes from component_library.db.
+    """save_post / load_post: restore meshes from library.blend or component_library.db.
 
-    S170: Only restores templates that should be visible per LOD manager
-    (visible disciplines + camera distance). If no LOD manager is active,
-    falls back to restoring ALL templates (S169 behaviour).
+    S174: Library-linked path — re-link from library.blend (instant, no BLOB reads).
+    S170: GN path — re-bake from component_library.db with LOD filtering.
+    S169: GN fallback — restore ALL templates if no LOD manager.
     """
+    restored = 0
+
+    # ── S175: Library-GN path — re-append from library.blend ──
+    lib_gn_templates = bpy.data.collections.get('_LibGN_Templates')
+    if lib_gn_templates:
+        restored += _restore_library_gn_templates(lib_gn_templates)
+
+    # ── Library-linked path (S174) — re-link from library.blend ──
+    lib_templates = bpy.data.collections.get('_Templates')
+    if lib_templates:
+        restored += _restore_library_linked()
+        return restored  # library path is self-contained
+
+    # ── GN path (S169/S170) — re-bake from component_library.db ──
     templates = bpy.data.collections.get('_GN_Templates')
     if not templates:
-        return 0
+        return restored
 
     # Check if LOD manager has state — if so, only restore loaded hashes
     lod_filter = None
@@ -148,6 +226,174 @@ def restore_template_meshes():
     scope = f"LOD-filtered ({len(lod_filter):,} eligible)" if lod_filter else "ALL"
     print(f"[S169] Restored {restored}/{len(needs_restore)} template meshes "
           f"from {os.path.basename(lib_path)} in {elapsed:.1f}s [{scope}]")
+    return restored
+
+
+def _restore_library_gn_templates(templates_col):
+    """S175: Re-link meshes from library.blend for _LibGN_Templates.
+
+    GN mode uses link=True (zero-copy). On save, clear_geometry() strips
+    vertex data. On load/save_post, re-link from library.blend.
+    """
+    _TAG = "[S175][RESTORE_GN]"
+
+    # Collect empty templates
+    needs = []
+    for obj in templates_col.objects:
+        if obj.type == 'MESH' and obj.data and len(obj.data.vertices) == 0:
+            ghash = obj.get('geometry_hash') or obj.data.get('geometry_hash')
+            if ghash:
+                needs.append((obj, ghash))
+
+    if not needs:
+        return 0
+
+    # Find library.blend from parent collection metadata
+    lib_blend_path = None
+    for col in bpy.data.collections:
+        if templates_col.name in [c.name for c in col.children]:
+            lib_blend_path = col.get('library_blend_path')
+            break
+
+    if not lib_blend_path or not os.path.exists(lib_blend_path):
+        # Fallback: search for library.blend
+        lib_db_path = _find_library_path()
+        if lib_db_path:
+            candidate = os.path.join(os.path.dirname(lib_db_path), 'library.blend')
+            if os.path.exists(candidate):
+                lib_blend_path = candidate
+
+    if not lib_blend_path or not os.path.exists(lib_blend_path):
+        print(f"{_TAG} WARNING: library.blend not found — cannot restore GN templates")
+        return 0
+
+    t0 = time.time()
+    needed_hashes = {ghash for _, ghash in needs}
+
+    # Re-link (not append) — keeps zero-copy performance
+    with bpy.data.libraries.load(lib_blend_path, link=True) as (data_from, data_to):
+        to_link = [n for n in data_from.meshes if n in needed_hashes]
+        data_to.meshes = to_link
+
+    # Build hash → mesh lookup
+    fresh = {}
+    for mesh in data_to.meshes:
+        if mesh is not None:
+            fresh[mesh.name] = mesh
+
+    # Swap empty meshes for fresh linked ones
+    restored = 0
+    for obj, ghash in needs:
+        new_mesh = fresh.get(ghash)
+        if new_mesh:
+            old_mesh = obj.data
+            obj.data = new_mesh
+            # Remove orphan stub
+            if old_mesh and old_mesh.users == 0:
+                bpy.data.meshes.remove(old_mesh)
+            restored += 1
+
+    elapsed = time.time() - t0
+    print(f"{_TAG} Restored {restored}/{len(needs)} GN templates "
+          f"from library.blend (link=True) in {elapsed:.1f}s")
+    return restored
+
+
+def _restore_library_linked():
+    """S174: Re-link meshes from library.blend after save or file open.
+
+    Finds all objects with stub meshes (stub_* name, geometry_hash custom prop),
+    re-links the original mesh from library.blend, and swaps back.
+
+    Workflow: Open → R-tree visible (no meshes) → user clicks Library → full geometry.
+    On save_post: re-link immediately so user sees no flicker.
+    On load_post: leave as stubs — user clicks Library to re-link.
+    """
+    _TAG = "[S174][RESTORE]"
+
+    # Find library.blend path from scene props
+    lib_blend = None
+    try:
+        props = bpy.context.scene.BIMFederationProperties
+        db_path = props.federation_database_path
+        if db_path:
+            db_dir = os.path.dirname(db_path)
+            search = db_dir
+            for _ in range(5):
+                candidate = os.path.join(search, 'library', 'library.blend')
+                if os.path.exists(candidate):
+                    lib_blend = candidate
+                    break
+                search = os.path.dirname(search)
+    except Exception:
+        pass
+
+    if not lib_blend:
+        print(f"{_TAG} §FAIL library.blend not found — cannot restore")
+        return 0
+
+    print(f"{_TAG} §RESTORE_START library={lib_blend}")
+    t0 = time.time()
+
+    # Collect stubs that need re-linking
+    stub_hashes = set()
+    stub_objects = []  # (obj, geometry_hash)
+    for obj in bpy.data.objects:
+        if obj.type == 'MESH' and obj.data and obj.data.name.startswith('stub_'):
+            ghash = obj.data.get('geometry_hash') or obj.get('geometry_hash')
+            if ghash:
+                stub_hashes.add(ghash)
+                stub_objects.append((obj, ghash))
+
+    if not stub_hashes:
+        print(f"{_TAG} §RESTORE_SKIP no stub meshes found — nothing to restore")
+        return 0
+
+    print(f"{_TAG} §FINE {len(stub_objects):,} objects with {len(stub_hashes):,} "
+          f"unique hashes need re-linking")
+
+    # Re-link from library.blend
+    t_link = time.time()
+    with bpy.data.libraries.load(lib_blend, link=True) as (data_from, data_to):
+        available = set(data_from.meshes)
+        to_link = [name for name in data_from.meshes if name in stub_hashes]
+        data_to.meshes = to_link
+    t_link_elapsed = (time.time() - t_link) * 1000
+
+    missing = stub_hashes - available
+    print(f"{_TAG} §PROOF LINK_TIME {t_link_elapsed:.0f}ms for {len(to_link):,} meshes "
+          f"({len(available):,} available in library)")
+    if missing:
+        print(f"{_TAG} §WARN {len(missing)} hashes not in library.blend")
+        for h in list(missing)[:3]:
+            print(f"{_TAG}   §FINE MISS {h[:16]}")
+
+    # Build hash → linked mesh lookup
+    mesh_by_hash = {}
+    for mesh in data_to.meshes:
+        if mesh is not None:
+            mesh_by_hash[mesh.name] = mesh
+
+    # Swap stubs back to linked meshes
+    restored = 0
+    orphans_removed = 0
+    for obj, ghash in stub_objects:
+        linked_mesh = mesh_by_hash.get(ghash)
+        if linked_mesh:
+            old_stub = obj.data
+            obj.data = linked_mesh
+            if old_stub and old_stub.users == 0:
+                bpy.data.meshes.remove(old_stub)
+                orphans_removed += 1
+            restored += 1
+            if restored <= 3:
+                print(f"{_TAG}   §FINE [{restored}] {obj.name}: "
+                      f"stub → {linked_mesh.name[:16]} "
+                      f"({len(linked_mesh.vertices)} verts)")
+
+    elapsed = (time.time() - t0) * 1000
+    print(f"{_TAG} §PROOF RESTORE restored={restored:,}/{len(stub_objects):,} "
+          f"orphans_cleaned={orphans_removed} {elapsed:.0f}ms")
     return restored
 
 
@@ -744,6 +990,22 @@ def create_cache_gn_instances(context, db_path, mode="full", report_fn=None):
     except Exception as e:
         log(f"LOD_INIT      WARN: {e}")
 
+    # ── Phase 8b: S174 — Initialize DLOD (Distance LOD) handler ──
+    try:
+        from . import dlod_handler
+        n_elements = sum(len(v) for v in disc_positions.values())
+        n_hashes = len(hash_to_index)
+        log(f"[S174][DLOD] §FINE dlod_init called with {n_elements} elements, "
+            f"{n_hashes} unique hashes")
+        dlod_handler.dlod_init(disc_positions, disc_indices, hash_to_index,
+                               db_path=db_path)
+        bbox_map = dlod_handler.build_bbox_proxies(tmpl_coll, hash_to_index,
+                                                    db_path)
+        n_proxies = len(bbox_map) if bbox_map else 0
+        log(f"[S174][DLOD] §FINE build_bbox_proxies: {n_proxies} proxies built")
+    except Exception as e:
+        log(f"[S174][DLOD] §WARN DLOD init failed (non-fatal): {e}")
+
     # ── Summary ────────────────────────────────────────────────
     total_time = time.time() - t0
     log(f"DONE          {total_time:.1f}s ({total_time/60:.1f} min) "
@@ -756,6 +1018,121 @@ def create_cache_gn_instances(context, db_path, mode="full", report_fn=None):
     header(f"  GN objects:  {len(disc_positions)} (1 per discipline)")
     header(f"  Templates:   {len(baked_meshes):,} (hidden collection)")
     header(f"  Outliner:    Federation_Cached → discipline collections")
+
+    # ── S173: §PROOF BBOX_MATCH — do placed meshes match stored rtree bboxes?
+    # No IFC needed. Compares: rot @ lib_mesh + centre vs rtree bbox.
+    # This is what the viewport shows vs what the extraction computed.
+    try:
+        import os as _os
+        import math as _m
+        _log_level = _os.environ.get("BIM_LOG_LEVEL", "FINE").upper()
+        if _log_level != "FINE":
+            log(f"§PROOF BBOX_MATCH SKIPPED — BIM_LOG_LEVEL={_log_level}")
+        else:
+            # Find library: try lib_path, then search up from db_path
+            _lib_path = lib_path
+            if not _lib_path:
+                for _p in Path(db_path).parents:
+                    _candidate = _p / "library" / "component_library.db"
+                    if _candidate.exists():
+                        _lib_path = str(_candidate)
+                        break
+            if not _lib_path or not Path(_lib_path).exists():
+                log(f"§PROOF BBOX_MATCH SKIPPED — library not found (searched from {db_path})")
+            else:
+                _vconn = sqlite3.connect(db_path)
+                _lconn = sqlite3.connect(_lib_path)
+                _samples = _vconn.execute("""
+                    SELECT et.guid, et.center_x, et.center_y, et.center_z,
+                           et.rotation_x, et.rotation_y, et.rotation_z,
+                           ei.geometry_hash,
+                           r.minX, r.maxX, r.minY, r.maxY, r.minZ, r.maxZ
+                    FROM element_transforms et
+                    JOIN element_instances ei ON ei.guid = et.guid
+                    JOIN elements_meta em ON em.guid = et.guid
+                    JOIN elements_rtree r ON r.id = em.id
+                    ORDER BY RANDOM() LIMIT 30
+                """).fetchall()
+                _ok = _fail = 0
+                _worst = 0.0
+                _rot_nonzero = 0
+                _pivot_worst = 0.0
+                _pivot_fail = 0
+                _mesh_src = "base_geometries" if has_blobs else "component_geometries"
+                for _row in _samples:
+                    _guid, _cx, _cy, _cz, _rx, _ry, _rz, _gh, \
+                        _x0, _x1, _y0, _y1, _z0, _z1 = _row
+                    has_rot = abs(_rx) > 1e-6 or abs(_ry) > 1e-6 or abs(_rz) > 1e-6
+                    if has_rot:
+                        _rot_nonzero += 1
+                    _lr = _lconn.execute(
+                        "SELECT vertices FROM component_geometries WHERE geometry_hash=?",
+                        (_gh,)).fetchone()
+                    if not _lr or not _lr[0]:
+                        continue
+                    _v = np.frombuffer(_lr[0], dtype=np.float32).reshape(-1, 3)
+
+                    # P1: BBOX_MATCH — rot@corners+centre vs rtree
+                    a, b, c = _rx, _ry, _rz
+                    _R = np.array([
+                        [_m.cos(b)*_m.cos(c), _m.sin(a)*_m.sin(b)*_m.cos(c)-_m.cos(a)*_m.sin(c), _m.cos(a)*_m.sin(b)*_m.cos(c)+_m.sin(a)*_m.sin(c)],
+                        [_m.cos(b)*_m.sin(c), _m.sin(a)*_m.sin(b)*_m.sin(c)+_m.cos(a)*_m.cos(c), _m.cos(a)*_m.sin(b)*_m.sin(c)-_m.sin(a)*_m.cos(c)],
+                        [-_m.sin(b),           _m.sin(a)*_m.cos(b),                                _m.cos(a)*_m.cos(b)]
+                    ])
+                    _lmin = _v.min(axis=0)
+                    _lmax = _v.max(axis=0)
+                    _corners = np.array([
+                        [_lmin[0],_lmin[1],_lmin[2]], [_lmax[0],_lmin[1],_lmin[2]],
+                        [_lmin[0],_lmax[1],_lmin[2]], [_lmax[0],_lmax[1],_lmin[2]],
+                        [_lmin[0],_lmin[1],_lmax[2]], [_lmax[0],_lmin[1],_lmax[2]],
+                        [_lmin[0],_lmax[1],_lmax[2]], [_lmax[0],_lmax[1],_lmax[2]],
+                    ])
+                    _wc = (_R @ _corners.T).T + np.array([_cx, _cy, _cz])
+                    _wmin = _wc.min(axis=0)
+                    _wmax = _wc.max(axis=0)
+                    _err = max(abs(_wmin[0]-_x0), abs(_wmax[0]-_x1),
+                               abs(_wmin[1]-_y0), abs(_wmax[1]-_y1),
+                               abs(_wmin[2]-_z0), abs(_wmax[2]-_z1))
+                    if _err > _worst:
+                        _worst = _err
+                    if _err > 0.01:
+                        _fail += 1
+                        if _fail <= 3:
+                            log(f"  FAIL BBOX_MATCH {_guid[:16]} err={_err:.4f}m "
+                                f"rot=({_rx:.3f},{_ry:.3f},{_rz:.3f})")
+                    else:
+                        _ok += 1
+
+                    # P2: PIVOT_CHECK — mesh centroid offset from (0,0,0)
+                    # GN Instance on Points rotates around mesh origin (0,0,0).
+                    # If mesh verts are offset, rotation swings them → spikes.
+                    if has_rot:
+                        _centroid = _v.mean(axis=0)
+                        _cdist = float(np.linalg.norm(_centroid))
+                        if _cdist > _pivot_worst:
+                            _pivot_worst = _cdist
+                        if _cdist > 1.0:
+                            _pivot_fail += 1
+                            if _pivot_fail <= 3:
+                                log(f"  WARN PIVOT {_guid[:16]} mesh_centroid="
+                                    f"({_centroid[0]:.1f},{_centroid[1]:.1f},{_centroid[2]:.1f}) "
+                                    f"offset={_cdist:.1f}m from origin — "
+                                    f"GN rotation will swing by {_cdist:.1f}m")
+
+                _vconn.close()
+                _lconn.close()
+                _tag = "PASS" if _fail == 0 and _ok > 0 else (
+                    "FAIL" if _fail > 0 else "SKIP")
+                log(f"§PROOF BBOX_MATCH {_tag}  {_ok} ok, {_fail} fail  "
+                    f"worst={_worst:.4f}m  rotated={_rot_nonzero}/30  "
+                    f"mesh_src={_mesh_src}  (rot@lib_mesh+centre vs rtree)")
+                _ptag = "PASS" if _pivot_fail == 0 else "FAIL"
+                log(f"§PROOF PIVOT_CHECK {_ptag}  {_pivot_fail} meshes with centroid >1m from origin  "
+                    f"worst={_pivot_worst:.1f}m  "
+                    f"(>0 means GN rotation will produce spikes)")
+    except Exception as _e:
+        log(f"§PROOF BBOX_MATCH ERROR — {_e}")
+
     header("=" * 64)
 
     # Write log file

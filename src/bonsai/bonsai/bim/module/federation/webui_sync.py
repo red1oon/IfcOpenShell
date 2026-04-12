@@ -34,6 +34,11 @@ DISCIPLINE_COLORS = {
     'CW':  (0.733, 0.561, 0.808, 1.0),
 }
 
+# Module-level sync state (Blender 5.0+ does not allow setting attrs on bpy.app)
+_sync_active = False
+_sync_last_selection = set()
+_sync_last_name = ""
+
 
 def _post_json(action, data=None):
     """Non-blocking HTTP POST to WebUI server. Runs in background thread."""
@@ -69,24 +74,27 @@ class BIM_OT_start_webui_sync(Operator):
                                description="Also open Web UI in browser")
 
     def execute(self, context):
+        global _sync_active, _sync_last_selection, _sync_last_name
         # Check if timer already running
-        if hasattr(bpy.app, '_webui_sync_active') and bpy.app._webui_sync_active:
+        if _sync_active:
             self.report({'INFO'}, "Web UI sync already running")
             # Still open browser if requested
             if self.open_browser:
                 _open_browser()
             return {'FINISHED'}
 
-        bpy.app._webui_sync_active = True
-        bpy.app._webui_sync_last_selection = set()
-        bpy.app._webui_sync_last_name = ""
+        _sync_active = True
+        _sync_last_selection = set()
+        _sync_last_name = ""
 
         bpy.app.timers.register(_sync_timer, first_interval=1.0)
+        print(f"[WebUI Sync] Timer registered. _sync_active={_sync_active}")
 
         if self.open_browser:
             _open_browser()
 
         self.report({'INFO'}, "Web UI sync started — two-way Bonsai ↔ browser link active")
+        print("[WebUI Sync] START complete — polling every 0.5s")
         return {'FINISHED'}
 
 
@@ -103,27 +111,40 @@ class BIM_OT_stop_webui_sync(Operator):
     bl_options = {'REGISTER'}
 
     def execute(self, context):
-        bpy.app._webui_sync_active = False
+        global _sync_active
+        _sync_active = False
         self.report({'INFO'}, "Web UI sync stopped")
         return {'FINISHED'}
 
 
+_sync_tick = 0
+
 def _sync_timer():
     """Timer callback — runs every 0.5s. Checks selection + polls commands."""
-    if not getattr(bpy.app, '_webui_sync_active', False):
+    global _sync_tick
+    if not _sync_active:
+        print("[WebUI Sync] Timer stopped (_sync_active=False)")
         return None  # unregister timer
+
+    _sync_tick += 1
+    # Log every 20th tick (~10s) to confirm timer is alive
+    if _sync_tick % 20 == 1:
+        print(f"[WebUI Sync] Timer alive — tick {_sync_tick}")
 
     try:
         _check_selection()
         _poll_commands()
     except Exception as e:
         print(f"[WebUI Sync] Error: {e}")
+        import traceback
+        traceback.print_exc()
 
     return 0.5  # re-run in 0.5s
 
 
 def _check_selection():
     """Detect viewport selection change and push to WebUI."""
+    global _sync_last_name
     context = bpy.context
     if not hasattr(context, 'selected_objects'):
         return
@@ -131,10 +152,10 @@ def _check_selection():
     active = context.active_object
     current_name = active.name if active else ""
 
-    if current_name == getattr(bpy.app, '_webui_sync_last_name', ''):
+    if current_name == _sync_last_name:
         return  # no change
 
-    bpy.app._webui_sync_last_name = current_name
+    _sync_last_name = current_name
 
     if not active or active.type != 'MESH':
         _post_json_bg("selectionChanged", {
@@ -163,12 +184,128 @@ def _poll_commands():
     if not result or not result.get("commands"):
         return
 
-    for cmd in result["commands"]:
+    cmds = result["commands"]
+    print(f"[WebUI Sync] pollCommands returned {len(cmds)} command(s): {[c.get('command','?') for c in cmds]}")
+
+    for cmd in cmds:
+        print(f"[WebUI Sync] RAW CMD: {cmd}")
         command = cmd.get("command", "")
         if command == "applyScheme":
             _apply_scheme_command(cmd)
         elif command == "loadOutput":
             _load_output_command(cmd)
+        elif command == "previewBBoxes":
+            _preview_bboxes_command(cmd)
+
+
+def _preview_bboxes_command(cmd):
+    """Fetch order lines from Java server and render as wireframe bboxes.
+
+    Lightweight preview — no compile. Category-coloured wireframe boxes via
+    design_bbox.enable(). Same visual as Design Mode / Federation Preview.
+    """
+    building_id = cmd.get("buildingId", "")
+    if not building_id:
+        print("[WebUI Sync] previewBBoxes: no buildingId")
+        return
+
+    print(f"[WebUI Sync] previewBBoxes: {building_id}")
+
+    # Fetch order lines from Java server via HTTP
+    result = _post_json("listOrderLines", {"buildingId": building_id})
+    if not result:
+        print("[WebUI Sync] previewBBoxes: server unreachable")
+        return
+
+    lines = result.get("lines", result.get("orderLines", []))
+    if not lines:
+        print(f"[WebUI Sync] previewBBoxes: no order lines for {building_id}")
+        return
+
+    # Convert to bbox format
+    bboxes = []
+    for line in lines:
+        w = line.get("widthMm", line.get("aabb_width_mm", 0))
+        d = line.get("depthMm", line.get("aabb_depth_mm", 0))
+        h = line.get("heightMm", line.get("aabb_height_mm", 0))
+        dx = line.get("dx", 0)
+        dy = line.get("dy", 0)
+        dz = line.get("dz", 0)
+        if w <= 0 and d <= 0 and h <= 0:
+            continue
+        bboxes.append({
+            "bomId": str(line.get("orderLineId", "")),
+            "name": line.get("familyRef", line.get("productId", "?")),
+            "bomType": line.get("hostType", "ITEM"),
+            "category": line.get("bomCategory", "ARC"),
+            "minX": dx, "minY": dy, "minZ": dz,
+            "maxX": dx + w, "maxY": dy + d, "maxZ": dz + h,
+        })
+
+    if not bboxes:
+        print(f"[WebUI Sync] previewBBoxes: 0 valid bboxes from {len(lines)} lines")
+        return
+
+    # Try BIM Designer design_bbox first (GPU wireframe overlay)
+    try:
+        from bonsai.bim.module.federation import design_bbox
+        design_bbox.enable(bboxes)
+        print(f"[WebUI Sync] previewBBoxes: {len(bboxes)} bboxes rendered (federation)")
+        _force_viewport_refresh()
+        return
+    except Exception:
+        pass
+
+    # Fallback: try BIM Designer addon's design_bbox
+    try:
+        import importlib
+        dbbox = importlib.import_module("bonsai_bim_designer.design_bbox")
+        dbbox.enable(bboxes)
+        print(f"[WebUI Sync] previewBBoxes: {len(bboxes)} bboxes rendered (designer)")
+        _force_viewport_refresh()
+        return
+    except Exception as e:
+        print(f"[WebUI Sync] previewBBoxes: design_bbox not available ({e})")
+
+    # Last resort: create simple cube wireframes
+    import bpy
+    collection_name = "BIM_Preview_BBoxes"
+    if collection_name in bpy.data.collections:
+        coll = bpy.data.collections[collection_name]
+        for obj in list(coll.objects):
+            bpy.data.objects.remove(obj, do_unlink=True)
+    else:
+        coll = bpy.data.collections.new(collection_name)
+        bpy.context.scene.collection.children.link(coll)
+
+    for bb in bboxes:
+        cx = (bb["minX"] + bb["maxX"]) / 2000.0  # mm → m
+        cy = (bb["minY"] + bb["maxY"]) / 2000.0
+        cz = (bb["minZ"] + bb["maxZ"]) / 2000.0
+        sx = (bb["maxX"] - bb["minX"]) / 1000.0
+        sy = (bb["maxY"] - bb["minY"]) / 1000.0
+        sz = (bb["maxZ"] - bb["minZ"]) / 1000.0
+        if sx <= 0 or sy <= 0 or sz <= 0:
+            continue
+        bpy.ops.mesh.primitive_cube_add(size=1, location=(cx, cy, cz), scale=(sx, sy, sz))
+        obj = bpy.context.active_object
+        obj.name = bb.get("name", "bbox")
+        obj.display_type = 'WIRE'
+        # Category color
+        cat_colors = {
+            'STR': (0.831, 0.647, 0.455, 1.0),
+            'ARC': (0.545, 0.616, 0.765, 1.0),
+            'MEP': (0.420, 0.710, 0.878, 1.0),
+            'FP':  (0.906, 0.298, 0.235, 1.0),
+        }
+        obj.color = cat_colors.get(bb.get("category", ""), (0.6, 0.6, 0.6, 1.0))
+        # Move to preview collection
+        for c in obj.users_collection:
+            c.objects.unlink(obj)
+        coll.objects.link(obj)
+
+    print(f"[WebUI Sync] previewBBoxes: {len(bboxes)} wireframe cubes created")
+    _force_viewport_refresh()
 
 
 def _apply_scheme_command(cmd):
@@ -176,6 +313,21 @@ def _apply_scheme_command(cmd):
     scheme = cmd.get("schemeName", "")
     target = cmd.get("objectName", "")
     discipline_filter = cmd.get("filterDiscipline", "")
+
+    # Route previewBBoxes — buildingId passed via guid field (Java server whitelist)
+    if scheme == "previewBBoxes":
+        building_id = cmd.get("guid", target)
+        print(f"[WebUI Sync] previewBBoxes via schemeName, building={building_id}")
+        _preview_bboxes_command({"buildingId": building_id})
+        return
+
+    # Route loadOutput — outputDbPath passed via guid field (Java server whitelist)
+    if scheme == "loadOutput":
+        db_path = cmd.get("guid", "")
+        print(f"[WebUI Sync] loadOutput via schemeName, path={db_path}")
+        _load_output_command({"outputDbPath": db_path, "objectName": target})
+        return
+
     color_str = cmd.get("color", "")
 
     if scheme == "reset":
@@ -315,6 +467,7 @@ def register():
 
 def unregister():
     # Stop timer if running
-    bpy.app._webui_sync_active = False
+    global _sync_active
+    _sync_active = False
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)

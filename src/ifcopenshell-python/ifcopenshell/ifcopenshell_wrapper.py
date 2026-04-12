@@ -346,6 +346,10 @@ class ConversionResultShape(object):
         r"""solid(ConversionResultShape self) -> ConversionResultShape"""
         return _ifcopenshell_wrapper.ConversionResultShape_solid(self)
 
+    def wrap_in_compound(self):
+        r"""wrap_in_compound(ConversionResultShape self) -> ConversionResultShape"""
+        return _ifcopenshell_wrapper.ConversionResultShape_wrap_in_compound(self)
+
     def vertices(self):
         r"""vertices(ConversionResultShape self) -> std::vector< IfcGeom::ConversionResultShape *,std::allocator< IfcGeom::ConversionResultShape * > >"""
         return _ifcopenshell_wrapper.ConversionResultShape_vertices(self)
@@ -370,6 +374,10 @@ class ConversionResultShape(object):
         r"""intersect(ConversionResultShape self, ConversionResultShape arg2) -> ConversionResultShape"""
         return _ifcopenshell_wrapper.ConversionResultShape_intersect(self, arg2)
 
+    def concat(self, arg2):
+        r"""concat(ConversionResultShape self, ConversionResultShape arg2) -> ConversionResultShape"""
+        return _ifcopenshell_wrapper.ConversionResultShape_concat(self, arg2)
+
     def map(self, *args):
         r"""
         map(ConversionResultShape self, OpaqueCoordinate_4 _from, OpaqueCoordinate_4 to)
@@ -380,6 +388,10 @@ class ConversionResultShape(object):
     def moved(self, arg2):
         r"""moved(ConversionResultShape self, ifcopenshell::geometry::taxonomy::matrix4::ptr arg2) -> ConversionResultShape"""
         return _ifcopenshell_wrapper.ConversionResultShape_moved(self, arg2)
+
+    def surface_area_along_direction(self, tol, arg3, along_x, along_y, along_z):
+        r"""surface_area_along_direction(ConversionResultShape self, double tol, ifcopenshell::geometry::taxonomy::matrix4::ptr const & arg3, double & along_x, double & along_y, double & along_z) -> bool"""
+        return _ifcopenshell_wrapper.ConversionResultShape_surface_area_along_direction(self, tol, arg3, along_x, along_y, along_z)
     __swig_destroy__ = _ifcopenshell_wrapper.delete_ConversionResultShape
 
     def serialize_obj(self):
@@ -451,6 +463,10 @@ class ConversionResult(object):
     def ItemId(self):
         r"""ItemId(ConversionResult self) -> int"""
         return _ifcopenshell_wrapper.ConversionResult_ItemId(self)
+
+    def apply_transform(self, unit_scale=1.):
+        r"""apply_transform(ConversionResult self, double unit_scale=1.) -> ConversionResultShape"""
+        return _ifcopenshell_wrapper.ConversionResult_apply_transform(self, unit_scale)
     __swig_destroy__ = _ifcopenshell_wrapper.delete_ConversionResult
 
 # Register ConversionResult in _ifcopenshell_wrapper:
@@ -468,109 +484,9 @@ NATIVE = _ifcopenshell_wrapper.NATIVE
 
 SERIALIZED = _ifcopenshell_wrapper.SERIALIZED
 
-class PermissiveShapeReuse(object):
-    r"""Proxy of C++ ifcopenshell::geometry::settings::PermissiveShapeReuse class."""
-
-    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
-    __repr__ = _swig_repr
-    name = _ifcopenshell_wrapper.PermissiveShapeReuse_name
-    
-    description = _ifcopenshell_wrapper.PermissiveShapeReuse_description
-    
-    defaultvalue = _ifcopenshell_wrapper.PermissiveShapeReuse_defaultvalue
-    
-
-    def __init__(self):
-        r"""__init__(PermissiveShapeReuse self) -> PermissiveShapeReuse"""
-        _ifcopenshell_wrapper.PermissiveShapeReuse_swiginit(self, _ifcopenshell_wrapper.new_PermissiveShapeReuse())
-    __swig_destroy__ = _ifcopenshell_wrapper.delete_PermissiveShapeReuse
-
-# Register PermissiveShapeReuse in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.PermissiveShapeReuse_swigregister(PermissiveShapeReuse)
-
-class CgalSmoothAngleDegrees(object):
-    r"""Proxy of C++ ifcopenshell::geometry::settings::CgalSmoothAngleDegrees class."""
-
-    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
-    __repr__ = _swig_repr
-    name = _ifcopenshell_wrapper.CgalSmoothAngleDegrees_name
-    
-    description = _ifcopenshell_wrapper.CgalSmoothAngleDegrees_description
-    
-    defaultvalue = _ifcopenshell_wrapper.CgalSmoothAngleDegrees_defaultvalue
-    
-
-    def __init__(self):
-        r"""__init__(CgalSmoothAngleDegrees self) -> CgalSmoothAngleDegrees"""
-        _ifcopenshell_wrapper.CgalSmoothAngleDegrees_swiginit(self, _ifcopenshell_wrapper.new_CgalSmoothAngleDegrees())
-    __swig_destroy__ = _ifcopenshell_wrapper.delete_CgalSmoothAngleDegrees
-
-# Register CgalSmoothAngleDegrees in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.CgalSmoothAngleDegrees_swigregister(CgalSmoothAngleDegrees)
-
-class ComputeCurvature(object):
-    r"""Proxy of C++ ifcopenshell::geometry::settings::ComputeCurvature class."""
-
-    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
-    __repr__ = _swig_repr
-    name = _ifcopenshell_wrapper.ComputeCurvature_name
-    
-    description = _ifcopenshell_wrapper.ComputeCurvature_description
-    
-    defaultvalue = _ifcopenshell_wrapper.ComputeCurvature_defaultvalue
-    
-
-    def __init__(self):
-        r"""__init__(ComputeCurvature self) -> ComputeCurvature"""
-        _ifcopenshell_wrapper.ComputeCurvature_swiginit(self, _ifcopenshell_wrapper.new_ComputeCurvature())
-    __swig_destroy__ = _ifcopenshell_wrapper.delete_ComputeCurvature
-
-# Register ComputeCurvature in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.ComputeCurvature_swigregister(ComputeCurvature)
-
 MAXSTEPSIZE = _ifcopenshell_wrapper.MAXSTEPSIZE
 
 MINSTEPS = _ifcopenshell_wrapper.MINSTEPS
-
-class FunctionStepType(object):
-    r"""Proxy of C++ ifcopenshell::geometry::settings::FunctionStepType class."""
-
-    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
-    __repr__ = _swig_repr
-    name = _ifcopenshell_wrapper.FunctionStepType_name
-    
-    description = _ifcopenshell_wrapper.FunctionStepType_description
-    
-    defaultvalue = _ifcopenshell_wrapper.FunctionStepType_defaultvalue
-    
-
-    def __init__(self):
-        r"""__init__(FunctionStepType self) -> FunctionStepType"""
-        _ifcopenshell_wrapper.FunctionStepType_swiginit(self, _ifcopenshell_wrapper.new_FunctionStepType())
-    __swig_destroy__ = _ifcopenshell_wrapper.delete_FunctionStepType
-
-# Register FunctionStepType in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.FunctionStepType_swigregister(FunctionStepType)
-
-class FunctionStepParam(object):
-    r"""Proxy of C++ ifcopenshell::geometry::settings::FunctionStepParam class."""
-
-    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
-    __repr__ = _swig_repr
-    name = _ifcopenshell_wrapper.FunctionStepParam_name
-    
-    description = _ifcopenshell_wrapper.FunctionStepParam_description
-    
-    defaultvalue = _ifcopenshell_wrapper.FunctionStepParam_defaultvalue
-    
-
-    def __init__(self):
-        r"""__init__(FunctionStepParam self) -> FunctionStepParam"""
-        _ifcopenshell_wrapper.FunctionStepParam_swiginit(self, _ifcopenshell_wrapper.new_FunctionStepParam())
-    __swig_destroy__ = _ifcopenshell_wrapper.delete_FunctionStepParam
-
-# Register FunctionStepParam in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.FunctionStepParam_swigregister(FunctionStepParam)
 
 TRIANGLE_MESH = _ifcopenshell_wrapper.TRIANGLE_MESH
 
@@ -587,160 +503,6 @@ def __rshift__(*args):
     __rshift__(std::istream & _in, ifcopenshell::geometry::settings::TriangulationMethod & ioo) -> std::istream &
     """
     return _ifcopenshell_wrapper.__rshift__(*args)
-class TriangulationType(object):
-    r"""Proxy of C++ ifcopenshell::geometry::settings::TriangulationType class."""
-
-    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
-    __repr__ = _swig_repr
-    name = _ifcopenshell_wrapper.TriangulationType_name
-    
-    description = _ifcopenshell_wrapper.TriangulationType_description
-    
-    defaultvalue = _ifcopenshell_wrapper.TriangulationType_defaultvalue
-    
-
-    def __init__(self):
-        r"""__init__(TriangulationType self) -> TriangulationType"""
-        _ifcopenshell_wrapper.TriangulationType_swiginit(self, _ifcopenshell_wrapper.new_TriangulationType())
-    __swig_destroy__ = _ifcopenshell_wrapper.delete_TriangulationType
-
-# Register TriangulationType in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.TriangulationType_swigregister(TriangulationType)
-
-class CgalEmitOriginalEdges(object):
-    r"""Proxy of C++ ifcopenshell::geometry::settings::CgalEmitOriginalEdges class."""
-
-    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
-    __repr__ = _swig_repr
-    name = _ifcopenshell_wrapper.CgalEmitOriginalEdges_name
-    
-    description = _ifcopenshell_wrapper.CgalEmitOriginalEdges_description
-    
-    defaultvalue = _ifcopenshell_wrapper.CgalEmitOriginalEdges_defaultvalue
-    
-
-    def __init__(self):
-        r"""__init__(CgalEmitOriginalEdges self) -> CgalEmitOriginalEdges"""
-        _ifcopenshell_wrapper.CgalEmitOriginalEdges_swiginit(self, _ifcopenshell_wrapper.new_CgalEmitOriginalEdges())
-    __swig_destroy__ = _ifcopenshell_wrapper.delete_CgalEmitOriginalEdges
-
-# Register CgalEmitOriginalEdges in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.CgalEmitOriginalEdges_swigregister(CgalEmitOriginalEdges)
-
-class OcctNoCleanTriangulation(object):
-    r"""Proxy of C++ ifcopenshell::geometry::settings::OcctNoCleanTriangulation class."""
-
-    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
-    __repr__ = _swig_repr
-    name = _ifcopenshell_wrapper.OcctNoCleanTriangulation_name
-    
-    description = _ifcopenshell_wrapper.OcctNoCleanTriangulation_description
-    
-    defaultvalue = _ifcopenshell_wrapper.OcctNoCleanTriangulation_defaultvalue
-    
-
-    def __init__(self):
-        r"""__init__(OcctNoCleanTriangulation self) -> OcctNoCleanTriangulation"""
-        _ifcopenshell_wrapper.OcctNoCleanTriangulation_swiginit(self, _ifcopenshell_wrapper.new_OcctNoCleanTriangulation())
-    __swig_destroy__ = _ifcopenshell_wrapper.delete_OcctNoCleanTriangulation
-
-# Register OcctNoCleanTriangulation in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.OcctNoCleanTriangulation_swigregister(OcctNoCleanTriangulation)
-
-class CacheShapes(object):
-    r"""Proxy of C++ ifcopenshell::geometry::settings::CacheShapes class."""
-
-    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
-    __repr__ = _swig_repr
-    name = _ifcopenshell_wrapper.CacheShapes_name
-    
-    description = _ifcopenshell_wrapper.CacheShapes_description
-    
-    defaultvalue = _ifcopenshell_wrapper.CacheShapes_defaultvalue
-    
-
-    def __init__(self):
-        r"""__init__(CacheShapes self) -> CacheShapes"""
-        _ifcopenshell_wrapper.CacheShapes_swiginit(self, _ifcopenshell_wrapper.new_CacheShapes())
-    __swig_destroy__ = _ifcopenshell_wrapper.delete_CacheShapes
-
-# Register CacheShapes in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.CacheShapes_swigregister(CacheShapes)
-
-class DeferProcessingFirstElement(object):
-    r"""Proxy of C++ ifcopenshell::geometry::settings::DeferProcessingFirstElement class."""
-
-    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
-    __repr__ = _swig_repr
-    name = _ifcopenshell_wrapper.DeferProcessingFirstElement_name
-    
-    description = _ifcopenshell_wrapper.DeferProcessingFirstElement_description
-    
-    defaultvalue = _ifcopenshell_wrapper.DeferProcessingFirstElement_defaultvalue
-    
-
-    def __init__(self):
-        r"""__init__(DeferProcessingFirstElement self) -> DeferProcessingFirstElement"""
-        _ifcopenshell_wrapper.DeferProcessingFirstElement_swiginit(self, _ifcopenshell_wrapper.new_DeferProcessingFirstElement())
-    __swig_destroy__ = _ifcopenshell_wrapper.delete_DeferProcessingFirstElement
-
-# Register DeferProcessingFirstElement in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.DeferProcessingFirstElement_swigregister(DeferProcessingFirstElement)
-
-class MaxOffset(object):
-    r"""Proxy of C++ ifcopenshell::geometry::settings::MaxOffset class."""
-
-    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
-    __repr__ = _swig_repr
-    name = _ifcopenshell_wrapper.MaxOffset_name
-    
-    description = _ifcopenshell_wrapper.MaxOffset_description
-    
-
-    def __init__(self):
-        r"""__init__(MaxOffset self) -> MaxOffset"""
-        _ifcopenshell_wrapper.MaxOffset_swiginit(self, _ifcopenshell_wrapper.new_MaxOffset())
-    __swig_destroy__ = _ifcopenshell_wrapper.delete_MaxOffset
-
-# Register MaxOffset in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.MaxOffset_swigregister(MaxOffset)
-
-class MaxOffsetDeviation(object):
-    r"""Proxy of C++ ifcopenshell::geometry::settings::MaxOffsetDeviation class."""
-
-    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
-    __repr__ = _swig_repr
-    name = _ifcopenshell_wrapper.MaxOffsetDeviation_name
-    
-    description = _ifcopenshell_wrapper.MaxOffsetDeviation_description
-    
-
-    def __init__(self):
-        r"""__init__(MaxOffsetDeviation self) -> MaxOffsetDeviation"""
-        _ifcopenshell_wrapper.MaxOffsetDeviation_swiginit(self, _ifcopenshell_wrapper.new_MaxOffsetDeviation())
-    __swig_destroy__ = _ifcopenshell_wrapper.delete_MaxOffsetDeviation
-
-# Register MaxOffsetDeviation in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.MaxOffsetDeviation_swigregister(MaxOffsetDeviation)
-
-class ApplyOffset(object):
-    r"""Proxy of C++ ifcopenshell::geometry::settings::ApplyOffset class."""
-
-    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
-    __repr__ = _swig_repr
-    name = _ifcopenshell_wrapper.ApplyOffset_name
-    
-    description = _ifcopenshell_wrapper.ApplyOffset_description
-    
-
-    def __init__(self):
-        r"""__init__(ApplyOffset self) -> ApplyOffset"""
-        _ifcopenshell_wrapper.ApplyOffset_swiginit(self, _ifcopenshell_wrapper.new_ApplyOffset())
-    __swig_destroy__ = _ifcopenshell_wrapper.delete_ApplyOffset
-
-# Register ApplyOffset in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.ApplyOffset_swigregister(ApplyOffset)
-
 class Settings(object):
     r"""Proxy of C++ ifcopenshell::geometry::Settings class."""
 
@@ -781,38 +543,6 @@ class Settings(object):
 
 # Register Settings in _ifcopenshell_wrapper:
 _ifcopenshell_wrapper.Settings_swigregister(Settings)
-
-class geometry_exception(object):
-    r"""Proxy of C++ IfcGeom::geometry_exception class."""
-
-    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
-    __repr__ = _swig_repr
-
-    def __init__(self, m):
-        r"""__init__(geometry_exception self, std::string const & m) -> geometry_exception"""
-        _ifcopenshell_wrapper.geometry_exception_swiginit(self, _ifcopenshell_wrapper.new_geometry_exception(m))
-    __swig_destroy__ = _ifcopenshell_wrapper.delete_geometry_exception
-
-    def what(self):
-        r"""what(geometry_exception self) -> char const *"""
-        return _ifcopenshell_wrapper.geometry_exception_what(self)
-
-# Register geometry_exception in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.geometry_exception_swigregister(geometry_exception)
-
-class too_many_faces_exception(geometry_exception):
-    r"""Proxy of C++ IfcGeom::too_many_faces_exception class."""
-
-    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
-    __repr__ = _swig_repr
-
-    def __init__(self):
-        r"""__init__(too_many_faces_exception self) -> too_many_faces_exception"""
-        _ifcopenshell_wrapper.too_many_faces_exception_swiginit(self, _ifcopenshell_wrapper.new_too_many_faces_exception())
-    __swig_destroy__ = _ifcopenshell_wrapper.delete_too_many_faces_exception
-
-# Register too_many_faces_exception in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.too_many_faces_exception_swigregister(too_many_faces_exception)
 
 class Transformation(object):
     r"""Proxy of C++ IfcGeom::Transformation class."""
@@ -1085,7 +815,7 @@ class BRep(Representation):
         return _ifcopenshell_wrapper.BRep_calculate_surface_area(self, arg2)
 
     def calculate_projected_surface_area(self, ax, along_x, along_y, along_z):
-        r"""calculate_projected_surface_area(BRep self, matrix4 ax, double & along_x, double & along_y, double & along_z) -> bool"""
+        r"""calculate_projected_surface_area(BRep self, ifcopenshell::geometry::taxonomy::matrix4::ptr const & ax, double & along_x, double & along_y, double & along_z) -> bool"""
         return _ifcopenshell_wrapper.BRep_calculate_projected_surface_area(self, ax, along_x, along_y, along_z)
 
     def size(self):
@@ -1342,11 +1072,9 @@ class Iterator(object):
 
     def __init__(self, *args):
         r"""
-        __init__(Iterator self, std::string const & geometry_library, Settings settings, file file, std::vector< IfcGeom::filter_t,std::allocator< IfcGeom::filter_t > > const & filters, int num_threads) -> Iterator
-        __init__(Iterator self, Settings settings, file file, std::vector< IfcGeom::filter_t,std::allocator< IfcGeom::filter_t > > const & filters, int num_threads) -> Iterator
-        __init__(Iterator self, Settings settings, file file) -> Iterator
-        __init__(Iterator self, std::string const & geometry_library, Settings settings, file file) -> Iterator
-        __init__(Iterator self, std::string const & geometry_library, Settings settings, file file, int num_threads) -> Iterator
+        __init__(Iterator self, std::unique_ptr< ifcopenshell::geometry::kernels::AbstractKernel > && geometry_library, Settings settings, file file, std::vector< IfcGeom::filter_t,std::allocator< IfcGeom::filter_t > > const & filters, int num_threads) -> Iterator
+        __init__(Iterator self, std::unique_ptr< ifcopenshell::geometry::kernels::AbstractKernel > && geometry_library, Settings settings, file file) -> Iterator
+        __init__(Iterator self, std::unique_ptr< ifcopenshell::geometry::kernels::AbstractKernel > && geometry_library, Settings settings, file file, int num_threads) -> Iterator
         """
         _ifcopenshell_wrapper.Iterator_swiginit(self, _ifcopenshell_wrapper.new_Iterator(*args))
     __swig_destroy__ = _ifcopenshell_wrapper.delete_Iterator
@@ -1579,23 +1307,6 @@ class WriteOnlyGeometrySerializer(GeometrySerializer):
 # Register WriteOnlyGeometrySerializer in _ifcopenshell_wrapper:
 _ifcopenshell_wrapper.WriteOnlyGeometrySerializer_swigregister(WriteOnlyGeometrySerializer)
 
-class topology_error(object):
-    r"""Proxy of C++ ifcopenshell::geometry::taxonomy::topology_error class."""
-
-    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
-    __repr__ = _swig_repr
-
-    def __init__(self, *args):
-        r"""
-        __init__(topology_error self) -> topology_error
-        __init__(topology_error self, char const *const s) -> topology_error
-        """
-        _ifcopenshell_wrapper.topology_error_swiginit(self, _ifcopenshell_wrapper.new_topology_error(*args))
-    __swig_destroy__ = _ifcopenshell_wrapper.delete_topology_error
-
-# Register topology_error in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.topology_error_swigregister(topology_error)
-
 MATRIX4 = _ifcopenshell_wrapper.MATRIX4
 
 POINT3 = _ifcopenshell_wrapper.POINT3
@@ -1746,6 +1457,14 @@ class matrix4(item):
     def calc_hash(self):
         r"""calc_hash(matrix4 self) -> size_t"""
         return _ifcopenshell_wrapper.matrix4_calc_hash(self)
+
+    def pre_multiply_scale(self, s):
+        r"""pre_multiply_scale(matrix4 self, double s)"""
+        return _ifcopenshell_wrapper.matrix4_pre_multiply_scale(self, s)
+
+    def post_multiply_scale(self, s):
+        r"""post_multiply_scale(matrix4 self, double s)"""
+        return _ifcopenshell_wrapper.matrix4_post_multiply_scale(self, s)
 
     def translation_part(self):
         r"""translation_part(matrix4 self) -> Eigen::Vector3d"""
@@ -3199,6 +2918,7 @@ class sweep_along_curve(sweep):
     __repr__ = _swig_repr
     surface = property(_ifcopenshell_wrapper.sweep_along_curve_surface_get, _ifcopenshell_wrapper.sweep_along_curve_surface_set, doc=r"""surface : ifcopenshell::geometry::taxonomy::item::ptr""")
     curve = property(_ifcopenshell_wrapper.sweep_along_curve_curve_get, _ifcopenshell_wrapper.sweep_along_curve_curve_set, doc=r"""curve : ifcopenshell::geometry::taxonomy::item::ptr""")
+    direction = property(_ifcopenshell_wrapper.sweep_along_curve_direction_get, _ifcopenshell_wrapper.sweep_along_curve_direction_set, doc=r"""direction : ifcopenshell::geometry::taxonomy::direction3::ptr""")
 
     def clone_(self):
         r"""clone_(sweep_along_curve self) -> sweep_along_curve"""
@@ -3208,9 +2928,12 @@ class sweep_along_curve(sweep):
         r"""kind(sweep_along_curve self) -> ifcopenshell::geometry::taxonomy::kinds"""
         return _ifcopenshell_wrapper.sweep_along_curve_kind(self)
 
-    def __init__(self, m, basis, surf, crv):
-        r"""__init__(sweep_along_curve self, ifcopenshell::geometry::taxonomy::matrix4::ptr m, ifcopenshell::geometry::taxonomy::face::ptr basis, ifcopenshell::geometry::taxonomy::item::ptr surf, ifcopenshell::geometry::taxonomy::item::ptr crv) -> sweep_along_curve"""
-        _ifcopenshell_wrapper.sweep_along_curve_swiginit(self, _ifcopenshell_wrapper.new_sweep_along_curve(m, basis, surf, crv))
+    def __init__(self, *args):
+        r"""
+        __init__(sweep_along_curve self, ifcopenshell::geometry::taxonomy::matrix4::ptr m, ifcopenshell::geometry::taxonomy::face::ptr basis, ifcopenshell::geometry::taxonomy::item::ptr surf, ifcopenshell::geometry::taxonomy::item::ptr crv) -> sweep_along_curve
+        __init__(sweep_along_curve self, ifcopenshell::geometry::taxonomy::matrix4::ptr m, ifcopenshell::geometry::taxonomy::face::ptr profile, ifcopenshell::geometry::taxonomy::item::ptr directrix, ifcopenshell::geometry::taxonomy::direction3::ptr ref) -> sweep_along_curve
+        """
+        _ifcopenshell_wrapper.sweep_along_curve_swiginit(self, _ifcopenshell_wrapper.new_sweep_along_curve(*args))
 
     def calc_hash(self):
         r"""calc_hash(sweep_along_curve self) -> size_t"""
@@ -4503,6 +4226,10 @@ def tree_vector_to_list(ps):
     r"""tree_vector_to_list(std::vector< IfcUtil::IfcBaseEntity const *,std::allocator< IfcUtil::IfcBaseEntity const * > > const & ps) -> aggregate_of_instance::ptr"""
     return _ifcopenshell_wrapper.tree_vector_to_list(ps)
 
+
+def construct_iterator(geometry_library, settings, file, num_threads):
+    r"""construct_iterator(std::string const & geometry_library, Settings settings, file file, int num_threads) -> Iterator"""
+    return _ifcopenshell_wrapper.construct_iterator(geometry_library, settings, file, num_threads)
 
 def construct_iterator_with_include_exclude(geometry_library, settings, file, elems, include, num_threads):
     r"""construct_iterator_with_include_exclude(std::string const & geometry_library, Settings settings, file file, std::vector< std::string,std::allocator< std::string > > elems, bool include, int num_threads) -> Iterator"""
@@ -5990,157 +5717,36 @@ def set_feature(x, v):
 def get_feature(x):
     r"""get_feature(std::string const & x) -> PyObject *"""
     return _ifcopenshell_wrapper.get_feature(x)
-class HeaderEntity(object):
-    r"""Proxy of C++ IfcParse::HeaderEntity class."""
+class RocksDBPrefixIterator(object):
+    r"""Proxy of C++ RocksDBPrefixIterator class."""
 
     thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
-
-    def __init__(self, *args, **kwargs):
-        raise AttributeError("No constructor defined")
     __repr__ = _swig_repr
 
-    def getArgumentCount(self):
-        r"""getArgumentCount(HeaderEntity self) -> size_t"""
-        return _ifcopenshell_wrapper.HeaderEntity_getArgumentCount(self)
+    def __init__(self, storage, prefix):
+        r"""__init__(RocksDBPrefixIterator self, IfcParse::impl::rocks_db_file_storage const * storage, std::string const & prefix) -> RocksDBPrefixIterator"""
+        _ifcopenshell_wrapper.RocksDBPrefixIterator_swiginit(self, _ifcopenshell_wrapper.new_RocksDBPrefixIterator(storage, prefix))
 
-    def getArgument(self, index):
-        r"""getArgument(HeaderEntity self, size_t index) -> AttributeValue"""
-        return _ifcopenshell_wrapper.HeaderEntity_getArgument(self, index)
+    def valid(self):
+        r"""valid(RocksDBPrefixIterator self) -> bool"""
+        return _ifcopenshell_wrapper.RocksDBPrefixIterator_valid(self)
 
-    def toString(self, upper=False):
-        r"""toString(HeaderEntity self, bool upper=False) -> std::string"""
-        return _ifcopenshell_wrapper.HeaderEntity_toString(self, upper)
+    def next(self):
+        r"""next(RocksDBPrefixIterator self)"""
+        return _ifcopenshell_wrapper.RocksDBPrefixIterator_next(self)
 
-# Register HeaderEntity in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.HeaderEntity_swigregister(HeaderEntity)
+    def key(self):
+        r"""key(RocksDBPrefixIterator self) -> PyObject *"""
+        return _ifcopenshell_wrapper.RocksDBPrefixIterator_key(self)
+
+    def value(self):
+        r"""value(RocksDBPrefixIterator self) -> PyObject *"""
+        return _ifcopenshell_wrapper.RocksDBPrefixIterator_value(self)
+    __swig_destroy__ = _ifcopenshell_wrapper.delete_RocksDBPrefixIterator
+
+# Register RocksDBPrefixIterator in _ifcopenshell_wrapper:
+_ifcopenshell_wrapper.RocksDBPrefixIterator_swigregister(RocksDBPrefixIterator)
 cvar = _ifcopenshell_wrapper.cvar
-
-class FileDescription(HeaderEntity):
-    r"""Proxy of C++ IfcParse::FileDescription class."""
-
-    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
-
-    def __init__(self, *args, **kwargs):
-        raise AttributeError("No constructor defined")
-    __repr__ = _swig_repr
-
-    def description(self, *args):
-        r"""
-        description(FileDescription self, std::vector< std::string,std::allocator< std::string > > const & value)
-        description(FileDescription self) -> AttributeValue
-        """
-        return _ifcopenshell_wrapper.FileDescription_description(self, *args)
-
-    def implementation_level(self, *args):
-        r"""
-        implementation_level(FileDescription self, std::string const & value)
-        implementation_level(FileDescription self) -> AttributeValue
-        """
-        return _ifcopenshell_wrapper.FileDescription_implementation_level(self, *args)
-
-            # Hide the getters with read-write property implementations
-    description = property(description, description)
-    implementation_level = property(implementation_level, implementation_level)
-
-    __swig_destroy__ = _ifcopenshell_wrapper.delete_FileDescription
-
-# Register FileDescription in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.FileDescription_swigregister(FileDescription)
-
-class FileName(HeaderEntity):
-    r"""Proxy of C++ IfcParse::FileName class."""
-
-    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
-
-    def __init__(self, *args, **kwargs):
-        raise AttributeError("No constructor defined")
-    __repr__ = _swig_repr
-
-    def name(self, *args):
-        r"""
-        name(FileName self, std::string const & value)
-        name(FileName self) -> AttributeValue
-        """
-        return _ifcopenshell_wrapper.FileName_name(self, *args)
-
-    def time_stamp(self, *args):
-        r"""
-        time_stamp(FileName self, std::string const & value)
-        time_stamp(FileName self) -> AttributeValue
-        """
-        return _ifcopenshell_wrapper.FileName_time_stamp(self, *args)
-
-    def author(self, *args):
-        r"""
-        author(FileName self, std::vector< std::string,std::allocator< std::string > > const & value)
-        author(FileName self) -> AttributeValue
-        """
-        return _ifcopenshell_wrapper.FileName_author(self, *args)
-
-    def organization(self, *args):
-        r"""
-        organization(FileName self, std::vector< std::string,std::allocator< std::string > > const & value)
-        organization(FileName self) -> AttributeValue
-        """
-        return _ifcopenshell_wrapper.FileName_organization(self, *args)
-
-    def preprocessor_version(self, *args):
-        r"""
-        preprocessor_version(FileName self, std::string const & value)
-        preprocessor_version(FileName self) -> AttributeValue
-        """
-        return _ifcopenshell_wrapper.FileName_preprocessor_version(self, *args)
-
-    def originating_system(self, *args):
-        r"""
-        originating_system(FileName self, std::string const & value)
-        originating_system(FileName self) -> AttributeValue
-        """
-        return _ifcopenshell_wrapper.FileName_originating_system(self, *args)
-
-    def authorization(self, *args):
-        r"""
-        authorization(FileName self, std::string const & value)
-        authorization(FileName self) -> AttributeValue
-        """
-        return _ifcopenshell_wrapper.FileName_authorization(self, *args)
-
-    name = property(name, name)
-    time_stamp = property(time_stamp, time_stamp)
-    author = property(author, author)
-    organization = property(organization, organization)
-    preprocessor_version = property(preprocessor_version, preprocessor_version)
-    originating_system = property(originating_system, originating_system)
-    authorization = property(authorization, authorization)
-
-    __swig_destroy__ = _ifcopenshell_wrapper.delete_FileName
-
-# Register FileName in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.FileName_swigregister(FileName)
-
-class FileSchema(HeaderEntity):
-    r"""Proxy of C++ IfcParse::FileSchema class."""
-
-    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
-
-    def __init__(self, *args, **kwargs):
-        raise AttributeError("No constructor defined")
-    __repr__ = _swig_repr
-
-    def schema_identifiers(self, *args):
-        r"""
-        schema_identifiers(FileSchema self) -> std::vector< std::string,std::allocator< std::string > >
-        schema_identifiers(FileSchema self, std::vector< std::string,std::allocator< std::string > > const & value)
-        """
-        return _ifcopenshell_wrapper.FileSchema_schema_identifiers(self, *args)
-
-            # Hide the getters with read-write property implementations
-    schema_identifiers = property(schema_identifiers, schema_identifiers)
-
-    __swig_destroy__ = _ifcopenshell_wrapper.delete_FileSchema
-
-# Register FileSchema in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.FileSchema_swigregister(FileSchema)
 
 class IfcSpfHeader(object):
     r"""Proxy of C++ IfcParse::IfcSpfHeader class."""
@@ -6148,9 +5754,12 @@ class IfcSpfHeader(object):
     thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
     __repr__ = _swig_repr
 
-    def __init__(self, file=None):
-        r"""__init__(IfcSpfHeader self, file file=None) -> IfcSpfHeader"""
-        _ifcopenshell_wrapper.IfcSpfHeader_swiginit(self, _ifcopenshell_wrapper.new_IfcSpfHeader(file))
+    def __init__(self, *args):
+        r"""
+        __init__(IfcSpfHeader self, file file=None) -> IfcSpfHeader
+        __init__(IfcSpfHeader self, IfcParse::IfcSpfLexer * lexer) -> IfcSpfHeader
+        """
+        _ifcopenshell_wrapper.IfcSpfHeader_swiginit(self, _ifcopenshell_wrapper.new_IfcSpfHeader(*args))
     __swig_destroy__ = _ifcopenshell_wrapper.delete_IfcSpfHeader
 
     def file(self, *args):
@@ -6172,130 +5781,150 @@ class IfcSpfHeader(object):
         r"""write(IfcSpfHeader self, std::ostream & out)"""
         return _ifcopenshell_wrapper.IfcSpfHeader_write(self, out)
 
-    def file_description(self, *args):
-        r"""
-        file_description(IfcSpfHeader self) -> FileDescription
-        file_description(IfcSpfHeader self) -> FileDescription
-        """
-        return _ifcopenshell_wrapper.IfcSpfHeader_file_description(self, *args)
+    def file_description_py(self):
+        r"""file_description_py(IfcSpfHeader self) -> entity_instance"""
+        return _ifcopenshell_wrapper.IfcSpfHeader_file_description_py(self)
 
-    def file_name(self, *args):
-        r"""
-        file_name(IfcSpfHeader self) -> FileName
-        file_name(IfcSpfHeader self) -> FileName
-        """
-        return _ifcopenshell_wrapper.IfcSpfHeader_file_name(self, *args)
+    def file_name_py(self):
+        r"""file_name_py(IfcSpfHeader self) -> entity_instance"""
+        return _ifcopenshell_wrapper.IfcSpfHeader_file_name_py(self)
 
-    def file_schema(self, *args):
-        r"""
-        file_schema(IfcSpfHeader self) -> FileSchema
-        file_schema(IfcSpfHeader self) -> FileSchema
-        """
-        return _ifcopenshell_wrapper.IfcSpfHeader_file_schema(self, *args)
-
-            # Hide the getters with read-only property implementations
-    file_description = property(file_description)
-    file_name = property(file_name)
-    file_schema = property(file_schema)
-
+    def file_schema_py(self):
+        r"""file_schema_py(IfcSpfHeader self) -> entity_instance"""
+        return _ifcopenshell_wrapper.IfcSpfHeader_file_schema_py(self)
 
 # Register IfcSpfHeader in _ifcopenshell_wrapper:
 _ifcopenshell_wrapper.IfcSpfHeader_swigregister(IfcSpfHeader)
 
-class file_open_status(object):
-    r"""Proxy of C++ IfcParse::file_open_status class."""
+FT_IFCSPF = _ifcopenshell_wrapper.FT_IFCSPF
+
+FT_IFCXML = _ifcopenshell_wrapper.FT_IFCXML
+
+FT_IFCZIP = _ifcopenshell_wrapper.FT_IFCZIP
+
+FT_ROCKSDB = _ifcopenshell_wrapper.FT_ROCKSDB
+
+FT_UNKNOWN = _ifcopenshell_wrapper.FT_UNKNOWN
+
+FT_AUTODETECT = _ifcopenshell_wrapper.FT_AUTODETECT
+
+
+def guess_file_type(fn):
+    r"""guess_file_type(std::string const & fn) -> IfcParse::filetype"""
+    return _ifcopenshell_wrapper.guess_file_type(fn)
+class InstanceStreamer(object):
+    r"""Proxy of C++ IfcParse::InstanceStreamer class."""
 
     thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
     __repr__ = _swig_repr
-    SUCCESS = _ifcopenshell_wrapper.file_open_status_SUCCESS
-    
-    READ_ERROR = _ifcopenshell_wrapper.file_open_status_READ_ERROR
-    
-    NO_HEADER = _ifcopenshell_wrapper.file_open_status_NO_HEADER
-    
-    UNSUPPORTED_SCHEMA = _ifcopenshell_wrapper.file_open_status_UNSUPPORTED_SCHEMA
-    
-    INVALID_SYNTAX = _ifcopenshell_wrapper.file_open_status_INVALID_SYNTAX
-    
-
-    def __init__(self, error):
-        r"""__init__(file_open_status self, IfcParse::file_open_status::file_open_enum error) -> file_open_status"""
-        _ifcopenshell_wrapper.file_open_status_swiginit(self, _ifcopenshell_wrapper.new_file_open_status(error))
-
-    def value(self):
-        r"""value(file_open_status self) -> IfcParse::file_open_status::file_open_enum"""
-        return _ifcopenshell_wrapper.file_open_status_value(self)
+    coerce_attribute_count = property(_ifcopenshell_wrapper.InstanceStreamer_coerce_attribute_count_get, _ifcopenshell_wrapper.InstanceStreamer_coerce_attribute_count_set, doc=r"""coerce_attribute_count : bool""")
 
     def __nonzero__(self):
-        return _ifcopenshell_wrapper.file_open_status___nonzero__(self)
+        return _ifcopenshell_wrapper.InstanceStreamer___nonzero__(self)
     __bool__ = __nonzero__
 
 
-    __swig_destroy__ = _ifcopenshell_wrapper.delete_file_open_status
 
-# Register file_open_status in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.file_open_status_swigregister(file_open_status)
+    def status(self):
+        r"""status(InstanceStreamer self) -> file_open_status"""
+        return _ifcopenshell_wrapper.InstanceStreamer_status(self)
 
-class InstanceReference(object):
-    r"""Proxy of C++ IfcParse::InstanceReference class."""
+    def references(self, *args):
+        r"""
+        references(InstanceStreamer self) -> IfcParse::unresolved_references const
+        references(InstanceStreamer self) -> IfcParse::unresolved_references &
+        """
+        return _ifcopenshell_wrapper.InstanceStreamer_references(self, *args)
+
+    def bypassed_instances(self):
+        r"""bypassed_instances(InstanceStreamer self) -> std::vector< unsigned int,std::allocator< unsigned int > > const &"""
+        return _ifcopenshell_wrapper.InstanceStreamer_bypassed_instances(self)
+
+    def inverses(self, *args):
+        r"""
+        inverses(InstanceStreamer self) -> IfcParse::impl::in_memory_file_storage::entities_by_ref_t const
+        inverses(InstanceStreamer self) -> IfcParse::impl::in_memory_file_storage::entities_by_ref_t &
+        """
+        return _ifcopenshell_wrapper.InstanceStreamer_inverses(self, *args)
+
+    def hasSemicolon(self):
+        r"""hasSemicolon(InstanceStreamer self) -> bool"""
+        return _ifcopenshell_wrapper.InstanceStreamer_hasSemicolon(self)
+
+    def semicolonCount(self):
+        r"""semicolonCount(InstanceStreamer self) -> size_t"""
+        return _ifcopenshell_wrapper.InstanceStreamer_semicolonCount(self)
+
+    def pushPage(self, page):
+        r"""pushPage(InstanceStreamer self, std::string const & page)"""
+        return _ifcopenshell_wrapper.InstanceStreamer_pushPage(self, page)
+
+    def __init__(self, *args):
+        r"""
+        __init__(InstanceStreamer self) -> InstanceStreamer
+        __init__(InstanceStreamer self, std::string const & fn, bool mmap=False) -> InstanceStreamer
+        __init__(InstanceStreamer self, void * data, int length) -> InstanceStreamer
+        """
+        _ifcopenshell_wrapper.InstanceStreamer_swiginit(self, _ifcopenshell_wrapper.new_InstanceStreamer(*args))
+
+    def bypassTypes(self, type_names):
+        r"""bypassTypes(InstanceStreamer self, std::set< std::string > const & type_names)"""
+        return _ifcopenshell_wrapper.InstanceStreamer_bypassTypes(self, type_names)
+    __swig_destroy__ = _ifcopenshell_wrapper.delete_InstanceStreamer
+
+    def readInstancePy(self, type_as_declaration_instance=False):
+        r"""readInstancePy(InstanceStreamer self, bool type_as_declaration_instance=False) -> PyObject"""
+        return _ifcopenshell_wrapper.InstanceStreamer_readInstancePy(self, type_as_declaration_instance)
+
+# Register InstanceStreamer in _ifcopenshell_wrapper:
+_ifcopenshell_wrapper.InstanceStreamer_swigregister(InstanceStreamer)
+
+class uninitialized_tag(object):
+    r"""Proxy of C++ IfcParse::uninitialized_tag class."""
 
     thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
     __repr__ = _swig_repr
-    v = property(_ifcopenshell_wrapper.InstanceReference_v_get, _ifcopenshell_wrapper.InstanceReference_v_set, doc=r"""v : int""")
-    file_offset = property(_ifcopenshell_wrapper.InstanceReference_file_offset_get, _ifcopenshell_wrapper.InstanceReference_file_offset_set, doc=r"""file_offset : size_t""")
 
     def __init__(self):
-        r"""__init__(InstanceReference self) -> InstanceReference"""
-        _ifcopenshell_wrapper.InstanceReference_swiginit(self, _ifcopenshell_wrapper.new_InstanceReference())
-    __swig_destroy__ = _ifcopenshell_wrapper.delete_InstanceReference
+        r"""__init__(uninitialized_tag self) -> uninitialized_tag"""
+        _ifcopenshell_wrapper.uninitialized_tag_swiginit(self, _ifcopenshell_wrapper.new_uninitialized_tag())
+    __swig_destroy__ = _ifcopenshell_wrapper.delete_uninitialized_tag
 
-# Register InstanceReference in _ifcopenshell_wrapper:
-_ifcopenshell_wrapper.InstanceReference_swigregister(InstanceReference)
+# Register uninitialized_tag in _ifcopenshell_wrapper:
+_ifcopenshell_wrapper.uninitialized_tag_swigregister(uninitialized_tag)
 
 class file(object):
     r"""Proxy of C++ IfcParse::IfcFile class."""
 
     thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
     __repr__ = _swig_repr
-    INSTANCE_ID = _ifcopenshell_wrapper.file_INSTANCE_ID
-    
-    INSTANCE_TYPE = _ifcopenshell_wrapper.file_INSTANCE_TYPE
-    
-    ATTRIBUTE_INDEX = _ifcopenshell_wrapper.file_ATTRIBUTE_INDEX
-    
-    guid_map_ = property(_ifcopenshell_wrapper.file_guid_map__get, _ifcopenshell_wrapper.file_guid_map__set, doc=r"""guid_map_ : bool""")
-
-    @staticmethod
-    def guid_map(*args):
-        r"""
-        guid_map() -> bool
-        guid_map(bool b)
-        """
-        return _ifcopenshell_wrapper.file_guid_map(*args)
-    stream = property(_ifcopenshell_wrapper.file_stream_get, _ifcopenshell_wrapper.file_stream_set, doc=r"""stream : p.IfcParse::IfcSpfStream""")
+    check_existance_before_adding = property(_ifcopenshell_wrapper.file_check_existance_before_adding_get, _ifcopenshell_wrapper.file_check_existance_before_adding_set, doc=r"""check_existance_before_adding : bool""")
+    calculate_unit_factors = property(_ifcopenshell_wrapper.file_calculate_unit_factors_get, _ifcopenshell_wrapper.file_calculate_unit_factors_set, doc=r"""calculate_unit_factors : bool""")
+    instantiate_typed_instances = property(_ifcopenshell_wrapper.file_instantiate_typed_instances_get, _ifcopenshell_wrapper.file_instantiate_typed_instances_set, doc=r"""instantiate_typed_instances : bool""")
 
     def __init__(self, *args):
         r"""
-        __init__(file self, std::string const & path) -> file
+        __init__(file self, std::string const & path, IfcParse::filetype ty=FT_AUTODETECT, bool readonly=False) -> file
         __init__(file self, std::istream & stream, int length) -> file
         __init__(file self, void * data, int length) -> file
-        __init__(file self, IfcParse::IfcSpfStream * stream) -> file
-        __init__(file self, schema_definition schema=IfcParse::schema_by_name("IFC4")) -> file
+        __init__(file self, IfcParse::FileReader * stream) -> file
+        __init__(file self, schema_definition schema=IfcParse::schema_by_name("IFC4"), IfcParse::filetype ty=FT_AUTODETECT, std::string const & path="") -> file
+        __init__(file self, uninitialized_tag arg2) -> file
         """
         _ifcopenshell_wrapper.file_swiginit(self, _ifcopenshell_wrapper.new_file(*args))
+
+    def initialize(self, *args):
+        r"""initialize(file self, std::string const & path, IfcParse::filetype ty=FT_AUTODETECT, bool readonly=False) -> bool"""
+        return _ifcopenshell_wrapper.file_initialize(self, *args)
+
+    def bypass_type(self, type_name):
+        r"""bypass_type(file self, std::string const & type_name)"""
+        return _ifcopenshell_wrapper.file_bypass_type(self, type_name)
     __swig_destroy__ = _ifcopenshell_wrapper.delete_file
 
     def good(self):
         r"""good(file self) -> file_open_status"""
         return _ifcopenshell_wrapper.file_good(self)
-
-    def types_begin(self):
-        r"""types_begin(file self) -> IfcParse::IfcFile::type_iterator"""
-        return _ifcopenshell_wrapper.file_types_begin(self)
-
-    def types_end(self):
-        r"""types_end(file self) -> IfcParse::IfcFile::type_iterator"""
-        return _ifcopenshell_wrapper.file_types_end(self)
 
     def by_type(self, *args):
         r"""
@@ -6361,14 +5990,6 @@ class file(object):
         r"""addEntities(file self, aggregate_of_instance::ptr entities)"""
         return _ifcopenshell_wrapper.file_addEntities(self, entities)
 
-    def batch(self):
-        r"""batch(file self)"""
-        return _ifcopenshell_wrapper.file_batch(self)
-
-    def unbatch(self):
-        r"""unbatch(file self)"""
-        return _ifcopenshell_wrapper.file_unbatch(self)
-
     def remove(self, entity):
         r"""remove(file self, entity_instance entity)"""
         return _ifcopenshell_wrapper.file_remove(self, entity)
@@ -6385,14 +6006,6 @@ class file(object):
         r"""createTimestamp() -> std::string"""
         return _ifcopenshell_wrapper.file_createTimestamp()
 
-    def load(self, entity_instance_name, entity, arg4, attribute_index=-1):
-        r"""load(file self, unsigned int entity_instance_name, entity entity, IfcParse::parse_context & arg4, int attribute_index=-1)"""
-        return _ifcopenshell_wrapper.file_load(self, entity_instance_name, entity, arg4, attribute_index)
-
-    def try_read_semicolon(self):
-        r"""try_read_semicolon(file self)"""
-        return _ifcopenshell_wrapper.file_try_read_semicolon(self)
-
     def getUnit(self, unit_type):
         r"""getUnit(file self, std::string const & unit_type) -> std::pair< IfcUtil::IfcBaseClass *,double >"""
         return _ifcopenshell_wrapper.file_getUnit(self, unit_type)
@@ -6401,9 +6014,37 @@ class file(object):
         r"""build_inverses(file self)"""
         return _ifcopenshell_wrapper.file_build_inverses(self)
 
-    def internal_guid_map(self):
-        r"""internal_guid_map(file self) -> IfcParse::IfcFile::entity_by_guid_t &"""
-        return _ifcopenshell_wrapper.file_internal_guid_map(self)
+    def add_type_ref(self, new_entity):
+        r"""add_type_ref(file self, entity_instance new_entity)"""
+        return _ifcopenshell_wrapper.file_add_type_ref(self, new_entity)
+
+    def remove_type_ref(self, new_entity):
+        r"""remove_type_ref(file self, entity_instance new_entity)"""
+        return _ifcopenshell_wrapper.file_remove_type_ref(self, new_entity)
+
+    def process_deletion_inverse(self, inst):
+        r"""process_deletion_inverse(file self, entity_instance inst)"""
+        return _ifcopenshell_wrapper.file_process_deletion_inverse(self, inst)
+
+    def build_inverses_(self, arg2):
+        r"""build_inverses_(file self, entity_instance arg2)"""
+        return _ifcopenshell_wrapper.file_build_inverses_(self, arg2)
+
+    def create(self, decl):
+        r"""create(file self, declaration decl) -> entity_instance"""
+        return _ifcopenshell_wrapper.file_create(self, decl)
+
+    def batch(self):
+        r"""batch(file self)"""
+        return _ifcopenshell_wrapper.file_batch(self)
+
+    def unbatch(self):
+        r"""unbatch(file self)"""
+        return _ifcopenshell_wrapper.file_unbatch(self)
+
+    def reset_identity_cache(self):
+        r"""reset_identity_cache(file self)"""
+        return _ifcopenshell_wrapper.file_reset_identity_cache(self)
 
     def file_pointer(self):
         r"""file_pointer(file self) -> size_t"""
@@ -6444,20 +6085,23 @@ class file(object):
         r"""schema_name(file self) -> std::string"""
         return _ifcopenshell_wrapper.file_schema_name(self)
 
-            # Hide the getters with read-only property implementations
-    header = property(header)
+    def storage_mode(self):
+        r"""storage_mode(file self) -> int"""
+        return _ifcopenshell_wrapper.file_storage_mode(self)
+
+    def key_value_store_iter(self, prefix):
+        r"""key_value_store_iter(file self, std::string const & prefix) -> RocksDBPrefixIterator"""
+        return _ifcopenshell_wrapper.file_key_value_store_iter(self, prefix)
+
+    def key_value_store_query(self, key):
+        r"""key_value_store_query(file self, std::string const & key) -> PyObject *"""
+        return _ifcopenshell_wrapper.file_key_value_store_query(self, key)
+
     schema = property(schema_name)
 
 
 # Register file in _ifcopenshell_wrapper:
 _ifcopenshell_wrapper.file_swigregister(file)
-
-def file_guid_map(*args):
-    r"""
-    file_guid_map() -> bool
-    file_guid_map(bool b)
-    """
-    return _ifcopenshell_wrapper.file_guid_map(*args)
 
 def file_traverse(instance, max_level=-1):
     r"""file_traverse(entity_instance instance, int max_level=-1) -> aggregate_of_instance::ptr"""
@@ -6475,6 +6119,42 @@ def file_createTimestamp():
 def parse_ifcxml(filename):
     r"""parse_ifcxml(std::string const & filename) -> file"""
     return _ifcopenshell_wrapper.parse_ifcxml(filename)
+class file_open_status(object):
+    r"""Proxy of C++ IfcParse::file_open_status class."""
+
+    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
+    __repr__ = _swig_repr
+    SUCCESS = _ifcopenshell_wrapper.file_open_status_SUCCESS
+    
+    READ_ERROR = _ifcopenshell_wrapper.file_open_status_READ_ERROR
+    
+    NO_HEADER = _ifcopenshell_wrapper.file_open_status_NO_HEADER
+    
+    UNSUPPORTED_SCHEMA = _ifcopenshell_wrapper.file_open_status_UNSUPPORTED_SCHEMA
+    
+    INVALID_SYNTAX = _ifcopenshell_wrapper.file_open_status_INVALID_SYNTAX
+    
+    UNKNOWN = _ifcopenshell_wrapper.file_open_status_UNKNOWN
+    
+
+    def __init__(self, *args):
+        r"""__init__(file_open_status self, IfcParse::file_open_status::file_open_enum error=UNKNOWN) -> file_open_status"""
+        _ifcopenshell_wrapper.file_open_status_swiginit(self, _ifcopenshell_wrapper.new_file_open_status(*args))
+
+    def value(self):
+        r"""value(file_open_status self) -> IfcParse::file_open_status::file_open_enum"""
+        return _ifcopenshell_wrapper.file_open_status_value(self)
+
+    def __nonzero__(self):
+        return _ifcopenshell_wrapper.file_open_status___nonzero__(self)
+    __bool__ = __nonzero__
+
+
+    __swig_destroy__ = _ifcopenshell_wrapper.delete_file_open_status
+
+# Register file_open_status in _ifcopenshell_wrapper:
+_ifcopenshell_wrapper.file_open_status_swigregister(file_open_status)
+
 class entity_instance(object):
     r"""Proxy of C++ IfcUtil::IfcBaseClass class."""
 
@@ -6496,9 +6176,20 @@ class entity_instance(object):
         r"""declaration(entity_instance self) -> declaration"""
         return _ifcopenshell_wrapper.entity_instance_declaration(self)
 
+    def set_attribute_value(self, *args):
+        r"""
+        set_attribute_value(entity_instance self, size_t i, entity_instance p)
+        set_attribute_value(entity_instance self, std::string const & name, entity_instance p)
+        """
+        return _ifcopenshell_wrapper.entity_instance_set_attribute_value(self, *args)
+
     def unset_attribute_value(self, i):
         r"""unset_attribute_value(entity_instance self, size_t i)"""
         return _ifcopenshell_wrapper.entity_instance_unset_attribute_value(self, i)
+
+    def get_attribute_value(self, index):
+        r"""get_attribute_value(entity_instance self, size_t index) -> AttributeValue"""
+        return _ifcopenshell_wrapper.entity_instance_get_attribute_value(self, index)
 
     def identity(self):
         r"""identity(entity_instance self) -> uint32_t"""
@@ -6507,6 +6198,10 @@ class entity_instance(object):
     def toString(self, arg2, upper=False):
         r"""toString(entity_instance self, std::ostream & arg2, bool upper=False)"""
         return _ifcopenshell_wrapper.entity_instance_toString(self, arg2, upper)
+
+    		# Will be assigned when `ifcopenshell.entity_instance` is created.
+    file = None
+
 
     def get_attribute_category(self, name):
         r"""get_attribute_category(entity_instance self, std::string const & name) -> int"""
@@ -6550,8 +6245,8 @@ class entity_instance(object):
         r"""__repr__(entity_instance self) -> std::string"""
         return _ifcopenshell_wrapper.entity_instance___repr__(self)
 
-    def to_string(self, valid_spf):
-        r"""to_string(entity_instance self, bool valid_spf) -> std::string"""
+    def to_string(self, valid_spf=True):
+        r"""to_string(entity_instance self, bool valid_spf=True) -> std::string"""
         return _ifcopenshell_wrapper.entity_instance_to_string(self, valid_spf)
 
     def file_pointer(self):
@@ -7257,14 +6952,51 @@ def register_schema(arg1):
 def clear_schemas():
     r"""clear_schemas()"""
     return _ifcopenshell_wrapper.clear_schemas()
+class RocksDbSerializer(object):
+    r"""Proxy of C++ RocksDbSerializer class."""
 
-def open(fn):
-    r"""open(std::string const & fn) -> file"""
-    return _ifcopenshell_wrapper.open(fn)
+    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
+    __repr__ = _swig_repr
+
+    def __init__(self, *args):
+        r"""
+        __init__(RocksDbSerializer self, file file, std::string const & rocksdb_filename) -> RocksDbSerializer
+        __init__(RocksDbSerializer self, std::string const & input_filename, std::string const & rocksdb_filename, bool stream) -> RocksDbSerializer
+        """
+        _ifcopenshell_wrapper.RocksDbSerializer_swiginit(self, _ifcopenshell_wrapper.new_RocksDbSerializer(*args))
+    __swig_destroy__ = _ifcopenshell_wrapper.delete_RocksDbSerializer
+
+    def ready(self):
+        r"""ready(RocksDbSerializer self) -> bool"""
+        return _ifcopenshell_wrapper.RocksDbSerializer_ready(self)
+
+    def writeHeader(self):
+        r"""writeHeader(RocksDbSerializer self)"""
+        return _ifcopenshell_wrapper.RocksDbSerializer_writeHeader(self)
+
+    def finalize(self):
+        r"""finalize(RocksDbSerializer self)"""
+        return _ifcopenshell_wrapper.RocksDbSerializer_finalize(self)
+
+    def setFile(self, arg2):
+        r"""setFile(RocksDbSerializer self, file arg2)"""
+        return _ifcopenshell_wrapper.RocksDbSerializer_setFile(self, arg2)
+
+# Register RocksDbSerializer in _ifcopenshell_wrapper:
+_ifcopenshell_wrapper.RocksDbSerializer_swigregister(RocksDbSerializer)
+
+
+def open(fn, readonly=False):
+    r"""open(std::string const & fn, bool readonly=False) -> file"""
+    return _ifcopenshell_wrapper.open(fn, readonly)
 
 def read(data):
     r"""read(std::string const & data) -> file"""
     return _ifcopenshell_wrapper.read(data)
+
+def stream_from_string(data):
+    r"""stream_from_string(std::string const & data) -> InstanceStreamer"""
+    return _ifcopenshell_wrapper.stream_from_string(data)
 
 def version():
     r"""version() -> char const *"""

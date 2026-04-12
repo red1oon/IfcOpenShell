@@ -763,13 +763,29 @@ hasattr(bpy.types.WindowManager, 'federation_index')
 
 ---
 
-## 🏗️ BIM Compiler Pipeline: Skip the IFC Merge
+## 🏗️ BIM Compiler Pipeline: Extraction Strategy
 
 If your goal is extracting data for the **BIM Compiler pipeline** (producing `*_extracted.db` files),
-you do **not need to merge IFC files at all**.
+use the two-step strategy below — try the simple path first, fall back to per-discipline only if needed.
 
-The companion script in the BIM Compiler repo handles per-discipline extraction and DB merging directly
-from separate source files — no merged IFC on disk, no ifcpatch, no OOM risk:
+### Step 1 (preferred): Extract directly from merged IFC
+
+[`bim-compiler/DAGCompiler/python/extractIFCtoDB.py`](https://github.com/red1oon/bim-compiler/blob/master/DAGCompiler/python/extractIFCtoDB.py)
+works well on merged IFC files and is the simpler, faster path:
+
+```bash
+python3 DAGCompiler/python/extractIFCtoDB.py \
+  --ifc DAGCompiler/lib/input/IFC/MyBuilding_Federated.ifc \
+  -o DAGCompiler/lib/input/MyBuilding_extracted.db
+```
+
+Use this whenever you have a single merged IFC — it handles camera positioning correctly and
+produces clean metre-unit coordinates via `USE_WORLD_COORDS`.
+
+### Step 2 (fallback): Per-discipline extraction for large/multi-file models
+
+If Step 1 fails with OOM or the merged IFC is too large (>200MB), use the per-discipline script
+instead. It extracts each source discipline file separately, then merges into one `_extracted.db`:
 
 **Script:** [`bim-compiler/scripts/extract_merge_disciplines.py`](https://github.com/red1oon/bim-compiler/blob/master/scripts/extract_merge_disciplines.py)
 
@@ -790,7 +806,100 @@ python3 scripts/extract_merge_disciplines.py \
 - Running `federation_preprocessor.py` for the spatial bbox index
 - **Clash detection** across disciplines
 
-For everything else — use `extract_merge_disciplines.py` directly.
+---
+
+## 🗺️ Roadmap — Unified Extraction-to-ERP Chain
+
+The current pipeline has a natural handoff between Python (geometry extraction)
+and Java (BOM compilation, ERP write). The next step is a single orchestrated
+chain that runs end-to-end without manual intervention.
+
+### Proposed chain
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  STAGE 1 — Python (ifcopenshell)                                │
+│                                                                 │
+│  IFC files (per discipline)                                     │
+│       ↓  extract_merge_disciplines.py  [--disc-map]            │
+│  _extracted.db                                                  │
+│    • base_geometries  (LOD mesh, deduplicated by SHA hash)      │
+│    • element_instances  (guid → geometry_hash)  ← GPU instancing│
+│    • element_transforms  (position per instance)                │
+│    • elements_rtree  (spatial R-tree → Preview Mode)            │
+│    • elements_meta  (discipline, ifc_class, storey, material)   │
+└─────────────────────────────────────────────────────────────────┘
+                            ↓  handoff contract
+┌─────────────────────────────────────────────────────────────────┐
+│  STAGE 2 — Java (DAGCompiler)                                   │
+│                                                                 │
+│  _extracted.db                                                  │
+│       ↓  geometry_hash JOIN component_library.db               │
+│  product identity resolved (what element = which product)       │
+│       ↓  BOM compilation (tack, walker, BUFFER)                 │
+│  output.db  (M_BOM tree, PP_Order_Node, CO_EmptySpace)          │
+└─────────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  STAGE 3 — Java (BonsaiBIMDesigner / IFCtoBOM)                  │
+│                                                                 │
+│  output.db + component_library.db                               │
+│       ↓  ERP write-back                                         │
+│  ERP.db  (C_Order, C_OrderLine, M_Product, iDempiere schema)    │
+│       ↓  4D–8D dimensions all queryable from ERP.db            │
+└─────────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  STAGE 4 — Python / Blender (Federation addon)                  │
+│                                                                 │
+│  _extracted.db  →  Preview Mode (instant bbox, per-discipline)  │
+│  output.db      →  Tessellation loader (Outliner collections)   │
+│  ERP.db         →  4D schedule / 5D cost / 6D carbon / 7D FM   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Why Java for stages 2–3, not Python?
+
+The geometry extraction (stage 1) **must stay Python** — ifcopenshell is a C++
+library with Python bindings; Java has no IFC geometry iterator. Java wrapping
+the same C++ would have identical stability characteristics.
+
+However the orchestration of stages 2–3 belongs in Java because:
+- The BOM compiler, ERP writer, and component library are already Java
+- Java's exception handling, threading, and transaction management are better suited
+  to long-running chain operations than Python scripts
+- A single `mvn exec` can run the full chain: Python subprocess for stage 1,
+  then Java for stages 2–3, with the `_extracted.db` as the handoff file
+
+### GPU instancing — already in stage 1
+
+`base_geometries` deduplicates geometry by SHA hash at extraction time.
+500 identical chairs → one mesh row, 500 `element_instances` rows, 500 transform rows.
+`stage2_tessellation_loader.py` already exploits this — one Blender template mesh,
+N GPU instances placed by transform. **One draw call for all 500 chairs.**
+
+The `geometry_hash` is also the natural JOIN key to `component_library.db` — if an
+extracted element's mesh matches a library component's LOD mesh, product identity
+resolves automatically. That JOIN is the bridge between stage 1 and stage 2.
+
+### TODO items (in priority order)
+
+- [ ] **Java orchestrator** — `ExtractionChain.java` calls Python stage 1 as subprocess,
+      passes `_extracted.db` path to stage 2 automatically
+- [ ] **geometry_hash → component_library JOIN** — match extracted meshes to library LODs
+      for automatic product identity resolution
+- [ ] **property_values table** — extract `IfcRelDefinesByProperties` (pipe diameter,
+      pressure, fire rating) in stage 1; drives narrowphase clash and 6D/7D
+- [ ] **mep_connectivity table** — extract `IfcRelConnectsPortToElement` for pipe circuit
+      tracing via recursive SQL CTE
+- [ ] **quantities table** — compute length/area/volume from vertex blobs in stage 1;
+      feeds 5D BOQ directly
+- [ ] **auto unit scale** — apply `calculate_unit_scale` inline at coordinate write time;
+      eliminates manual mm→m post-hoc fix for IFC2x3 German/Swedish files
+- [ ] **narrowphase clash operator** — second-pass mesh-mesh intersection on broadphase
+      candidates; loads only the N hit elements from `base_geometries`
+- [ ] **schedule table** — topological sort on `rel_aggregates` → default construction
+      sequence with zero external input; GUID-join override from MS Project/Primavera
 
 ---
 
