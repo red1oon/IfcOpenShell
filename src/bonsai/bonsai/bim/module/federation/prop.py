@@ -184,6 +184,7 @@ class BIMFederationProperties(PropertyGroup):
     rtree_picked_disc: StringProperty(name="Picked Disc", default="")
     rtree_picked_class: StringProperty(name="Picked Class", default="")
     rtree_picked_guid: StringProperty(name="Picked GUID", default="")
+    rtree_last_loaded: StringProperty(name="Last Loaded", default="")  # S180: stingy loader collection label
 
     # S175: GN mode toggle — checked = GN (fast/scale), unchecked = per-element (full color)
     gn_mode: BoolProperty(

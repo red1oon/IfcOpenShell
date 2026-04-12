@@ -55,6 +55,10 @@ _search_results = []         # full list of building results from last search (L
 _building_elements = []      # elements within selected building matching term (L2)
 _active_building = ""        # currently drilled-into building
 
+# S180: Stingy Mesh Loader state
+_loaded_collections = {}     # label → [object_names]
+_library_blend_cache = None  # absolute path to library.blend, resolved at RTree load
+
 
 def create_bbox_edges(bbox: Tuple[float, float, float, float, float, float]) -> List[Vector]:
     """
@@ -315,6 +319,21 @@ def draw_bboxes():
     gpu.state.blend_set('NONE')
 
 
+def _find_library_blend(db_path: str) -> Optional[str]:
+    """Locate library.blend by walking up from db_path (up to 5 levels).
+
+    Tries: <parent>/library/library.blend at each level.
+    Returns absolute path string, or None if not found.
+    """
+    search = Path(db_path).parent
+    for _ in range(5):
+        candidate = search / 'library' / 'library.blend'
+        if candidate.exists():
+            return str(candidate)
+        search = search.parent
+    return None
+
+
 def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tuple[bool, str]:
     """
     Enable bounding box visualization in viewport.
@@ -326,7 +345,7 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
     Returns:
         (success: bool, message: str)
     """
-    global _bbox_batches, _draw_handler, _is_enabled, _db_path_cache, _disc_proxy_objects, _model_offset
+    global _bbox_batches, _draw_handler, _is_enabled, _db_path_cache, _disc_proxy_objects, _model_offset, _library_blend_cache
 
     # Disable first if already enabled
     if _is_enabled:
@@ -405,6 +424,12 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
     _db_path_cache = db_path
     _model_offset = offset
     print(f"[RTree] §CACHE db='{Path(db_path).name}' offset=({offset.x:.1f},{offset.y:.1f},{offset.z:.1f})")
+    # S180: resolve library.blend once at load time
+    _library_blend_cache = _find_library_blend(db_path)
+    if _library_blend_cache:
+        print(f"[RTree] §CACHE library_blend='{Path(_library_blend_cache).name}'")
+    else:
+        print("[RTree] §CACHE library_blend=NOT_FOUND (LOAD MESH unavailable)")
 
     # S178: Create Outliner discipline collections + proxy objects
     # Each proxy empty: eye icon in Outliner → hide_viewport → GPU skips that batch
@@ -678,7 +703,7 @@ def fetch_building_elements(building: str, search_term: str) -> list:
     Highlights each element bbox in yellow. Clears L1 highlights.
     Returns list of element dicts for the UI list.
     """
-    global _highlighted_bboxes, _building_elements, _active_building, _model_offset
+    global _highlighted_bboxes, _building_elements, _active_building, _model_offset, _selected_element
 
     if not _db_path_cache or not Path(_db_path_cache).exists():
         return []
@@ -686,6 +711,8 @@ def fetch_building_elements(building: str, search_term: str) -> list:
     _highlighted_bboxes.clear()
     _building_elements.clear()
     _active_building = building
+    # Clear stale selected element — its white bbox would mislead if from a previous search
+    _selected_element.clear()
 
     term = search_term.strip()
     like = f"%{term}%"
@@ -777,6 +804,42 @@ def pick_element_at_ray(ray_origin: Vector, ray_dir: Vector) -> dict:
           f"offset=({off.x:.1f},{off.y:.1f},{off.z:.1f}) "
           f"ray_ifc=({ifc_origin.x:.1f},{ifc_origin.y:.1f},{ifc_origin.z:.1f})")
 
+    # ── Pass 1: building envelope slab test (highlighted search results) ──
+    # Clicking a yellow building envelope triggers L2 drill-down, same as N-panel click.
+    if _highlighted_bboxes and _search_results:
+        ox, oy, oz = ifc_origin.x, ifc_origin.y, ifc_origin.z
+        dx, dy, dz = ray_dir.x, ray_dir.y, ray_dir.z
+        best_t_env = float('inf')
+        best_env_idx = -1
+        for i, (mnX, mnY, mnZ, mxX, mxY, mxZ) in enumerate(_highlighted_bboxes):
+            t_min, t_max = -float('inf'), float('inf')
+            for o_ax, d_ax, lo, hi in ((ox, dx, mnX, mxX),
+                                        (oy, dy, mnY, mxY),
+                                        (oz, dz, mnZ, mxZ)):
+                if abs(d_ax) < 1e-9:
+                    if o_ax < lo or o_ax > hi:
+                        t_min = float('inf')
+                        break
+                else:
+                    t1, t2 = (lo - o_ax) / d_ax, (hi - o_ax) / d_ax
+                    if t1 > t2:
+                        t1, t2 = t2, t1
+                    t_min = max(t_min, t1)
+                    t_max = min(t_max, t2)
+                    if t_min > t_max:
+                        break
+            if t_min <= t_max and t_min < best_t_env and t_min > 0:
+                best_t_env = t_min
+                best_env_idx = i
+
+        if best_env_idx >= 0 and best_env_idx < len(_search_results):
+            r = _search_results[best_env_idx]
+            building = r.get('building', '')
+            print(f"[RTree] §PROOF PICK_ENVELOPE building={building} t={best_t_env:.1f}m")
+            return {'type': 'building', 'building': building,
+                    'name': building, 'disc': '', 'ifc_class': '', 'guid': ''}
+
+    # ── Pass 2: individual element SQL query (fall-through) ──
     # Build coarse bounding box around the IFC-space ray for SQL pre-filter.
     # Sample points along ray: t = 0.5 .. 500m (direction unchanged — it's unit vec)
     pts = [ifc_origin + ray_dir * t for t in (0.5, 5, 50, 200, 500)]
@@ -849,6 +912,6 @@ def pick_element_at_ray(ray_origin: Vector, ray_dir: Vector) -> dict:
     guid, name, disc, ifc_class, bbox = best
     _selected_element = {'guid': guid, 'name': name, 'disc': disc,
                          'ifc_class': ifc_class, 'bbox': bbox, 't': best_t}
-    print(f"[RTree] §PROOF PICK guid={guid[:12]} disc={disc} class={ifc_class} "
+    print(f"[RTree] §PROOF PICK_ELEMENT guid={guid[:12]} disc={disc} class={ifc_class} "
           f"t={best_t:.1f}m candidates={len(candidates)}")
     return _selected_element

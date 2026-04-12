@@ -1057,6 +1057,330 @@ class LoadFederationStage2Background(bpy.types.Operator):
             wm.event_timer_remove(self._timer)
 
 
+# ── S180: Stingy Mesh Loader ─────────────────────────────────────────────────
+
+class FedRTreeLoadMesh(bpy.types.Operator):
+    """Load exact mesh geometry for the active selection (LOD400 linked ref, max 500).
+
+    L2 element selected → load 1 mesh by geometry_hash.
+    L1 building selected → load ARC meshes within envelope × 1.2, LIMIT 500.
+    Geometry linked from library.blend (link=True). No fallback — hard fail if not found.
+    """
+    bl_idname = "bim.fed_rtree_load_mesh"
+    bl_label = "Load Mesh"
+    bl_description = (
+        "Load LOD400 geometry (linked from library.blend) for selected element or building.\n"
+        "RTree wireframes remain. Use SHRED to remove."
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def invoke(self, context, event):
+        return self.execute(context)
+
+    def execute(self, context):
+        import time
+        import sqlite3
+        import bpy as _bpy
+        from . import bbox_visualization as bv
+        from pathlib import Path
+
+        props = context.scene.BIMFederationProperties
+        db_path = bv._db_path_cache
+        lib_path = bv._library_blend_cache
+
+        if not db_path or not Path(db_path).exists():
+            raise RuntimeError("[S180] R-Tree not loaded — run Preview first")
+        if not lib_path or not Path(lib_path).exists():
+            raise RuntimeError(f"[S180] library.blend not found (searched from {Path(db_path).parent})")
+
+        t0 = time.time()
+
+        # ── Determine load target ──
+        sel_elem = bv._selected_element  # set by fly_to_element
+        active_bld = bv._active_building
+
+        # ── Diagnostic: log exactly what is active at call time ──
+        _sel_guid = sel_elem.get('guid', 'none')[:24] if sel_elem else 'none'
+        _sel_bbox = sel_elem.get('bbox') if sel_elem else None
+        _sel_bbox_str = (f"Z[{_sel_bbox[2]:.3f}→{_sel_bbox[5]:.3f}] dZ={_sel_bbox[5]-_sel_bbox[2]:.3f}m"
+                         if _sel_bbox else 'no_bbox')
+        print(f"[S180] §DIAG_LOAD sel_guid={_sel_guid} sel_bbox={_sel_bbox_str} "
+              f"active_bld={active_bld or 'none'}")
+
+        if sel_elem and sel_elem.get('guid'):
+            # L2: single element by guid → geometry_hash
+            guid = sel_elem['guid']
+            label = f"Loaded_{guid[:8]}"
+            rows = self._query_single(db_path, guid)
+            if not rows:
+                raise RuntimeError(f"[S180] No geometry_hash for guid {guid[:16]}")
+        elif active_bld:
+            # L1: building ARC elements within envelope × buffer
+            label = f"Loaded_{active_bld}_ARC"
+            bbox = next((r['bbox'] for r in bv._search_results
+                         if r.get('building') == active_bld), None)
+            rows = (self._query_building(db_path, active_bld, bbox)
+                    if bbox else self._query_building_no_bbox(db_path, active_bld))
+            if not rows:
+                raise RuntimeError(f"[S180] No ARC geometry found for {active_bld}")
+        else:
+            self.report({'WARNING'}, "Select a building (L1) or fly to an element (L2) first")
+            return {'CANCELLED'}
+
+        # ── Deduplicate hashes — skip NULLs ──
+        hash_to_guid = {}
+        for row_guid, ghash in rows:
+            if ghash and ghash not in hash_to_guid:
+                hash_to_guid[ghash] = row_guid
+        wanted_hashes = list(hash_to_guid.keys())
+        if not wanted_hashes:
+            raise RuntimeError(f"[S180] No valid geometry hashes for selection")
+
+        # ── Remove stale collection with same label ──
+        if label in bv._loaded_collections:
+            _remove_stingy_collection(label, bv._loaded_collections)
+
+        # ── Link meshes from library.blend (LOD400, link=True — no local copy) ──
+        with _bpy.data.libraries.load(lib_path, link=True) as (data_from, data_to):
+            available = set(data_from.meshes)
+            data_to.meshes = [h for h in wanted_hashes if h in available]
+
+        # ── Geo-hash hell check: BLOCKER if any mesh was renamed ──
+        loaded_meshes = [m for m in data_to.meshes if m is not None]
+        for mesh in loaded_meshes:
+            if mesh.name not in hash_to_guid:
+                raise RuntimeError(
+                    f"[S180] §GEO_HASH_HELL {mesh.name} — renamed by Blender "
+                    f"(expected one of {list(hash_to_guid)[:3]})"
+                )
+        print(f"[S180] §PROOF NO_COLLISION hashes={len(loaded_meshes)} all_names_match=True")
+
+        # ── Build collection + place objects with full transform ──
+        col = _bpy.data.collections.new(label)
+        _bpy.context.scene.collection.children.link(col)
+
+        off = bv._model_offset
+        ox = off.x if off else 0.0
+        oy = off.y if off else 0.0
+        oz = off.z if off else 0.0
+
+        placed = 0
+        no_transform = 0
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        for mesh in loaded_meshes:
+            ghash = mesh.name
+            row_guid = hash_to_guid[ghash]
+            obj = _bpy.data.objects.new(ghash, mesh)
+            obj.hide_select = False
+            col.objects.link(obj)
+
+            # Fetch transform + DB bbox in one query so we can verify placement
+            cur.execute("""
+                SELECT t.center_x, t.center_y, t.center_z,
+                       t.rotation_x, t.rotation_y, t.rotation_z,
+                       r.minX, r.minY, r.minZ, r.maxX, r.maxY, r.maxZ
+                FROM element_transforms t
+                JOIN elements_meta m ON t.guid = m.guid
+                JOIN elements_rtree r ON m.id = r.id
+                WHERE t.guid = ?
+                LIMIT 1
+            """, (row_guid,))
+            tr = cur.fetchone()
+            if tr:
+                cx, cy, cz, rx, ry, rz, mnX, mnY, mnZ, mxX, mxY, mxZ = tr
+                rx = rx or 0.0
+                ry = ry or 0.0
+                rz = rz or 0.0
+                bx, by, bz = cx - ox, cy - oy, cz - oz
+                obj.location = (bx, by, bz)
+                obj.rotation_euler = (rx, ry, rz)
+                # §TRANSFORM: verify Blender position is inside element's DB bbox
+                in_bbox = (mnX - ox <= bx <= mxX - ox and
+                           mnY - oy <= by <= mxY - oy and
+                           mnZ - oz <= bz <= mxZ - oz)
+                bbox_dZ = mxZ - mnZ
+                print(f"[S180] §TRANSFORM hash={ghash[:12]} "
+                      f"ifc=({cx:.3f},{cy:.3f},{cz:.3f}) "
+                      f"rot=({rx:.4f},{ry:.4f},{rz:.4f}) "
+                      f"blender=({bx:.3f},{by:.3f},{bz:.3f}) "
+                      f"db_bbox_Z=[{mnZ:.3f}→{mxZ:.3f}] dZ={bbox_dZ:.3f}m "
+                      f"center_in_bbox={in_bbox}")
+                if not in_bbox:
+                    print(f"[S180] §TRANSFORM_FAIL hash={ghash[:12]} "
+                          f"center NOT inside DB bbox — check IFC placement convention")
+                placed += 1
+            else:
+                no_transform += 1
+                print(f"[S180] §WARN_NO_TRANSFORM hash={ghash[:12]} guid={row_guid[:20]}")
+
+        conn.close()
+
+        # ── Register + report ──
+        bv._loaded_collections[label] = [obj.name for obj in col.objects]
+        props.rtree_last_loaded = label
+
+        elapsed = time.time() - t0
+        print(f"[S180] §PROOF LOAD_MESH label={label} hashes={placed} elapsed={elapsed:.1f}s")
+        self.report({'INFO'}, f"§PROOF LOAD_MESH label={label} hashes={placed} elapsed={elapsed:.1f}s")
+
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                area.tag_redraw()
+        return {'FINISHED'}
+
+    # ── SQL helpers ──
+
+    def _query_single(self, db_path, guid):
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        rows = conn.execute(
+            "SELECT m.guid, i.geometry_hash "
+            "FROM elements_meta m JOIN element_instances i ON m.guid = i.guid "
+            "WHERE m.guid = ?", (guid,)
+        ).fetchall()
+        conn.close()
+        return rows
+
+    def _query_building(self, db_path, building, bbox):
+        import sqlite3
+        mnX, mnY, mnZ, mxX, mxY, mxZ = bbox
+        conn = sqlite3.connect(db_path)
+        rows = conn.execute("""
+            SELECT m.guid, i.geometry_hash
+            FROM elements_meta m
+            JOIN element_instances i ON m.guid = i.guid
+            JOIN elements_rtree r ON m.id = r.id
+            WHERE m.building = ?
+              AND m.discipline = 'ARC'
+              AND r.minX <= ? AND r.maxX >= ?
+              AND r.minY <= ? AND r.maxY >= ?
+            LIMIT 500
+        """, (building, mxX * 1.2, mnX * 0.8, mxY * 1.2, mnY * 0.8)).fetchall()
+        conn.close()
+        return rows
+
+    def _query_building_no_bbox(self, db_path, building):
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        rows = conn.execute("""
+            SELECT m.guid, i.geometry_hash
+            FROM elements_meta m
+            JOIN element_instances i ON m.guid = i.guid
+            WHERE m.building = ? AND m.discipline = 'ARC'
+            LIMIT 500
+        """, (building,)).fetchall()
+        conn.close()
+        return rows
+
+
+def _remove_stingy_collection(label, registry):
+    """Unlink a stingy-loaded collection from the viewport.
+
+    Objects are unlinked from their collection (disappear from viewport).
+    Mesh datablocks (linked from library.blend) are NOT touched — they live
+    in the library and must never be deleted here.
+    """
+    col = bpy.data.collections.get(label)
+    if col:
+        for obj in list(col.objects):
+            col.objects.unlink(obj)  # remove from viewport; keep mesh datablock
+        # Unlink the collection from the scene
+        scene_col = bpy.context.scene.collection
+        if col.name in {c.name for c in scene_col.children}:
+            scene_col.children.unlink(col)
+        bpy.data.collections.remove(col)
+    registry.pop(label, None)
+
+
+class FedRTreeShred(bpy.types.Operator):
+    """Remove selected loaded mesh objects (or last-loaded collection if nothing selected).
+
+    Selection-based: select objects in viewport → SHRED removes only those.
+    Fallback: if nothing selected, removes the last-loaded collection entirely.
+    RTree GPU wireframes are never touched.
+    """
+    bl_idname = "bim.fed_rtree_shred"
+    bl_label = "Shred"
+    bl_description = (
+        "Select loaded mesh objects → SHRED removes those only.\n"
+        "Nothing selected: removes last LOAD MESH collection."
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def invoke(self, context, event):
+        return self.execute(context)
+
+    def execute(self, context):
+        from . import bbox_visualization as bv
+
+        props = context.scene.BIMFederationProperties
+
+        # Build reverse map: object_name → collection_label
+        obj_to_label = {}
+        for lbl, obj_names in bv._loaded_collections.items():
+            for name in obj_names:
+                obj_to_label[name] = lbl
+
+        # ── Selection-based path: remove selected objects that belong to stingy loads ──
+        selected_loaded = [
+            obj for obj in context.selected_objects
+            if obj.name in obj_to_label
+        ]
+
+        if selected_loaded:
+            removed = 0
+            affected_labels = set()
+            for obj in selected_loaded:
+                lbl = obj_to_label[obj.name]
+                affected_labels.add(lbl)
+                # Unlink from all collections — viewport removal only.
+                # Do NOT delete mesh datablocks (they live in library.blend).
+                for col in list(obj.users_collection):
+                    col.objects.unlink(obj)
+                removed += 1
+
+            # Clean up empty collections from registry
+            for lbl in affected_labels:
+                col = bpy.data.collections.get(lbl)
+                remaining = [o for o in (col.objects if col else [])]
+                if not remaining:
+                    if col:
+                        scene_col = bpy.context.scene.collection
+                        if col.name in {c.name for c in scene_col.children}:
+                            scene_col.children.unlink(col)
+                        bpy.data.collections.remove(col)
+                    bv._loaded_collections.pop(lbl, None)
+                    if props.rtree_last_loaded == lbl:
+                        props.rtree_last_loaded = ""
+                else:
+                    bv._loaded_collections[lbl] = [o.name for o in remaining]
+
+            print(f"[S180] §PROOF SHRED selected objects_removed={removed} labels={sorted(affected_labels)}")
+            self.report({'INFO'}, f"§PROOF SHRED objects_removed={removed}")
+
+        else:
+            # ── Fallback: remove last-loaded collection ──
+            label = props.rtree_last_loaded
+            if not label:
+                self.report({'WARNING'}, "Nothing to shred — select loaded mesh objects or run LOAD MESH first")
+                return {'CANCELLED'}
+            if label not in bv._loaded_collections:
+                props.rtree_last_loaded = ""
+                self.report({'WARNING'}, f"Collection '{label}' not in registry (already removed?)")
+                return {'CANCELLED'}
+
+            _remove_stingy_collection(label, bv._loaded_collections)
+            props.rtree_last_loaded = ""
+            print(f"[S180] §PROOF SHRED label={label}")
+            self.report({'INFO'}, f"§PROOF SHRED label={label}")
+
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                area.tag_redraw()
+        return {'FINISHED'}
+
+
 class DetectFederationClashes(bpy.types.Operator):
     """Detect clashes using database (NO IFC required)"""
     bl_idname = "bim.detect_federation_clashes"
@@ -6481,11 +6805,22 @@ class FedRTreePick(bpy.types.Operator):
 
             props = context.scene.BIMFederationProperties
             if result:
-                props.rtree_picked_name = result.get('name', '') or result.get('guid', '')
-                props.rtree_picked_disc = result.get('disc', '')
-                props.rtree_picked_class = result.get('ifc_class', '')
-                props.rtree_picked_guid = result.get('guid', '')
-                self.report({'INFO'}, f"{result.get('disc','')} — {result.get('ifc_class','')}")
+                if result.get('type') == 'building':
+                    # S180 Pass 1: building envelope hit → drill into L2
+                    building = result.get('building', '')
+                    bv.fetch_building_elements(building, props.rtree_search)
+                    props.rtree_picked_name = building
+                    props.rtree_picked_disc = ''
+                    props.rtree_picked_class = '(building envelope)'
+                    props.rtree_picked_guid = ''
+                    self.report({'INFO'}, f"§PROOF PICK_ENVELOPE building={building}")
+                else:
+                    # S180 Pass 2: individual element hit
+                    props.rtree_picked_name = result.get('name', '') or result.get('guid', '')
+                    props.rtree_picked_disc = result.get('disc', '')
+                    props.rtree_picked_class = result.get('ifc_class', '')
+                    props.rtree_picked_guid = result.get('guid', '')
+                    self.report({'INFO'}, f"{result.get('disc','')} — {result.get('ifc_class','')}")
             else:
                 self.report({'INFO'}, "No element hit — try clicking on a coloured box")
 

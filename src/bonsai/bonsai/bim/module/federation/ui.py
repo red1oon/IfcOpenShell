@@ -1710,6 +1710,17 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
                                        text=label, icon='RESTRICT_SELECT_OFF')
                     op2.elem_index = j
 
+                # ── S180: Load / Shred ──
+                row_ls = box2.row(align=True)
+                has_sel = bool(bv._active_building or bv._selected_element)
+                row_ls.enabled = has_sel
+                row_ls.operator("bim.fed_rtree_load_mesh", text="LOAD MESH", icon='IMPORT')
+                shred_row = box2.row(align=True)
+                shred_row.enabled = bool(props.rtree_last_loaded)
+                shred_row.operator("bim.fed_rtree_shred", text="SHRED", icon='TRASH')
+                if props.rtree_last_loaded:
+                    box2.label(text=f"Loaded: {props.rtree_last_loaded}", icon='CHECKMARK')
+
         elif props.rtree_search:
             layout.label(text="No results", icon='ERROR')
 

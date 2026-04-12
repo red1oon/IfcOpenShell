@@ -77,6 +77,8 @@ classes = (
     operator.FedRTreeFlyToResult,           # S178: click building → L2 drill-down
     operator.FedRTreeFlyToElement,          # S178: click element in L2 list
     operator.FedRTreePick,                  # S178: click-to-identify
+    operator.FedRTreeLoadMesh,              # S180: stingy mesh loader
+    operator.FedRTreeShred,                 # S180: remove last loaded collection
     operator.UnloadFederationViewport,
     operator.ExtractSampleDatabase,
     operator.ExtractFullDatabase,
