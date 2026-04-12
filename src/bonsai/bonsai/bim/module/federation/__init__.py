@@ -70,7 +70,11 @@ classes = (
     operator.LoadSolidFederationViewport,
     operator.LoadFullFederationViewport,
     operator.LoadFullFederationViewportGI,  # GI-enabled version (experimental)
+    operator.LinkFederationLibrary,         # Library link (per-element)
+    operator.ClearFederationViewport,       # Clear all federation data
     operator.ReloadFederationViewport,
+    operator.FedRTreeSearch,                # S178: search + fly-to
+    operator.FedRTreePick,                  # S178: click-to-identify
     operator.UnloadFederationViewport,
     operator.ExtractSampleDatabase,
     operator.ExtractFullDatabase,
@@ -208,6 +212,7 @@ classes = (
     # ui.BIM_PT_boq_export,
     # ui.BIM_PT_structural_works,
     # ui.BIM_PT_nlp_query,
+    ui.BIM_PT_rtree_inspector,              # S178: search + pick N-panel in 3D viewport
 
     # ═══════════════════════════════════════════════════════════════
     # CHILD PANELS (after their parents exist)
@@ -402,22 +407,94 @@ def restore_equipment_on_load(dummy):
 
 @persistent
 def federation_save_pre(dummy):
-    """S169: Strip template meshes before save → .blend stays ~15 MB."""
+    """S174: Strip template meshes before save — only if thin_save=ON.
+    Handles both GN path (_GN_Templates) and library path (_Templates)."""
+    _TAG = "[S174][SAVE_PRE]"
+    thin_save = False
+    try:
+        props = bpy.context.scene.BIMFederationProperties
+        thin_save = getattr(props, 'thin_save', False)
+    except Exception:
+        pass
+
+    if not thin_save:
+        print(f"{_TAG} §FINE thin_save=OFF — normal save, keeping meshes")
+        return
+
+    print(f"{_TAG} §FINE thin_save=ON — stripping meshes for meshless save")
     from . import blend_cache
     blend_cache.strip_template_meshes()
 
 @persistent
 def federation_save_post(dummy):
-    """S169: Restore template meshes after save → viewport stays full-fidelity."""
+    """S174: Restore meshes after save → viewport stays full-fidelity (no flicker).
+    Only runs if thin_save=ON (otherwise meshes were never stripped)."""
+    _TAG = "[S174][SAVE_POST]"
+    thin_save = False
+    try:
+        props = bpy.context.scene.BIMFederationProperties
+        thin_save = getattr(props, 'thin_save', False)
+    except Exception:
+        pass
+
+    if not thin_save:
+        print(f"{_TAG} §FINE thin_save=OFF — no restore needed")
+        return
+
+    print(f"{_TAG} §FINE thin_save=ON — restoring meshes after save (no flicker)")
     from . import blend_cache
     blend_cache.restore_template_meshes()
 
 @persistent
 def federation_load_post_meshes(dummy):
-    """S169: Restore template meshes on file open from component_library.db.
+    """S174: On file open:
+    - GN path: restore templates from component_library.db
+    - Library path + thin_save ON: auto-trigger R-tree preview (meshless open)
+    - Library path + thin_save OFF: auto-restore from library.blend
     S170: Also rebuild LOD manager index and start LOD timer."""
+    _TAG = "[S174][LOAD_POST]"
     from . import blend_cache
-    blend_cache.restore_template_meshes()
+
+    # Check thin_save flag
+    thin_save = False
+    try:
+        props = bpy.context.scene.BIMFederationProperties
+        thin_save = getattr(props, 'thin_save', False)
+    except Exception:
+        pass
+
+    # GN path — always restore
+    gn_templates = bpy.data.collections.get('_GN_Templates')
+    if gn_templates:
+        print(f"{_TAG} §FINE GN path detected — restoring templates")
+        blend_cache.restore_template_meshes()
+
+    # Library-linked path (per-element)
+    lib_templates = bpy.data.collections.get('_Templates')
+    has_stubs = False
+    if lib_templates:
+        # Check if there are stub meshes (meshless save)
+        for obj in bpy.data.objects:
+            if obj.type == 'MESH' and obj.data and obj.data.name.startswith('stub_'):
+                has_stubs = True
+                break
+
+    if has_stubs:
+        if thin_save:
+            print(f"{_TAG} §FINE thin_save=ON, stubs detected — auto-triggering R-tree preview")
+            try:
+                bpy.ops.bim.preview_federation_viewport()
+                print(f"{_TAG} §PROOF RTREE_AUTO auto R-tree preview triggered on meshless open")
+            except Exception as e:
+                print(f"{_TAG} §WARN R-tree auto-trigger failed: {e} — user can click R-Tree manually")
+        else:
+            print(f"{_TAG} §FINE thin_save=OFF, stubs detected — auto-restoring library-linked meshes")
+            blend_cache.restore_template_meshes()
+    elif lib_templates:
+        print(f"{_TAG} §FINE library path, no stubs — meshes intact (normal save)")
+    else:
+        print(f"{_TAG} §FINE no federation collections found — normal .blend open")
+
     # S170: Rebuild LOD index from database on file open
     _init_lod_from_scene()
 
@@ -578,6 +655,14 @@ def register():
     if federation_depsgraph_update not in bpy.app.handlers.depsgraph_update_post:
         bpy.app.handlers.depsgraph_update_post.append(federation_depsgraph_update)
 
+    # S174: Register DLOD (Distance LOD) handler — optional, non-fatal
+    try:
+        from . import dlod_handler
+        dlod_handler.register_handler()
+        print("[S174][DLOD] §FINE handler registered")
+    except Exception as e:
+        print(f"[S174][DLOD] §WARN register failed (non-fatal): {e}")
+
     # Register equipment context menu (right-click on equipment)
     # Note: river module handles its own context menu in river/__init__.py register()
     # bpy.types.VIEW3D_MT_object_context_menu.append(river.equipment_maintenance.menu_func)
@@ -613,6 +698,14 @@ def unregister():
         from . import lod_manager
         lod_manager.stop_lod_timer()
         lod_manager.shutdown_manager()
+    except Exception:
+        pass
+
+    # S174: Unregister DLOD handler + shutdown state
+    try:
+        from . import dlod_handler
+        dlod_handler.unregister_handler()
+        print("[S174][DLOD] §FINE handler unregistered")
     except Exception:
         pass
 

@@ -6331,3 +6331,114 @@ class BIM_OT_launch_web_ui(bpy.types.Operator):
         self.report({'INFO'}, f"Opened Web UI: {url}")
         return {'FINISHED'}
 
+
+
+# ── S178: RTree Inspector — Search + Pick operators ───────────────────────────
+
+class FedRTreeSearch(bpy.types.Operator):
+    """Search elements by name/GUID/discipline/class. Flies viewport to first match."""
+    bl_idname = "bim.fed_rtree_search"
+    bl_label = "Search & Fly"
+    bl_description = "Search R-Tree DB and fly viewport to matching element"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        from . import bbox_visualization as bv
+        props = context.scene.BIMFederationProperties
+        term = props.rtree_search.strip()
+        if not term:
+            self.report({'WARNING'}, "Enter a search term first")
+            return {'CANCELLED'}
+
+        result = bv.navigate_to_element(term, context)
+
+        if not result:
+            props.rtree_result_name = ""
+            props.rtree_result_disc = ""
+            props.rtree_result_class = ""
+            props.rtree_result_guid = ""
+            props.rtree_result_count = 0
+            self.report({'WARNING'}, f"No elements found for '{term}'")
+            return {'CANCELLED'}
+
+        props.rtree_result_name = result.get('name', '') or result.get('guid', '')
+        props.rtree_result_disc = result.get('disc', '')
+        props.rtree_result_class = result.get('ifc_class', '')
+        props.rtree_result_guid = result.get('guid', '')
+        props.rtree_result_count = len(bv._highlighted_bboxes)
+
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                area.tag_redraw()
+
+        self.report({'INFO'}, f"Found {props.rtree_result_count} match(es) — flew to first")
+        return {'FINISHED'}
+
+
+class FedRTreePick(bpy.types.Operator):
+    """Click on a bbox in the viewport to identify the element underneath."""
+    bl_idname = "bim.fed_rtree_pick"
+    bl_label = "Pick Element"
+    bl_description = "Click a bounding box to identify the element (R-Tree query, no objects)"
+    bl_options = {'REGISTER'}
+
+    def invoke(self, context, event):
+        context.window_manager.modal_handler_add(self)
+        context.workspace.status_text_set("Click a bounding box to identify element — Esc to cancel")
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context, event):
+        if event.type == 'ESC':
+            context.workspace.status_text_set(None)
+            return {'CANCELLED'}
+
+        if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
+            context.workspace.status_text_set(None)
+
+            # Get world-space ray from mouse position
+            try:
+                from bpy_extras import view3d_utils
+                region = None
+                rv3d = None
+                for area in context.screen.areas:
+                    if area.type == 'VIEW_3D':
+                        for reg in area.regions:
+                            if reg.type == 'WINDOW':
+                                region = reg
+                                rv3d = area.spaces[0].region_3d
+                                break
+                        break
+
+                if region is None or rv3d is None:
+                    self.report({'WARNING'}, "No 3D viewport found")
+                    return {'CANCELLED'}
+
+                from mathutils import Vector
+                mouse_co = (event.mouse_region_x, event.mouse_region_y)
+                ray_origin = view3d_utils.region_2d_to_origin_3d(region, rv3d, mouse_co)
+                ray_dir = view3d_utils.region_2d_to_vector_3d(region, rv3d, mouse_co)
+
+            except Exception as e:
+                self.report({'ERROR'}, f"Ray failed: {e}")
+                return {'CANCELLED'}
+
+            from . import bbox_visualization as bv
+            result = bv.pick_element_at_ray(ray_origin, ray_dir)
+
+            props = context.scene.BIMFederationProperties
+            if result:
+                props.rtree_picked_name = result.get('name', '') or result.get('guid', '')
+                props.rtree_picked_disc = result.get('disc', '')
+                props.rtree_picked_class = result.get('ifc_class', '')
+                props.rtree_picked_guid = result.get('guid', '')
+                self.report({'INFO'}, f"{result.get('disc','')} — {result.get('ifc_class','')}")
+            else:
+                self.report({'INFO'}, "No element hit — try clicking on a coloured box")
+
+            for area in context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    area.tag_redraw()
+
+            return {'FINISHED'}
+
+        return {'PASS_THROUGH'}

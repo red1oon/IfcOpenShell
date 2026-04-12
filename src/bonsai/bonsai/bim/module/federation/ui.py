@@ -239,31 +239,25 @@ class BIM_PT_federation(Panel):
 
         box.separator()
 
-        # Action buttons - Three-stage workflow
+        # Action buttons — R-Tree / Library / Clear
         col = box.column(align=True)
 
-        # Row 1: Preview | Solid (fast options side-by-side)
+        # Row 1: R-Tree | Library (main workflow)
         row = col.row(align=True)
         row.scale_y = 1.5
-        row.operator("bim.preview_federation_viewport", icon="HIDE_OFF", text="Preview")
-        # Disable Solid button if already loaded (prevents slow re-loading)
-        solid_row = row.row(align=True)
-        solid_row.enabled = not props.solid_loaded
-        solid_row.operator("bim.load_solid_federation_viewport", icon="MESH_CUBE", text="Solid")
+        row.operator("bim.preview_federation_viewport", icon="OUTLINER_DATA_POINTCLOUD", text="R-Tree")
+        row.operator("bim.link_federation_library", icon="ASSET_MANAGER", text="Library")
 
-        # Row 2: Full Load (slower, exact geometry)
+        # Row 2: Clear
         row = col.row(align=True)
-        row.scale_y = 1.3
-        row.operator("bim.load_full_federation_viewport", icon="MESH_DATA", text="Full Load")
+        row.operator("bim.clear_federation_viewport", icon="PANEL_CLOSE", text="Clear")
 
-        # GI version postponed
-        # row = col.row(align=True)
-        # row.scale_y = 1.3
-        # row.operator("bim.load_full_federation_viewport_gi", icon="LIGHTPROBE_VOLUME", text="Full Load (*GI)")
-
-        # Row 3: Unload preview button (BBox only - Stage 1)
+        # Row 3: Legacy loaders (collapsed, for backward compat)
         row = col.row(align=True)
-        row.operator("bim.unload_federation_viewport", icon="PANEL_CLOSE", text="Unload Preview")
+        row.scale_y = 0.8
+        sub = row.row(align=True)
+        sub.scale_x = 0.7
+        sub.operator("bim.load_full_federation_viewport", icon="MESH_DATA", text="Full Load (legacy)")
 
         # Auto-reload setting
         box.separator()
@@ -1657,3 +1651,63 @@ class BIM_PT_nlp_query(Panel):
             # Export button
             row = results_box.row()
             row.operator("bim.export_nlp_results", text="Export to CSV", icon="EXPORT")
+
+
+# ── S178: RTree Inspector — N-panel in 3D Viewport ───────────────────────────
+
+class BIM_PT_rtree_inspector(bpy.types.Panel):
+    """Search + pick elements in the GPU R-Tree overlay without creating objects."""
+    bl_label = "RTree Inspector"
+    bl_idname = "BIM_PT_rtree_inspector"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = 'BIM'
+    bl_order = 10
+
+    def draw(self, context):
+        layout = self.layout
+        props = context.scene.BIMFederationProperties
+
+        # ── Search box ──
+        layout.label(text="Search Elements", icon='VIEWZOOM')
+        row = layout.row(align=True)
+        row.prop(props, "rtree_search", text="")
+        row.operator("bim.fed_rtree_search", text="", icon='PLAY')
+
+        if props.rtree_result_count:
+            box = layout.box()
+            box.label(text=f"{props.rtree_result_count} match(es)  ↓ first result",
+                      icon='CHECKMARK')
+            col = box.column(align=True)
+            col.scale_y = 0.8
+            col.label(text=props.rtree_result_name or "(no name)", icon='OBJECT_DATA')
+            col.label(text=f"Disc:  {props.rtree_result_disc}")
+            col.label(text=f"Class: {props.rtree_result_class}")
+            col.label(text=props.rtree_result_guid[:28], icon='COPY_ID')
+        elif props.rtree_search:
+            layout.label(text="No results", icon='ERROR')
+
+        layout.separator()
+
+        # ── Click-pick ──
+        layout.label(text="Pick Element", icon='EYEDROPPER')
+        layout.operator("bim.fed_rtree_pick", text="Click to Identify", icon='RESTRICT_SELECT_OFF')
+
+        if props.rtree_picked_name:
+            box = layout.box()
+            box.label(text="Last picked:", icon='RADIOBUT_ON')
+            col = box.column(align=True)
+            col.scale_y = 0.8
+            col.label(text=props.rtree_picked_name or "(no name)", icon='OBJECT_DATA')
+            col.label(text=f"Disc:  {props.rtree_picked_disc}")
+            col.label(text=f"Class: {props.rtree_picked_class}")
+            col.label(text=props.rtree_picked_guid[:28], icon='COPY_ID')
+
+        layout.separator()
+
+        # ── Outliner hint ──
+        col = layout.column(align=True)
+        col.scale_y = 0.7
+        col.label(text="Discipline visibility:", icon='OUTLINER_COLLECTION')
+        col.label(text="Outliner → Federation_RTree")
+        col.label(text="Eye icon on ● DISC = hide/show")

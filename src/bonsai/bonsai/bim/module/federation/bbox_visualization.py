@@ -43,6 +43,13 @@ _bbox_batches = {}
 _draw_handler = None
 _is_enabled = False
 _discipline_visibility = {}  # Set by legend when disciplines are toggled
+_color_override = None       # Set by BIM Designer to grey-out in Design Mode
+
+# S178: Outliner discipline proxy objects + search/pick state
+_disc_proxy_objects = {}     # disc → object name (Outliner eye = hide_viewport)
+_db_path_cache = None        # stored at load time for pick/search queries
+_highlighted_bboxes = []     # [(minX,minY,minZ,maxX,maxY,maxZ)] yellow highlight
+_selected_element = {}       # last picked: {guid, name, disc, ifc_class, bbox}
 
 
 def create_bbox_edges(bbox: Tuple[float, float, float, float, float, float]) -> List[Vector]:
@@ -251,28 +258,55 @@ def create_discipline_batches(discipline_bboxes: Dict[str, List[Tuple]], offset:
 def draw_bboxes():
     """Draw callback function for viewport rendering"""
     global _bbox_batches, _is_enabled, _discipline_visibility
+    global _disc_proxy_objects, _highlighted_bboxes, _selected_element
 
     if not _is_enabled or not _bbox_batches:
         return
 
-    # Enable blending for transparent colors
     gpu.state.blend_set('ALPHA')
     gpu.state.line_width_set(1.0)
-
     shader = gpu.shader.from_builtin('UNIFORM_COLOR')
 
-    # Draw each discipline's batch with its color (skip hidden ones)
+    # Draw each discipline's batch — skip if hidden via Outliner proxy eye icon
     for discipline, batch in _bbox_batches.items():
-        # Check visibility (default to visible if not set)
+        # Outliner eye icon: proxy object hide_viewport takes priority
+        proxy_name = _disc_proxy_objects.get(discipline)
+        if proxy_name:
+            proxy = bpy.data.objects.get(proxy_name)
+            if proxy and proxy.hide_viewport:
+                continue
+        # Legacy legend dict (on-screen toggle still works)
         if not _discipline_visibility.get(discipline, True):
-            continue  # Skip this discipline
+            continue
 
-        color = DISCIPLINE_COLORS.get(discipline, DISCIPLINE_COLORS['DEFAULT'])
+        color = _color_override if _color_override else DISCIPLINE_COLORS.get(discipline, DISCIPLINE_COLORS['DEFAULT'])
         shader.bind()
         shader.uniform_float("color", color)
         batch.draw(shader)
 
-    # Restore state
+    # Draw search-result highlights in yellow (thick)
+    if _highlighted_bboxes:
+        hi_verts = []
+        for hb in _highlighted_bboxes:
+            hi_verts.extend(create_bbox_edges(hb))
+        if hi_verts:
+            hi_batch = batch_for_shader(shader, 'LINES', {"pos": hi_verts})
+            shader.bind()
+            shader.uniform_float("color", (1.0, 1.0, 0.0, 1.0))
+            gpu.state.line_width_set(3.0)
+            hi_batch.draw(shader)
+            gpu.state.line_width_set(1.0)
+
+    # Draw last-picked element in white (thicker)
+    if _selected_element.get('bbox'):
+        sel_verts = create_bbox_edges(_selected_element['bbox'])
+        sel_batch = batch_for_shader(shader, 'LINES', {"pos": sel_verts})
+        shader.bind()
+        shader.uniform_float("color", (1.0, 1.0, 1.0, 1.0))
+        gpu.state.line_width_set(4.0)
+        sel_batch.draw(shader)
+        gpu.state.line_width_set(1.0)
+
     gpu.state.blend_set('NONE')
 
 
@@ -363,6 +397,35 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
         draw_bboxes, (), 'WINDOW', 'POST_VIEW'
     )
     _is_enabled = True
+    _db_path_cache = db_path
+
+    # S178: Create Outliner discipline collections + proxy objects
+    # Each proxy empty: eye icon in Outliner → hide_viewport → GPU skips that batch
+    _disc_proxy_objects.clear()
+    parent_rtree = bpy.data.collections.get("Federation_RTree")
+    if parent_rtree is None:
+        parent_rtree = bpy.data.collections.new("Federation_RTree")
+    if "Federation_RTree" not in {c.name for c in bpy.context.scene.collection.children}:
+        bpy.context.scene.collection.children.link(parent_rtree)
+
+    for disc in sorted(_bbox_batches.keys()):
+        col_name = f"RTree_{disc}"
+        disc_col = bpy.data.collections.get(col_name) or bpy.data.collections.new(col_name)
+        if col_name not in {c.name for c in parent_rtree.children}:
+            parent_rtree.children.link(disc_col)
+        # One empty per discipline — eye icon controls hide_viewport
+        obj_name = f"● {disc}"
+        proxy = bpy.data.objects.get(obj_name) or bpy.data.objects.new(obj_name, None)
+        proxy['federation_rtree_disc'] = disc
+        proxy.hide_render = True
+        proxy.empty_display_type = 'SPHERE'
+        proxy.empty_display_size = 0.5
+        rgba = DISCIPLINE_COLORS.get(disc, DISCIPLINE_COLORS['DEFAULT'])
+        proxy.color = rgba  # viewport display color
+        if obj_name not in {o.name for o in disc_col.objects}:
+            disc_col.objects.link(proxy)
+        _disc_proxy_objects[disc] = obj_name
+        print(f"  §OUTLINER RTree_{disc} — proxy '{obj_name}' (eye=hide)")
 
     # Auto-frame viewport to show bboxes
     # Calculate overall bbox from all elements
@@ -426,9 +489,23 @@ def disable_bbox_visualization() -> Tuple[bool, str]:
         bpy.types.SpaceView3D.draw_handler_remove(_draw_handler, 'WINDOW')
         _draw_handler = None
 
-    # Clear batches
+    # Clear batches and search state
     _bbox_batches.clear()
+    _highlighted_bboxes.clear()
+    _selected_element.clear()
     _is_enabled = False
+
+    # Remove discipline proxy objects + collections
+    for obj_name in _disc_proxy_objects.values():
+        obj = bpy.data.objects.get(obj_name)
+        if obj:
+            bpy.data.objects.remove(obj, do_unlink=True)
+    _disc_proxy_objects.clear()
+    parent_rtree = bpy.data.collections.get("Federation_RTree")
+    if parent_rtree:
+        for child in list(parent_rtree.children):
+            bpy.data.collections.remove(child)
+        bpy.data.collections.remove(parent_rtree)
 
     # Force viewport redraw
     for window in bpy.context.window_manager.windows:
@@ -444,3 +521,172 @@ def is_bbox_visualization_enabled() -> bool:
     """Check if BBox visualization is currently enabled"""
     global _is_enabled
     return _is_enabled
+
+
+def set_color_override(color: Optional[Tuple[float, float, float, float]]) -> None:
+    """Override all discipline colors with a single color (e.g. grey for Design Mode).
+
+    Called by BIM Designer's design_bbox module to mute existing Federation
+    bboxes when entering Design Mode. Pass None to clear the override.
+    """
+    global _color_override
+    _color_override = color
+
+
+def clear_color_override() -> None:
+    """Remove the color override — restore original discipline colors."""
+    global _color_override
+    _color_override = None
+
+
+# ── S178: Search + Navigate ────────────────────────────────────────────────────
+
+def navigate_to_element(search_term: str, context) -> dict:
+    """Search elements by name/guid/class/discipline, fly viewport to result.
+
+    Returns dict with found element info, or {} if not found.
+    Highlights up to 10 matches in yellow. Flies to first match.
+    Zero bpy.data.objects created — pure SQL + viewport fly.
+    """
+    global _highlighted_bboxes, _db_path_cache
+
+    if not _db_path_cache or not Path(_db_path_cache).exists():
+        return {}
+
+    _highlighted_bboxes.clear()
+    results = []
+
+    try:
+        conn = sqlite3.connect(_db_path_cache)
+        cur = conn.cursor()
+        term = search_term.strip()
+        like = f"%{term}%"
+
+        cur.execute("""
+            SELECT m.guid, m.element_name, m.discipline, m.ifc_class,
+                   r.minX, r.minY, r.minZ, r.maxX, r.maxY, r.maxZ
+            FROM elements_meta m
+            JOIN elements_rtree r ON m.id = r.id
+            WHERE m.element_name LIKE ?
+               OR m.guid = ?
+               OR m.discipline = ?
+               OR m.ifc_class LIKE ?
+            LIMIT 10
+        """, (like, term, term.upper(), like))
+
+        rows = cur.fetchall()
+        conn.close()
+
+        for guid, name, disc, ifc_class, mnX, mnY, mnZ, mxX, mxY, mxZ in rows:
+            bbox = (mnX, mnY, mnZ, mxX, mxY, mxZ)
+            _highlighted_bboxes.append(bbox)
+            results.append({'guid': guid, 'name': name, 'disc': disc,
+                            'ifc_class': ifc_class, 'bbox': bbox})
+
+    except Exception as e:
+        print(f"[RTree] navigate_to_element error: {e}")
+        return {}
+
+    if not results:
+        return {}
+
+    # Fly viewport to first result's bbox centroid
+    first = results[0]['bbox']
+    cx = (first[0] + first[3]) / 2
+    cy = (first[1] + first[4]) / 2
+    cz = (first[2] + first[5]) / 2
+    size = max(first[3]-first[0], first[4]-first[1], first[5]-first[2], 1.0)
+
+    for area in context.screen.areas:
+        if area.type == 'VIEW_3D':
+            space = area.spaces[0]
+            space.region_3d.view_location = Vector((cx, cy, cz))
+            space.region_3d.view_distance = size * 4.0
+            area.tag_redraw()
+            break
+
+    print(f"[RTree] §PROOF NAVIGATE found={len(results)} term='{search_term}' "
+          f"fly=({cx:.1f},{cy:.1f},{cz:.1f})")
+    return results[0]
+
+
+def pick_element_at_ray(ray_origin: Vector, ray_dir: Vector) -> dict:
+    """Find the element whose bbox the given world-space ray passes through.
+
+    Uses R-tree spatial pre-filter then precise ray-AABB test.
+    Returns element info dict or {} if nothing hit.
+    Updates _selected_element global (drawn white in viewport).
+    """
+    global _selected_element, _db_path_cache
+
+    if not _db_path_cache or not Path(_db_path_cache).exists():
+        return {}
+
+    # Build a coarse bounding box around the ray for SQL pre-filter
+    # Sample points along the ray: t = 0.5 .. 500m
+    pts = [ray_origin + ray_dir * t for t in (0.5, 5, 50, 200, 500)]
+    xs = [p.x for p in pts]
+    ys = [p.y for p in pts]
+    zs = [p.z for p in pts]
+    margin = 2.0  # metres pick tolerance
+    q_mnX, q_mxX = min(xs) - margin, max(xs) + margin
+    q_mnY, q_mxY = min(ys) - margin, max(ys) + margin
+    q_mnZ, q_mxZ = min(zs) - margin, max(zs) + margin
+
+    try:
+        conn = sqlite3.connect(_db_path_cache)
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT m.guid, m.element_name, m.discipline, m.ifc_class,
+                   r.minX, r.minY, r.minZ, r.maxX, r.maxY, r.maxZ
+            FROM elements_meta m
+            JOIN elements_rtree r ON m.id = r.id
+            WHERE r.minX <= ? AND r.maxX >= ?
+              AND r.minY <= ? AND r.maxY >= ?
+              AND r.minZ <= ? AND r.maxZ >= ?
+            LIMIT 200
+        """, (q_mxX, q_mnX, q_mxY, q_mnY, q_mxZ, q_mnZ))
+        candidates = cur.fetchall()
+        conn.close()
+    except Exception as e:
+        print(f"[RTree] pick_element_at_ray SQL error: {e}")
+        return {}
+
+    # Precise ray-AABB test (slab method) — find closest hit
+    best_t = float('inf')
+    best = None
+    ox, oy, oz = ray_origin.x, ray_origin.y, ray_origin.z
+    dx, dy, dz = ray_dir.x, ray_dir.y, ray_dir.z
+
+    for guid, name, disc, ifc_class, mnX, mnY, mnZ, mxX, mxY, mxZ in candidates:
+        # Slab test per axis
+        t_min, t_max = -float('inf'), float('inf')
+        for o_ax, d_ax, lo, hi in ((ox, dx, mnX, mxX),
+                                    (oy, dy, mnY, mxY),
+                                    (oz, dz, mnZ, mxZ)):
+            if abs(d_ax) < 1e-9:
+                if o_ax < lo or o_ax > hi:
+                    t_min = float('inf')
+                    break
+            else:
+                t1, t2 = (lo - o_ax) / d_ax, (hi - o_ax) / d_ax
+                if t1 > t2:
+                    t1, t2 = t2, t1
+                t_min = max(t_min, t1)
+                t_max = min(t_max, t2)
+                if t_min > t_max:
+                    break
+
+        if t_min <= t_max and t_min < best_t and t_min > 0:
+            best_t = t_min
+            best = (guid, name, disc, ifc_class, (mnX, mnY, mnZ, mxX, mxY, mxZ))
+
+    if best is None:
+        return {}
+
+    guid, name, disc, ifc_class, bbox = best
+    _selected_element = {'guid': guid, 'name': name, 'disc': disc,
+                         'ifc_class': ifc_class, 'bbox': bbox, 't': best_t}
+    print(f"[RTree] §PROOF PICK guid={guid[:12]} disc={disc} class={ifc_class} "
+          f"t={best_t:.1f}m candidates={len(candidates)}")
+    return _selected_element

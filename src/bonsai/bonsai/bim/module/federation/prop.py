@@ -169,6 +169,31 @@ class BIMFederationProperties(PropertyGroup):
         default='SEMANTICS'  # Default to SEMANTICS for best balance
     )
 
+    # S178: RTree Inspector — search box + pick result display
+    rtree_search: StringProperty(
+        name="Search",
+        description="Search by element name, GUID, discipline (ARC/STR/MEP…), or IFC class",
+        default="",
+    )
+    rtree_result_name: StringProperty(name="Name", default="")
+    rtree_result_disc: StringProperty(name="Disc", default="")
+    rtree_result_class: StringProperty(name="Class", default="")
+    rtree_result_guid: StringProperty(name="GUID", default="")
+    rtree_result_count: IntProperty(name="Matches", default=0)
+    rtree_picked_name: StringProperty(name="Picked Name", default="")
+    rtree_picked_disc: StringProperty(name="Picked Disc", default="")
+    rtree_picked_class: StringProperty(name="Picked Class", default="")
+    rtree_picked_guid: StringProperty(name="Picked GUID", default="")
+
+    # S175: GN mode toggle — checked = GN (fast/scale), unchecked = per-element (full color)
+    gn_mode: BoolProperty(
+        name="GN Mode",
+        description="ON: GN point clouds — fast load, discipline colors, DLOD\n"
+                    "OFF: per-element objects — full IFC colors, selectable, named in Outliner\n"
+                    "First toggle OFF auto-loads the per-element version (one-time, slower)",
+        default=True
+    )
+
     # Geometry loading mode
     use_tessellation: BoolProperty(
         name="Use Exact IFC Geometry",
