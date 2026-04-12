@@ -1102,13 +1102,7 @@ class FedRTreeLoadMesh(bpy.types.Operator):
         sel_elem = bv._selected_element  # set by fly_to_element
         active_bld = bv._active_building
 
-        # ── Diagnostic: log exactly what is active at call time ──
-        _sel_guid = sel_elem.get('guid', 'none')[:24] if sel_elem else 'none'
-        _sel_bbox = sel_elem.get('bbox') if sel_elem else None
-        _sel_bbox_str = (f"Z[{_sel_bbox[2]:.3f}→{_sel_bbox[5]:.3f}] dZ={_sel_bbox[5]-_sel_bbox[2]:.3f}m"
-                         if _sel_bbox else 'no_bbox')
-        print(f"[S180] §DIAG_LOAD sel_guid={_sel_guid} sel_bbox={_sel_bbox_str} "
-              f"active_bld={active_bld or 'none'}")
+        # (DIAG_LOAD removed — placement confirmed accurate S180)
 
         # S183: storey filter
         storey = props.rtree_storey if hasattr(props, 'rtree_storey') else ''
@@ -1121,20 +1115,25 @@ class FedRTreeLoadMesh(bpy.types.Operator):
             if not rows:
                 raise RuntimeError(f"[S180] No geometry_hash for guid {guid[:16]}")
         elif active_bld and self.target_disc != 'NEXT':
-            # S183: targeted discipline load — skip progressive state
+            # S183: targeted discipline — tracks its own offset so pressing +ARC
+            # repeatedly pages through ARC elements just like +NEXT pages through discs.
             disc = self.target_disc
-            offset = 0
-            label = f"Loaded_{active_bld}_{disc}_0"
+            disc_prog = bv._load_progress.get(active_bld, {})
+            offset = disc_prog.get(f'{disc}_offset', 0)
+            label = f"Loaded_{active_bld}_{disc}_{offset}"
             bbox = next((r['bbox'] for r in bv._search_results
                          if r.get('building') == active_bld), None)
             rows = self._query_building(db_path, active_bld, bbox, disc, offset, storey) \
                    if bbox else self._query_building_no_bbox(db_path, active_bld, disc, offset, storey)
             if not rows:
-                self.report({'WARNING'}, f"No {disc} geometry for {active_bld}"
-                            + (f" storey={storey}" if storey else ""))
+                # Wrap offset back to 0
+                disc_prog[f'{disc}_offset'] = 0
+                bv._load_progress[active_bld] = disc_prog
+                self.report({'INFO'}, f"{disc} fully loaded — wrapping to start")
                 return {'CANCELLED'}
-            print(f"[S183] §PROOF LOAD_TARGETED disc={disc} storey={storey!r} "
-                  f"label={label} hashes={len(rows)}")
+            # Advance this disc's offset
+            disc_prog[f'{disc}_offset'] = offset + (500 if len(rows) >= 500 else 0)
+            bv._load_progress[active_bld] = disc_prog
         elif active_bld:
             # L1: progressive building load — each press advances discipline/offset
             prog = bv._load_progress.get(active_bld, {'disc_idx': 0, 'offset': 0, 'exhausted': False})
@@ -1168,7 +1167,7 @@ class FedRTreeLoadMesh(bpy.types.Operator):
                     new_disc_idx = 0
                     new_offset = 0
                 bv._load_progress[active_bld] = {'disc_idx': new_disc_idx, 'offset': new_offset, 'exhausted': False}
-            print(f"[S182] §DIAG_PROGRESS bld={active_bld} disc={disc} offset={offset} rows={len(rows)}")
+            pass  # DIAG_PROGRESS removed — folded into PROOF LOAD_MESH summary
         else:
             self.report({'WARNING'}, "Select a building (L1) or fly to an element (L2) first")
             return {'CANCELLED'}
@@ -1187,20 +1186,28 @@ class FedRTreeLoadMesh(bpy.types.Operator):
         if label in bv._loaded_collections:
             _remove_stingy_collection(label, bv._loaded_collections)
 
-        # ── Link meshes from library.blend (LOD400, link=True — no local copy) ──
-        with _bpy.data.libraries.load(lib_path, link=True) as (data_from, data_to):
-            available = set(data_from.meshes)
-            data_to.meshes = [h for h in wanted_hashes if h in available]
+        # ── Link meshes from library.blend — skip already-linked (avoids "already linked" warnings) ──
+        already_in_scene = {m.name for m in _bpy.data.meshes}
+        to_link = [h for h in wanted_hashes if h not in already_in_scene]
+        reused  = [h for h in wanted_hashes if h in already_in_scene]
+        if to_link:
+            with _bpy.data.libraries.load(lib_path, link=True) as (data_from, data_to):
+                available = set(data_from.meshes)
+                data_to.meshes = [h for h in to_link if h in available]
+            newly_linked = [m for m in data_to.meshes if m is not None]
+        else:
+            newly_linked = []
+
+        # ── Collect all meshes (newly linked + reused) ──
+        loaded_meshes = newly_linked + [_bpy.data.meshes[h] for h in reused if h in _bpy.data.meshes]
 
         # ── Geo-hash hell check: BLOCKER if any mesh was renamed ──
-        loaded_meshes = [m for m in data_to.meshes if m is not None]
-        for mesh in loaded_meshes:
+        for mesh in newly_linked:
             if mesh.name not in hash_to_guid:
                 raise RuntimeError(
                     f"[S180] §GEO_HASH_HELL {mesh.name} — renamed by Blender "
                     f"(expected one of {list(hash_to_guid)[:3]})"
                 )
-        print(f"[S180] §PROOF NO_COLLISION hashes={len(loaded_meshes)} all_names_match=True")
 
         # ── Build collection + place objects with full transform ──
         col = _bpy.data.collections.new(label)
@@ -1214,6 +1221,7 @@ class FedRTreeLoadMesh(bpy.types.Operator):
         placed = 0
         no_transform = 0
         bbox_fails = 0
+        bbox_fail_log_limit = 3   # only log first 3 failures, rest counted silently
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
         for mesh in loaded_meshes:
@@ -1245,9 +1253,10 @@ class FedRTreeLoadMesh(bpy.types.Operator):
                            mnY - oy <= by <= mxY - oy and
                            mnZ - oz <= bz <= mxZ - oz)
                 if not in_bbox:
+                    if bbox_fails < bbox_fail_log_limit:
+                        print(f"[S180] §TRANSFORM_FAIL hash={ghash[:12]} "
+                              f"ifc=({cx:.2f},{cy:.2f},{cz:.2f}) not inside bbox")
                     bbox_fails += 1
-                    print(f"[S180] §TRANSFORM_FAIL hash={ghash[:12]} "
-                          f"ifc=({cx:.2f},{cy:.2f},{cz:.2f}) not inside bbox")
                 placed += 1
             else:
                 no_transform += 1
@@ -1268,28 +1277,28 @@ class FedRTreeLoadMesh(bpy.types.Operator):
         # Building load keeps current view (user already flew there).
         # Single element: fly to its bbox centre at 3× its diagonal — close enough
         # to inspect geometry, far enough to see context. Never Frame Selected distance.
-        if sel_elem and sel_elem.get('bbox') and placed >= 1:
-            eb = sel_elem['bbox']
-            cx_ifc = (eb[0] + eb[3]) / 2
-            cy_ifc = (eb[1] + eb[4]) / 2
-            cz_ifc = (eb[2] + eb[5]) / 2
-            ox = off.x if off else 0.0
-            oy = off.y if off else 0.0
-            oz = off.z if off else 0.0
-            diag = ((eb[3]-eb[0])**2 + (eb[4]-eb[1])**2 + (eb[5]-eb[2])**2) ** 0.5
-            view_dist = max(diag * 3.0, 2.0)   # at least 2m even for tiny elements
-            for area in context.screen.areas:
-                if area.type == 'VIEW_3D':
-                    r3d = area.spaces[0].region_3d
-                    r3d.view_location = (cx_ifc - ox, cy_ifc - oy, cz_ifc - oz)
-                    r3d.view_distance = view_dist
-                    area.tag_redraw()
-                    break
-            print(f"[S182] §FLY_TO_MESH label={label} dist={view_dist:.1f}m")
-        else:
-            for area in context.screen.areas:
-                if area.type == 'VIEW_3D':
-                    area.tag_redraw()
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                space = area.spaces[0]
+                # Auto-switch to Material Preview so library.blend materials show
+                if space.shading.type not in ('MATERIAL', 'RENDERED'):
+                    space.shading.type = 'MATERIAL'
+                # L2 single element: fly to it at inspection distance
+                if sel_elem and sel_elem.get('bbox') and placed >= 1:
+                    eb = sel_elem['bbox']
+                    ox = off.x if off else 0.0
+                    oy = off.y if off else 0.0
+                    diag = ((eb[3]-eb[0])**2 + (eb[4]-eb[1])**2 + (eb[5]-eb[2])**2) ** 0.5
+                    view_dist = max(diag * 3.0, 2.0)
+                    space.region_3d.view_location = (
+                        (eb[0]+eb[3])/2 - ox,
+                        (eb[1]+eb[4])/2 - (off.y if off else 0.0),
+                        (eb[2]+eb[5])/2 - (off.z if off else 0.0),
+                    )
+                    space.region_3d.view_distance = view_dist
+                    print(f"[S182] §FLY_TO_MESH label={label} dist={view_dist:.1f}m")
+                area.tag_redraw()
+                break
         return {'FINISHED'}
 
     # ── SQL helpers ──
