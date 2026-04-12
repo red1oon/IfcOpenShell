@@ -60,6 +60,9 @@ _active_building = ""        # currently drilled-into building
 _loaded_collections = {}     # label → [object_names]
 _library_blend_cache = None  # absolute path to library.blend, resolved at RTree load
 
+# S183: Building storey list — populated by FedRTreeCountBuilding
+_building_storeys = []       # storeys for active building, from last count query
+
 # S182: Progressive load state
 LOAD_DISC_ORDER = ['ARC', 'STR', 'MEP', 'ELEC', 'FP']
 _load_progress = {}          # building → {'disc_idx': int, 'offset': int, 'exhausted': bool}

@@ -79,6 +79,8 @@ classes = (
     operator.FedRTreePick,                  # S178: click-to-identify
     operator.FedRTreeLoadMesh,              # S180: stingy mesh loader
     operator.FedRTreeShred,                 # S180: remove last loaded collection
+    operator.FedRTreeCountBuilding,         # S183: cockpit discipline counts
+    operator.FedRTreeCopyGuid,              # S183: clipboard GUID copy
     operator.UnloadFederationViewport,
     operator.ExtractSampleDatabase,
     operator.ExtractFullDatabase,

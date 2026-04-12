@@ -186,6 +186,21 @@ class BIMFederationProperties(PropertyGroup):
     rtree_picked_guid: StringProperty(name="Picked GUID", default="")
     rtree_last_loaded: StringProperty(name="Last Loaded", default="")  # S180: stingy loader collection label
 
+    # S183: Cockpit — building discipline counts (populated by FedRTreeCountBuilding)
+    rtree_bld_arc:   IntProperty(name="ARC",  default=0)
+    rtree_bld_str:   IntProperty(name="STR",  default=0)
+    rtree_bld_mep:   IntProperty(name="MEP",  default=0)
+    rtree_bld_elec:  IntProperty(name="ELEC", default=0)
+    rtree_bld_fp:    IntProperty(name="FP",   default=0)
+    rtree_bld_total: IntProperty(name="Total", default=0)
+
+    # S183: Storey filter (blank = all storeys)
+    rtree_storey: StringProperty(
+        name="Floor",
+        default="",
+        description="Filter MESH loads to this storey. Blank = all floors.",
+    )
+
     # S175: GN mode toggle — checked = GN (fast/scale), unchecked = per-element (full color)
     gn_mode: BoolProperty(
         name="GN Mode",

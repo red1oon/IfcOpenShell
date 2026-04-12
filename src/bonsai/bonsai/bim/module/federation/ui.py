@@ -1667,86 +1667,139 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         props = context.scene.BIMFederationProperties
+        from . import bbox_visualization as bv
+        import re as _re
 
-        # ── Search box ──
-        layout.label(text="Search Elements", icon='VIEWZOOM')
+        # ── SEARCH ──
         row = layout.row(align=True)
-        row.prop(props, "rtree_search", text="")
+        row.prop(props, "rtree_search", text="", icon='VIEWZOOM')
         row.operator("bim.fed_rtree_search", text="", icon='PLAY')
 
-        if props.rtree_result_count:
-            from . import bbox_visualization as bv
-
-            # ── L1: Building list ──
+        # ── BUILDING LIST (L1) ──
+        if props.rtree_result_count and bv._search_results:
             box = layout.box()
-            box.label(text=f"'{props.rtree_search}'  in {props.rtree_result_count} building(s)",
-                      icon='WORLD')
+            box.label(text=f"BUILDINGS  — '{props.rtree_search}'", icon='WORLD')
             col = box.column(align=True)
-            col.scale_y = 1.05
+            col.scale_y = 1.1
             for i, r in enumerate(bv._search_results):
                 building = r.get('building', '?')
-                count = r.get('count', 0)
-                n_tiles = r.get('tile_count', 1)
-                # Highlight active building row
-                active = (building == bv._active_building)
-                row = col.row(align=True)
-                row.alert = active
-                tile_badge = f"  ×{n_tiles}" if n_tiles > 1 else ""
-                op = row.operator("bim.fed_rtree_fly_to_result",
-                                  text=f"{building}{tile_badge}  ({count})", icon='HOME')
+                count    = r.get('count', 0)
+                n_tiles  = r.get('tile_count', 1)
+                active   = (building == bv._active_building)
+                row2 = col.row(align=True)
+                row2.alert = active
+                badge = f" \u00d7{n_tiles}" if n_tiles > 1 else ""
+                disp = _re.sub(r'^T\d+_', '', building)
+                op = row2.operator("bim.fed_rtree_fly_to_result",
+                                   text=f"{disp}{badge}  ({count:,})", icon='HOME')
                 op.result_index = i
-
-            # ── L2: Element list for active building ──
-            if bv._active_building and bv._building_elements:
-                layout.separator(factor=0.5)
-                box2 = layout.box()
-                box2.label(text=f"{bv._active_building} — top {len(bv._building_elements)}",
-                           icon='OBJECT_DATA')
-                col2 = box2.column(align=True)
-                col2.scale_y = 1.0
-                for j, e in enumerate(bv._building_elements):
-                    name = e.get('name') or e.get('ifc_class', '?')
-                    storey = e.get('storey', '')
-                    label = f"{name[:30]}  {storey}"
-                    op2 = col2.operator("bim.fed_rtree_fly_to_element",
-                                       text=label, icon='RESTRICT_SELECT_OFF')
-                    op2.elem_index = j
-
-                # ── S180: Load / Shred ──
-                row_ls = box2.row(align=True)
-                has_sel = bool(bv._active_building or bv._selected_element)
-                row_ls.enabled = has_sel
-                row_ls.operator("bim.fed_rtree_load_mesh", text="LOAD MESH", icon='IMPORT')
-                shred_row = box2.row(align=True)
-                shred_row.enabled = bool(props.rtree_last_loaded)
-                shred_row.operator("bim.fed_rtree_shred", text="SHRED", icon='TRASH')
-                if props.rtree_last_loaded:
-                    box2.label(text=f"Loaded: {props.rtree_last_loaded}", icon='CHECKMARK')
 
         elif props.rtree_search:
             layout.label(text="No results", icon='ERROR')
 
-        layout.separator()
+        # ── BUILDING COCKPIT (when L1 active) ──
+        if bv._active_building and props.rtree_bld_total > 0:
+            layout.separator(factor=0.3)
+            bx = layout.box()
+            disp_bld = _re.sub(r'^T\d+_', '', bv._active_building)
+            bx.label(text=disp_bld, icon='HOME')
 
-        # ── Click-pick ──
-        layout.label(text="Pick Element", icon='EYEDROPPER')
-        layout.operator("bim.fed_rtree_pick", text="Click to Identify", icon='RESTRICT_SELECT_OFF')
+            # Storey filter
+            row_s = bx.row(align=True)
+            row_s.prop(props, "rtree_storey", text="Floor")
+            if bv._building_storeys:
+                row_s.label(text=f"({len(bv._building_storeys)})")
 
+            # Discipline bars
+            max_count = max(
+                props.rtree_bld_arc, props.rtree_bld_str,
+                props.rtree_bld_mep, props.rtree_bld_elec,
+                props.rtree_bld_fp, 1
+            )
+            disc_data = [
+                ('ARC',  props.rtree_bld_arc),
+                ('STR',  props.rtree_bld_str),
+                ('MEP',  props.rtree_bld_mep),
+                ('ELEC', props.rtree_bld_elec),
+                ('FP',   props.rtree_bld_fp),
+            ]
+            for disc, cnt in disc_data:
+                if cnt == 0:
+                    continue
+                ratio = max(cnt / max_count, 0.04)
+                split = bx.split(factor=ratio, align=True)
+                left = split.row(align=True)
+                left.alert = True
+                left.scale_y = 0.7
+                left.label(text=f"{disc} {cnt:,}")
+                right = split.row(align=True)
+                right.enabled = False
+                right.scale_y = 0.7
+                right.label(text="")
+
+            bx.label(text=f"Total  {props.rtree_bld_total:,}", icon='OBJECT_DATA')
+
+        # ── ELEMENT LIST (L2) ──
+        if bv._active_building and bv._building_elements:
+            layout.separator(factor=0.3)
+            box2 = layout.box()
+            box2.label(text=f"ELEMENTS \u2014 top {len(bv._building_elements)}",
+                       icon='RESTRICT_SELECT_OFF')
+            col2 = box2.column(align=True)
+            col2.scale_y = 0.95
+            for j, e in enumerate(bv._building_elements):
+                ifc_cls = e.get('ifc_class', '')
+                etype   = e.get('element_type') or e.get('name') or ''
+                storey  = e.get('storey', '')
+                guid    = e.get('guid', '')
+                parts = [p for p in [ifc_cls, etype[:20] if etype else None, storey] if p]
+                label = '  \u00b7  '.join(parts) if parts else guid[:20]
+                row3 = col2.row(align=True)
+                op2 = row3.operator("bim.fed_rtree_fly_to_element",
+                                    text=label, icon='RADIOBUT_ON')
+                op2.elem_index = j
+                if guid:
+                    op_cp = row3.operator("bim.fed_rtree_copy_guid", text="", icon='COPYDOWN')
+                    op_cp.guid = guid
+
+            # ── MESH / SHRED actions ──
+            layout.separator(factor=0.3)
+            act_box = layout.box()
+            act_box.label(text="MESH ACTIONS", icon='IMPORT')
+            grid = act_box.grid_flow(row_major=True, columns=3, align=True)
+            for disc in ['ARC', 'STR', 'MEP', 'ELEC', 'FP', 'NEXT']:
+                op3 = grid.operator("bim.fed_rtree_load_mesh",
+                                    text=f"+{disc}",
+                                    icon='IMPORT' if disc == 'NEXT' else 'NONE')
+                op3.target_disc = disc
+
+            sh_row = act_box.row(align=True)
+            sh_row.scale_y = 1.2
+            sh_row.operator("bim.fed_rtree_shred", text="SHRED SELECTED  \u2702", icon='TRASH')
+
+        # ── SCENE INVENTORY ──
+        if bv._loaded_collections:
+            layout.separator(factor=0.3)
+            inv = layout.box()
+            inv.label(text="LOADED", icon='CHECKMARK')
+            for lbl in list(bv._loaded_collections.keys()):
+                disp_lbl = _re.sub(r'^Loaded_T\d+_', 'Loaded_', lbl)
+                row4 = inv.row(align=True)
+                row4.label(text=disp_lbl, icon='OUTLINER_COLLECTION')
+
+        # ── PICK ──
+        layout.separator(factor=0.3)
+        layout.operator("bim.fed_rtree_pick", text="Click to Identify", icon='EYEDROPPER')
         if props.rtree_picked_name:
-            box = layout.box()
-            box.label(text="Last picked:", icon='RADIOBUT_ON')
-            col = box.column(align=True)
-            col.scale_y = 0.8
-            col.label(text=props.rtree_picked_name or "(no name)", icon='OBJECT_DATA')
-            col.label(text=f"Disc:  {props.rtree_picked_disc}")
-            col.label(text=f"Class: {props.rtree_picked_class}")
-            col.label(text=props.rtree_picked_guid[:28], icon='COPY_ID')
-
-        layout.separator()
-
-        # ── Outliner hint ──
-        col = layout.column(align=True)
-        col.scale_y = 0.7
-        col.label(text="Discipline visibility:", icon='OUTLINER_COLLECTION')
-        col.label(text="Outliner → Federation_RTree")
+            pb = layout.box()
+            ifc_cls = props.rtree_picked_class or ''
+            disc    = props.rtree_picked_disc or ''
+            label = '  \u00b7  '.join(p for p in [ifc_cls, disc, props.rtree_picked_name[:24]] if p)
+            pb.label(text=label, icon='RADIOBUT_ON')
+            guid = props.rtree_picked_guid
+            if guid:
+                gr = pb.row(align=True)
+                gr.label(text=guid[:28], icon='COPY_ID')
+                op_cp2 = gr.operator("bim.fed_rtree_copy_guid", text="", icon='COPYDOWN')
+                op_cp2.guid = guid
         col.label(text="Eye icon on ● DISC = hide/show")

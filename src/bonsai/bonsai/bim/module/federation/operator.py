@@ -1074,6 +1074,9 @@ class FedRTreeLoadMesh(bpy.types.Operator):
     )
     bl_options = {'REGISTER', 'UNDO'}
 
+    # S183: target discipline — 'NEXT' = progressive cycle (default), or 'ARC'/'STR'/etc.
+    target_disc: bpy.props.StringProperty(default='NEXT')
+
     def invoke(self, context, event):
         return self.execute(context)
 
@@ -1107,6 +1110,9 @@ class FedRTreeLoadMesh(bpy.types.Operator):
         print(f"[S180] §DIAG_LOAD sel_guid={_sel_guid} sel_bbox={_sel_bbox_str} "
               f"active_bld={active_bld or 'none'}")
 
+        # S183: storey filter
+        storey = props.rtree_storey if hasattr(props, 'rtree_storey') else ''
+
         if sel_elem and sel_elem.get('guid'):
             # L2: single element by guid → geometry_hash
             guid = sel_elem['guid']
@@ -1114,6 +1120,21 @@ class FedRTreeLoadMesh(bpy.types.Operator):
             rows = self._query_single(db_path, guid)
             if not rows:
                 raise RuntimeError(f"[S180] No geometry_hash for guid {guid[:16]}")
+        elif active_bld and self.target_disc != 'NEXT':
+            # S183: targeted discipline load — skip progressive state
+            disc = self.target_disc
+            offset = 0
+            label = f"Loaded_{active_bld}_{disc}_0"
+            bbox = next((r['bbox'] for r in bv._search_results
+                         if r.get('building') == active_bld), None)
+            rows = self._query_building(db_path, active_bld, bbox, disc, offset, storey) \
+                   if bbox else self._query_building_no_bbox(db_path, active_bld, disc, offset, storey)
+            if not rows:
+                self.report({'WARNING'}, f"No {disc} geometry for {active_bld}"
+                            + (f" storey={storey}" if storey else ""))
+                return {'CANCELLED'}
+            print(f"[S183] §PROOF LOAD_TARGETED disc={disc} storey={storey!r} "
+                  f"label={label} hashes={len(rows)}")
         elif active_bld:
             # L1: progressive building load — each press advances discipline/offset
             prog = bv._load_progress.get(active_bld, {'disc_idx': 0, 'offset': 0, 'exhausted': False})
@@ -1122,8 +1143,8 @@ class FedRTreeLoadMesh(bpy.types.Operator):
             label = f"Loaded_{active_bld}_{disc}_{offset}"
             bbox = next((r['bbox'] for r in bv._search_results
                          if r.get('building') == active_bld), None)
-            rows = self._query_building(db_path, active_bld, bbox, disc, offset) \
-                   if bbox else self._query_building_no_bbox(db_path, active_bld, disc, offset)
+            rows = self._query_building(db_path, active_bld, bbox, disc, offset, storey) \
+                   if bbox else self._query_building_no_bbox(db_path, active_bld, disc, offset, storey)
             if not rows:
                 # Advance to next discipline
                 next_disc_idx = prog['disc_idx'] + 1
@@ -1292,11 +1313,16 @@ class FedRTreeLoadMesh(bpy.types.Operator):
         conn.close()
         return rows
 
-    def _query_building(self, db_path, building, bbox, discipline='ARC', offset=0):
+    def _query_building(self, db_path, building, bbox, discipline='ARC', offset=0, storey=''):
         import sqlite3
         mnX, mnY, mnZ, mxX, mxY, mxZ = bbox
+        storey_clause = "AND m.storey = ?" if storey else ""
+        params = [building, discipline, mxX * 1.2, mnX * 0.8, mxY * 1.2, mnY * 0.8]
+        if storey:
+            params.append(storey)
+        params += [500, offset]
         conn = sqlite3.connect(db_path)
-        rows = conn.execute("""
+        rows = conn.execute(f"""
             SELECT m.guid, i.geometry_hash, m.material_rgba
             FROM elements_meta m
             JOIN element_instances i ON m.guid = i.guid
@@ -1305,21 +1331,28 @@ class FedRTreeLoadMesh(bpy.types.Operator):
               AND m.discipline = ?
               AND r.minX <= ? AND r.maxX >= ?
               AND r.minY <= ? AND r.maxY >= ?
-            LIMIT 500 OFFSET ?
-        """, (building, discipline, mxX * 1.2, mnX * 0.8, mxY * 1.2, mnY * 0.8, offset)).fetchall()
+              {storey_clause}
+            LIMIT ? OFFSET ?
+        """, params).fetchall()
         conn.close()
         return rows
 
-    def _query_building_no_bbox(self, db_path, building, discipline='ARC', offset=0):
+    def _query_building_no_bbox(self, db_path, building, discipline='ARC', offset=0, storey=''):
         import sqlite3
+        storey_clause = "AND m.storey = ?" if storey else ""
+        params = [building, discipline]
+        if storey:
+            params.append(storey)
+        params += [500, offset]
         conn = sqlite3.connect(db_path)
-        rows = conn.execute("""
+        rows = conn.execute(f"""
             SELECT m.guid, i.geometry_hash, m.material_rgba
             FROM elements_meta m
             JOIN element_instances i ON m.guid = i.guid
             WHERE m.building = ? AND m.discipline = ?
-            LIMIT 500 OFFSET ?
-        """, (building, discipline, offset)).fetchall()
+              {storey_clause}
+            LIMIT ? OFFSET ?
+        """, params).fetchall()
         conn.close()
         return rows
 
@@ -6723,6 +6756,74 @@ class BIM_OT_launch_web_ui(bpy.types.Operator):
 
 # ── S178: RTree Inspector — Search + Pick operators ───────────────────────────
 
+class FedRTreeCountBuilding(bpy.types.Operator):
+    """Query discipline element counts for the active building (S183 Cockpit)."""
+    bl_idname = "bim.fed_rtree_count_building"
+    bl_label = "Count Building Elements"
+    bl_options = {'INTERNAL'}
+
+    def execute(self, context):
+        from . import bbox_visualization as bv
+        import sqlite3
+        import time
+
+        props = context.scene.BIMFederationProperties
+        building = bv._active_building
+        db_path = bv._db_path_cache
+        if not building or not db_path:
+            return {'CANCELLED'}
+
+        t0 = time.time()
+        conn = sqlite3.connect(db_path)
+        # Discipline counts
+        rows = conn.execute(
+            "SELECT discipline, COUNT(*) FROM elements_meta WHERE building=? GROUP BY discipline",
+            (building,)
+        ).fetchall()
+        # Storeys
+        storeys = conn.execute(
+            "SELECT DISTINCT storey FROM elements_meta WHERE building=? AND storey IS NOT NULL ORDER BY storey",
+            (building,)
+        ).fetchall()
+        conn.close()
+
+        counts = {r[0]: r[1] for r in rows}
+        props.rtree_bld_arc   = counts.get('ARC',  0)
+        props.rtree_bld_str   = counts.get('STR',  0)
+        props.rtree_bld_mep   = counts.get('MEP',  0)
+        props.rtree_bld_elec  = counts.get('ELEC', 0)
+        props.rtree_bld_fp    = counts.get('FP',   0)
+        props.rtree_bld_total = sum(counts.values())
+        bv._building_storeys = [r[0] for r in storeys if r[0]]
+        elapsed_ms = (time.time() - t0) * 1000
+        print(f"[S183] §PROOF COUNT_BLD bld={building} arc={props.rtree_bld_arc} "
+              f"str={props.rtree_bld_str} mep={props.rtree_bld_mep} "
+              f"elec={props.rtree_bld_elec} fp={props.rtree_bld_fp} elapsed={elapsed_ms:.0f}ms")
+        print(f"[S183] §PROOF STOREYS_LOADED bld={building} count={len(bv._building_storeys)} "
+              f"list={bv._building_storeys[:8]}")
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                area.tag_redraw()
+        return {'FINISHED'}
+
+
+class FedRTreeCopyGuid(bpy.types.Operator):
+    """Copy element GUID to clipboard."""
+    bl_idname = "bim.fed_rtree_copy_guid"
+    bl_label = "Copy GUID"
+    bl_description = "Copy element GUID to clipboard"
+    bl_options = {'INTERNAL'}
+
+    guid: bpy.props.StringProperty(default="")
+
+    def execute(self, context):
+        if self.guid:
+            context.window_manager.clipboard = self.guid
+            self.report({'INFO'}, f"Copied: {self.guid[:16]}…")
+            print(f"[S183] §PROOF COPY_GUID guid={self.guid[:16]}")
+        return {'FINISHED'}
+
+
 class FedRTreeSearch(bpy.types.Operator):
     """Search elements by name/GUID/discipline/class. Flies viewport to first match."""
     bl_idname = "bim.fed_rtree_search"
@@ -6786,6 +6887,9 @@ class FedRTreeFlyToResult(bpy.types.Operator):
         # Drill into L2: fetch individual elements in this building
         props = context.scene.BIMFederationProperties
         bv.fetch_building_elements(r['building'], props.rtree_search)
+
+        # S183: populate cockpit counts + storey list
+        bpy.ops.bim.fed_rtree_count_building()
 
         for area in context.screen.areas:
             if area.type == 'VIEW_3D':
