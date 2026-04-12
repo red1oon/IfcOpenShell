@@ -1213,6 +1213,7 @@ class FedRTreeLoadMesh(bpy.types.Operator):
 
         placed = 0
         no_transform = 0
+        bbox_fails = 0
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
         for mesh in loaded_meshes:
@@ -1223,7 +1224,6 @@ class FedRTreeLoadMesh(bpy.types.Operator):
             col.objects.link(obj)
             # Materials come from library.blend via link=True — do not touch.
 
-            # Fetch transform + DB bbox in one query so we can verify placement
             cur.execute("""
                 SELECT t.center_x, t.center_y, t.center_z,
                        t.rotation_x, t.rotation_y, t.rotation_z,
@@ -1237,30 +1237,20 @@ class FedRTreeLoadMesh(bpy.types.Operator):
             tr = cur.fetchone()
             if tr:
                 cx, cy, cz, rx, ry, rz, mnX, mnY, mnZ, mxX, mxY, mxZ = tr
-                rx = rx or 0.0
-                ry = ry or 0.0
-                rz = rz or 0.0
+                rx = rx or 0.0; ry = ry or 0.0; rz = rz or 0.0
                 bx, by, bz = cx - ox, cy - oy, cz - oz
                 obj.location = (bx, by, bz)
                 obj.rotation_euler = (rx, ry, rz)
-                # §TRANSFORM: verify Blender position is inside element's DB bbox
                 in_bbox = (mnX - ox <= bx <= mxX - ox and
                            mnY - oy <= by <= mxY - oy and
                            mnZ - oz <= bz <= mxZ - oz)
-                bbox_dZ = mxZ - mnZ
-                print(f"[S180] §TRANSFORM hash={ghash[:12]} "
-                      f"ifc=({cx:.3f},{cy:.3f},{cz:.3f}) "
-                      f"rot=({rx:.4f},{ry:.4f},{rz:.4f}) "
-                      f"blender=({bx:.3f},{by:.3f},{bz:.3f}) "
-                      f"db_bbox_Z=[{mnZ:.3f}→{mxZ:.3f}] dZ={bbox_dZ:.3f}m "
-                      f"center_in_bbox={in_bbox}")
                 if not in_bbox:
+                    bbox_fails += 1
                     print(f"[S180] §TRANSFORM_FAIL hash={ghash[:12]} "
-                          f"center NOT inside DB bbox — check IFC placement convention")
+                          f"ifc=({cx:.2f},{cy:.2f},{cz:.2f}) not inside bbox")
                 placed += 1
             else:
                 no_transform += 1
-                print(f"[S180] §WARN_NO_TRANSFORM hash={ghash[:12]} guid={row_guid[:20]}")
 
         conn.close()
 
@@ -1269,7 +1259,9 @@ class FedRTreeLoadMesh(bpy.types.Operator):
         props.rtree_last_loaded = label
 
         elapsed = time.time() - t0
-        print(f"[S182] §PROOF LOAD_MESH label={label} hashes={placed} elapsed={elapsed:.1f}s")
+        warn = f" no_transform={no_transform}" if no_transform else ""
+        warn += f" bbox_fails={bbox_fails}" if bbox_fails else ""
+        print(f"[S182] §PROOF LOAD_MESH label={label} placed={placed}{warn} elapsed={elapsed:.1f}s")
         self.report({'INFO'}, f"Loaded {placed} meshes in {elapsed:.1f}s")
 
         # ── L2 single-element load: fly to it at inspection distance ──
