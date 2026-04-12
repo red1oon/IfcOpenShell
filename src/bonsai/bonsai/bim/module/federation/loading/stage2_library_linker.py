@@ -1209,6 +1209,7 @@ def load_library_gn(db_path: str,
         queue = st['queue']
 
         # S178: Halt during orbit — skip tick if camera is moving
+        # Only print on transition (orbit start / orbit end), not every skipped tick.
         cam_pos = None
         try:
             for area in _bpy.context.screen.areas:
@@ -1220,39 +1221,70 @@ def load_library_gn(db_path: str,
         except Exception:
             pass
 
+        was_halted = st.get('_halted', False)
         if cam_pos and st.get('last_cam_pos'):
             dx = sum((a - b) ** 2 for a, b in zip(cam_pos, st['last_cam_pos']))
             if dx > 1.0:  # camera moving — skip this tick
                 st['last_cam_pos'] = cam_pos
-                st.setdefault('skip_orbit', 0)
-                st['skip_orbit'] += 1
-                print(f"[S178][STREAM] §PROOF STREAM_HALT skipped={st['skip_orbit']} ticks during orbit")
+                st['skip_orbit'] = st.get('skip_orbit', 0) + 1
+                if not was_halted:
+                    # Transition: running → halted (print once)
+                    print(f"[S178][STREAM] HALT orbit_start "
+                          f"pct={qi*100//max(len(queue),1)}% "
+                          f"swapped={st.get('total_swapped',0):,}")
+                st['_halted'] = True
                 return STREAM_INTERVAL
+        if was_halted and cam_pos:
+            # Transition: halted → resuming (print once)
+            print(f"[S178][STREAM] §PROOF STREAM_HALT "
+                  f"skipped={st.get('skip_orbit',0)} ticks, resuming "
+                  f"pct={qi*100//max(len(queue),1)}%")
+        st['_halted'] = False
         st['last_cam_pos'] = cam_pos
 
         if qi >= len(queue):
             elapsed_total = time.time() - st.get('t_start', time.time())
-            print(f"[S176][STREAM] §DONE {st['total_swapped']:,}/{len(queue):,} meshes "
-                  f"streamed in {elapsed_total:.1f}s "
-                  f"(skipped={st.get('skip_no_mesh',0)} no_mesh, "
-                  f"{st.get('skip_no_chunk',0)} no_chunk, "
-                  f"{st.get('skip_no_tpl',0)} no_tpl)")
-            # S178: register DLOD now that streaming is complete — no more concurrent writes
+
+            # ── §DONE separator ──────────────────────────────────────────
+            print(f"\n[STREAM] {'═'*56}")
+            print(f"[STREAM] §DONE  {st['total_swapped']:,}/{len(queue):,} meshes "
+                  f"in {elapsed_total:.1f}s")
+            print(f"[STREAM]   skips: {st.get('skip_no_mesh',0)} no_mesh  "
+                  f"{st.get('skip_no_chunk',0)} no_chunk  "
+                  f"{st.get('skip_no_tpl',0)} no_tpl  "
+                  f"{st.get('skip_orbit',0)} orbit_halts")
+
+            # ── Step 1/3: Geo hell check — scan for bbox proxies still in place ──
+            print(f"[STREAM] ─── 1/3: GEO_HELL check ───")
+            wrong_mesh = 0
+            wrong_examples = []
+            for gh, obj_name in st.get('tpl_objects', {}).items():
+                obj = _bpy.data.objects.get(obj_name)
+                if obj and obj.data and len(obj.data.vertices) == 8:
+                    wrong_mesh += 1
+                    if len(wrong_examples) < 3:
+                        wrong_examples.append(f"{obj_name}(gh={gh[:8]})")
+            if wrong_mesh == 0:
+                print(f"[STREAM] §PROOF GEO_HELL_CLEAR — 0 tpl objects with bbox mesh remaining")
+            else:
+                print(f"[STREAM] §WARN  GEO_HELL_PARTIAL — {wrong_mesh} tpl objects still bbox "
+                      f"(examples: {', '.join(wrong_examples)})")
+
+            # ── Step 2/3: Register DLOD — no concurrent index writes from this point ──
+            print(f"[STREAM] ─── 2/3: DLOD register ───")
             dlod_fn = st.get('_dlod_register_fn')
             if dlod_fn:
                 try:
                     dlod_fn()
-                    print("[S178][STREAM] §PROOF DLOD_DEFERRED_REGISTER — DLOD handler registered after streaming done")
+                    print(f"[STREAM] §PROOF DLOD_DEFERRED_REGISTER — handler active")
                 except Exception as _e:
-                    print(f"[S178][STREAM] §DLOD_REGISTER_FAIL — {_e}")
+                    print(f"[STREAM] §DLOD_REGISTER_FAIL — {_e}")
+            else:
+                print(f"[STREAM]   DLOD not wired (skipped at step 8/8)")
 
-            # S179: Realize Instances → collapse 258 GN modifiers to plain meshes
-            # After streaming all chunk meshes are populated. Apply GN modifiers
-            # to bake instances into geometry → zero per-frame GN eval → <0.1s viewport.
-            # Risk: OOM on very large builds → wrapped in try/except, falls back silently.
-            print("[S179][STREAM] Phase 2: Realize Instances for viewport speed...")
-            t_realize = _bpy.context.scene.get('_s179_realize_start', 0) or __import__('time').time()
-            t_realize = __import__('time').time()
+            # ── Step 3/3: Realize Instances — collapse GN modifiers to plain mesh ──
+            print(f"[STREAM] ─── 3/3: Realize Instances ───")
+            t_realize = time.time()
             realized = 0
             skipped_realize = 0
             parent = _bpy.data.collections.get('Federation_Library_GN')
@@ -1260,6 +1292,7 @@ def load_library_gn(db_path: str,
                 for disc_coll in parent.children:
                     if disc_coll.name.startswith('_LibGN'):
                         continue
+                    disc_realized = 0
                     for obj in list(disc_coll.objects):
                         if obj.type != 'MESH':
                             continue
@@ -1272,19 +1305,22 @@ def load_library_gn(db_path: str,
                                 _bpy.ops.object.modifier_apply(modifier=mod.name)
                                 obj.select_set(False)
                                 realized += 1
+                                disc_realized += 1
                             except Exception as _re:
                                 skipped_realize += 1
                                 if skipped_realize <= 3:
-                                    print(f"[S179] SKIP realize {obj.name}: {_re}")
+                                    print(f"[STREAM]   SKIP realize {obj.name}: {_re}")
+                    if disc_realized:
+                        print(f"[STREAM]   {disc_coll.name}: {disc_realized} modifiers realized")
 
-            elapsed_realize = __import__('time').time() - t_realize
-            print(f"[S179] §PROOF REALIZE realized={realized} skipped={skipped_realize} "
-                  f"elapsed={elapsed_realize:.1f}s")
+            elapsed_realize = time.time() - t_realize
             if realized > 0:
-                print(f"[S179] Viewport now pure mesh — <0.1s response expected")
+                print(f"[STREAM] §PROOF REALIZE  realized={realized} skipped={skipped_realize} "
+                      f"elapsed={elapsed_realize:.1f}s → viewport pure mesh <0.1s expected")
             else:
-                print(f"[S179] No modifiers realized — GN architecture unchanged (5s lag)")
+                print(f"[STREAM] §WARN  REALIZE_SKIP  realized=0 — GN unchanged (5s lag fallback)")
 
+            print(f"[STREAM] {'═'*56}\n")
             return None  # unregister timer
 
         if 't_start' not in st:
@@ -1293,6 +1329,7 @@ def load_library_gn(db_path: str,
             st['skip_no_chunk'] = 0
             st['skip_no_tpl'] = 0
             st['made_local'] = 0
+            st['first_pop'] = True
 
         t_tick = time.time()
         batch_end = min(qi + st['batch_size'], len(queue))
@@ -1337,6 +1374,11 @@ def load_library_gn(db_path: str,
                     if tpl_obj and tpl_obj.data != mesh:
                         tpl_obj.data = mesh
                         swapped += 1
+                        if st.get('first_pop'):
+                            # Log the very first bbox→real swap so we know streaming started
+                            print(f"[S178][STREAM] FIRST_POP gh={ghash[:8]} "
+                                  f"chunk={cid} verts={len(mesh.vertices)}")
+                            st['first_pop'] = False
                 else:
                     st['skip_no_tpl'] += 1
 
@@ -1354,10 +1396,12 @@ def load_library_gn(db_path: str,
         if curr_pct > prev_pct or batch_end >= len(queue):
             n_chunks_touched = len(chunk_batch)
             elapsed_total = time.time() - st['t_start']
-            print(f"[S176][STREAM] {pct:3d}% — {st['total_swapped']:,} meshes, "
+            # Distance of nearest element yet to be streamed (queue is sorted near→far)
+            next_dist_m = queue[batch_end][0] ** 0.5 if batch_end < len(queue) else 0.0
+            print(f"[S178][STREAM] {pct:3d}% — {st['total_swapped']:,} meshes, "
                   f"{n_chunks_touched} chunks, {elapsed:.0f}ms/tick, "
                   f"{elapsed_total:.1f}s total, "
-                  f"local={st['made_local']}")
+                  f"next_dist={next_dist_m:.1f}m")
 
         return STREAM_INTERVAL
 
