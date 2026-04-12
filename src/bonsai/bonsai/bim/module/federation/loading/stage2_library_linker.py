@@ -860,7 +860,10 @@ def load_library_gn(db_path: str,
     """
     from math import ceil
 
-    CHUNK_SIZE = 100  # max templates per sub-collection (excl. bbox proxy)
+    # S176: 2000 keeps Collection Info walk at ≤2001 (hang threshold was 7K+).
+    # Reduces GN object count from 3,458 (at 100) to ~170 (at 2000).
+    # Fewer GN modifiers = faster depsgraph = responsive viewport.
+    CHUNK_SIZE = 2000  # max templates per sub-collection (excl. bbox proxy)
 
     t_total = time.time()
     log_path = _init_log(db_path)
@@ -991,8 +994,11 @@ def load_library_gn(db_path: str,
         chunk_col.objects.link(bbox_obj)
 
         # Template objects (all start with bbox mesh)
+        # Use full hash as name — no collision possible (Tpl_{hash[:12]} collides at 2000/chunk)
+        # T_ (2 chars) + 40-char hash = 42 chars, under Blender 63-char limit
+        # T > ! so bbox slot 0 guarantee is preserved
         for gh in chunk_hashes:
-            tpl_obj = bpy.data.objects.new(f"Tpl_{gh[:12]}", bbox_mesh)
+            tpl_obj = bpy.data.objects.new(f"T_{gh}", bbox_mesh)
             tpl_obj['geometry_hash'] = gh
             chunk_col.objects.link(tpl_obj)
             tpl_objects[gh] = tpl_obj
@@ -1195,11 +1201,34 @@ def load_library_gn(db_path: str,
 
     def _stream_tick():
         """Timer callback: chunk-aware make_local + mesh swap.
-        S176: Disables only affected chunks' GN modifiers → small re-eval."""
+        S176: Disables only affected chunks' GN modifiers → small re-eval.
+        S178: Pauses during camera orbit — avoids GN re-evals competing with render."""
         import bpy as _bpy
         st = _stream_state
         qi = st['queue_idx']
         queue = st['queue']
+
+        # S178: Halt during orbit — skip tick if camera is moving
+        cam_pos = None
+        try:
+            for area in _bpy.context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    rv3d = area.spaces[0].region_3d
+                    p = rv3d.view_matrix.inverted().translation
+                    cam_pos = (p.x, p.y, p.z)
+                    break
+        except Exception:
+            pass
+
+        if cam_pos and st.get('last_cam_pos'):
+            dx = sum((a - b) ** 2 for a, b in zip(cam_pos, st['last_cam_pos']))
+            if dx > 1.0:  # camera moving — skip this tick
+                st['last_cam_pos'] = cam_pos
+                st.setdefault('skip_orbit', 0)
+                st['skip_orbit'] += 1
+                print(f"[S178][STREAM] §PROOF STREAM_HALT skipped={st['skip_orbit']} ticks during orbit")
+                return STREAM_INTERVAL
+        st['last_cam_pos'] = cam_pos
 
         if qi >= len(queue):
             elapsed_total = time.time() - st.get('t_start', time.time())
@@ -1208,6 +1237,14 @@ def load_library_gn(db_path: str,
                   f"(skipped={st.get('skip_no_mesh',0)} no_mesh, "
                   f"{st.get('skip_no_chunk',0)} no_chunk, "
                   f"{st.get('skip_no_tpl',0)} no_tpl)")
+            # S178: register DLOD now that streaming is complete — no more concurrent writes
+            dlod_fn = st.get('_dlod_register_fn')
+            if dlod_fn:
+                try:
+                    dlod_fn()
+                    print("[S178][STREAM] §PROOF DLOD_DEFERRED_REGISTER — DLOD handler registered after streaming done")
+                except Exception as _e:
+                    print(f"[S178][STREAM] §DLOD_REGISTER_FAIL — {_e}")
             return None  # unregister timer
 
         if 't_start' not in st:
@@ -1289,8 +1326,12 @@ def load_library_gn(db_path: str,
            f"batch={STREAM_BATCH}, interval={STREAM_INTERVAL}s")
     report(f"  §NOTE chunk-aware: each re-eval walks ≤{CHUNK_SIZE + 1} objects")
 
-    # ── STEP 8/8: Wire DLOD handler (distance LOD after streaming) ──
-    report(f"\n[8/8] WIRE DLOD (camera-distance LOD)")
+    # ── STEP 8/8: Init DLOD state — register_handler deferred until streaming done ──
+    # S178: DLOD and streamer both write instance_index on the same (disc,chunk) mesh.
+    # Registering the handler now would start LOD swaps while streaming is still
+    # overwriting indices → sparse geo hell (race condition).
+    # Fix: init state now (data is in scope), register after streamer §DONE.
+    report(f"\n[8/8] INIT DLOD (deferred register — fires after streaming completes)")
     t8 = time.time()
     try:
         from ..dlod_handler import dlod_init_chunked, register_handler
@@ -1301,9 +1342,10 @@ def load_library_gn(db_path: str,
             hash_to_index=hash_to_index,
             db_path=db_path,
         )
-        register_handler()
+        _stream_state['_dlod_register_fn'] = register_handler
         t8_elapsed = time.time() - t8
-        report(f"  §DLOD WIRED — chunked mode, {len(disc_chunk_elements)} disc×chunk pairs")
+        report(f"  §DLOD INIT — chunked mode, {len(disc_chunk_elements)} disc×chunk pairs")
+        report(f"  §DLOD DEFERRED — register_handler fires after streamer §DONE")
         report(f"  halt_delay=200ms, near={10}m, far={100}m")
         report(f"  ({t8_elapsed:.3f}s)")
     except Exception as e:
@@ -1350,6 +1392,7 @@ def load_library_gn(db_path: str,
         "chunk_size": CHUNK_SIZE,
         "stream_queue": len(stream_queue),
         "cache_time": t2_elapsed,
+        "gn_build_time": t4_elapsed,
         "total_time": t_total_elapsed,
         "log_path": str(log_path),
         "disc_positions": disc_positions,

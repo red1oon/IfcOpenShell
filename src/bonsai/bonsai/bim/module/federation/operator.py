@@ -1766,6 +1766,567 @@ class UnloadFederationViewport(bpy.types.Operator):
             return {'CANCELLED'}
 
 
+class LinkFederationLibrary(bpy.types.Operator):
+    """Load building from library.blend — GN checkbox controls mode"""
+    bl_idname = "bim.link_federation_library"
+    bl_label = "Library"
+    bl_description = (
+        "Load building from library.blend\n"
+        "GN ON (default): fast GN point clouds, discipline colors\n"
+        "GN OFF: per-element objects, full IFC colors, selectable"
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.BIMFederationProperties
+
+        if not props.federation_database_path:
+            self.report({'ERROR'}, "No federation database selected")
+            return {'CANCELLED'}
+
+        # S175: GN checkbox controls which path
+        if props.gn_mode:
+            return self._load_gn(context, props)
+        else:
+            return self._load_per_element(context, props)
+
+    def _load_common(self, context, props):
+        """Shared setup: find library, register index."""
+        from .loading.stage2_library_linker import _find_library_blend
+        from . import discipline_legend
+
+        db_path = bpy.path.abspath(props.federation_database_path)
+        lib_blend = _find_library_blend(db_path)
+        if not lib_blend:
+            self.report({'ERROR'},
+                "library.blend not found. Run bake_library_blend.py first.")
+            return None, None, None
+
+        if discipline_legend.is_legend_enabled():
+            discipline_legend.disable_legend()
+
+        if not hasattr(bpy.types.WindowManager, 'federation_index'):
+            from .core.spatial_index import FederationIndex
+            index = FederationIndex(db_path)
+            index.build()
+            bpy.types.WindowManager.federation_index = index
+            props.index_loaded = True
+
+        return db_path, lib_blend, discipline_legend
+
+    def _load_gn(self, context, props):
+        """GN + NEAR: cache load, make_local() near, enable GN — ~3s target."""
+        from . import logging_utils
+        logging_utils.start_file_logging()
+
+        try:
+            from .loading.stage2_library_linker import load_library_gn
+
+            db_path, lib_blend, discipline_legend = self._load_common(context, props)
+            if db_path is None:
+                logging_utils.stop_file_logging()
+                return {'CANCELLED'}
+
+            print(f"\n{'='*70}")
+            print(f"LIBRARY — GN + NEAR (cache → make_local → smooth)")
+            print(f"  Database: {db_path}")
+            print(f"  Library:  {lib_blend}")
+            print(f"{'='*70}")
+
+            gn_collection = bpy.data.collections.get("Federation_Library_GN")
+            if not gn_collection:
+                gn_collection = bpy.data.collections.new("Federation_Library_GN")
+                context.scene.collection.children.link(gn_collection)
+
+            def report_fn(msg):
+                self.report({'INFO'}, msg)
+                context.workspace.status_text_set(msg)
+
+            stats = load_library_gn(
+                db_path, lib_blend, gn_collection, report_fn)
+
+            discipline_legend.enable_legend()
+
+            # Hide per-element if it exists
+            for vl in context.scene.view_layers:
+                lc = self._find_lc(vl.layer_collection, "Federation_Library")
+                if lc:
+                    lc.exclude = True
+
+            # Store GN load time on collection for comparison
+            gn_collection['load_time'] = stats['total_time']
+            gn_collection['link_time'] = stats['cache_time']
+            gn_collection['gn_build_time'] = stats['gn_build_time']
+
+            context.workspace.status_text_set(None)
+            print(f"\n{'='*70}")
+            print(f"§PROOF GN_PERFORMANCE")
+            print(f"  Elements:     {stats['elements']:,}")
+            print(f"  GN objects:   {stats['gn_objects']}")
+            print(f"  Unique meshes:{stats['unique_meshes']:,}")
+            print(f"  Link time:    {stats['cache_time']:.3f}s (link=True, zero-copy)")
+            print(f"  GN build:     {stats['gn_build_time']:.2f}s")
+            print(f"  Total:        {stats['total_time']:.2f}s")
+            print(f"  Rate:         {stats['elements']/max(stats['total_time'],0.001):.0f} elements/s")
+            print(f"{'='*70}\n")
+            self.report({'INFO'},
+                f"GN loaded: {stats['elements']:,} elements in "
+                f"{stats['gn_objects']} objects ({stats['total_time']:.1f}s)")
+
+            logging_utils.stop_file_logging()
+            return {'FINISHED'}
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.report({'ERROR'}, f"GN Library load failed: {e}")
+            context.workspace.status_text_set(None)
+            logging_utils.stop_file_logging()
+            return {'CANCELLED'}
+
+    def _load_per_element(self, context, props):
+        """Per-element mode: full IFC colors, selectable (link=False, slower)."""
+        from . import logging_utils
+        logging_utils.start_file_logging()
+
+        try:
+            from .loading.stage2_library_linker import load_library_linked
+
+            db_path, lib_blend, discipline_legend = self._load_common(context, props)
+            if db_path is None:
+                logging_utils.stop_file_logging()
+                return {'CANCELLED'}
+
+            print(f"\n{'='*70}")
+            print(f"LIBRARY LINK — PER-ELEMENT MODE (full color)")
+            print(f"  Database: {db_path}")
+            print(f"  Library:  {lib_blend}")
+            print(f"{'='*70}")
+
+            fed_collection = bpy.data.collections.get("Federation_Library")
+            if not fed_collection:
+                fed_collection = bpy.data.collections.new("Federation_Library")
+                context.scene.collection.children.link(fed_collection)
+
+            def report_fn(msg):
+                self.report({'INFO'}, msg)
+                context.workspace.status_text_set(msg)
+
+            stats = load_library_linked(
+                db_path, lib_blend, fed_collection, report_fn)
+
+            discipline_legend.enable_legend()
+
+            # Hide GN if it exists
+            for vl in context.scene.view_layers:
+                lc = self._find_lc(vl.layer_collection, "Federation_Library_GN")
+                if lc:
+                    lc.exclude = True
+
+            # Store per-element load time on collection for comparison
+            fed_collection['load_time'] = stats['total_time']
+            fed_collection['link_time'] = stats['link_time']
+            fed_collection['instance_time'] = stats['instance_time']
+
+            context.workspace.status_text_set(None)
+            print(f"\n{'='*70}")
+            print(f"§PROOF PEREL_PERFORMANCE")
+            print(f"  Elements:     {stats['elements']:,}")
+            print(f"  Unique meshes:{stats['unique_meshes']:,}")
+            print(f"  Link time:    {stats['link_time']:.3f}s (link=False, local copy)")
+            print(f"  Instance time:{stats['instance_time']:.2f}s")
+            print(f"  Total:        {stats['total_time']:.2f}s")
+            print(f"  Rate:         {stats['elements']/max(stats['total_time'],0.001):.0f} elements/s")
+            print(f"{'='*70}\n")
+            self.report({'INFO'},
+                f"Library loaded: {stats['elements']:,} elements in "
+                f"{stats['total_time']:.1f}s")
+
+            logging_utils.stop_file_logging()
+            return {'FINISHED'}
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.report({'ERROR'}, f"Library load failed: {e}")
+            context.workspace.status_text_set(None)
+            logging_utils.stop_file_logging()
+            return {'CANCELLED'}
+
+    def _find_lc(self, layer_collection, name):
+        if layer_collection.collection.name == name:
+            return layer_collection
+        for child in layer_collection.children:
+            result = self._find_lc(child, name)
+            if result:
+                return result
+        return None
+
+
+class LinkFederationLibraryGN(bpy.types.Operator):
+    """Load federation as GN point clouds from library.blend — scale/presentation mode"""
+    bl_idname = "bim.link_federation_library_gn"
+    bl_label = "Library GN"
+    bl_description = (
+        "Load federation as GN point clouds from library.blend\n"
+        "Few Outliner items, DLOD active, smaller .blend saves\n"
+        "Toggle back to per-element mode via GN Mode Toggle button"
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.BIMFederationProperties
+
+        if not props.federation_database_path:
+            self.report({'ERROR'}, "No federation database selected")
+            return {'CANCELLED'}
+
+        from . import logging_utils
+        log_path = logging_utils.start_file_logging()
+
+        try:
+            from .loading.stage2_library_linker import (
+                load_library_linked_gn, _find_library_blend
+            )
+            from . import discipline_legend
+            import time
+
+            db_path = bpy.path.abspath(props.federation_database_path)
+
+            print(f"\n{'='*70}")
+            print("LIBRARY LINK GN MODE: GN point clouds from library.blend")
+            print(f"{'='*70}")
+            print(f"  Database: {db_path}")
+
+            # Locate library.blend
+            lib_blend = _find_library_blend(db_path)
+            if not lib_blend:
+                self.report({'ERROR'},
+                    "library.blend not found. "
+                    "Run bake_library_blend.py first.")
+                logging_utils.stop_file_logging()
+                return {'CANCELLED'}
+
+            print(f"  Library:  {lib_blend}")
+
+            # Disable legend if active
+            if discipline_legend.is_legend_enabled():
+                discipline_legend.disable_legend()
+
+            # Register federation index
+            if not hasattr(bpy.types.WindowManager, 'federation_index'):
+                from .core.spatial_index import FederationIndex
+                index = FederationIndex(db_path)
+                index.build()
+                bpy.types.WindowManager.federation_index = index
+                props.index_loaded = True
+
+            # Create GN parent collection
+            gn_collection = bpy.data.collections.get("Federation_Library_GN")
+            if not gn_collection:
+                gn_collection = bpy.data.collections.new("Federation_Library_GN")
+                context.scene.collection.children.link(gn_collection)
+
+            # Load GN mode
+            def report_fn(msg):
+                self.report({'INFO'}, msg)
+                context.workspace.status_text_set(msg)
+
+            stats = load_library_linked_gn(
+                db_path, lib_blend, gn_collection, report_fn)
+
+            # Re-enable legend
+            discipline_legend.enable_legend()
+
+            # Hide per-element collection if it exists (both coexist)
+            fed_lib = bpy.data.collections.get("Federation_Library")
+            if fed_lib:
+                for vl in context.scene.view_layers:
+                    lc = self._find_lc(vl.layer_collection, "Federation_Library")
+                    if lc:
+                        lc.exclude = True
+                print(f"  §FINE toggle: Library→GN (DLOD on)")
+
+            # Summary
+            print(f"\n{'='*70}")
+            print(f"LIBRARY LINK GN COMPLETE")
+            print(f"  Elements:     {stats['elements']:,}")
+            print(f"  Unique meshes:{stats['unique_meshes']:,}")
+            print(f"  GN objects:   {stats['gn_objects']}")
+            print(f"  Total:        {stats['total_time']:.2f}s")
+            print(f"{'='*70}\n")
+
+            context.workspace.status_text_set(None)
+            self.report({'INFO'},
+                f"GN Library loaded: {stats['elements']:,} elements in "
+                f"{stats['gn_objects']} GN objects ({stats['total_time']:.1f}s)")
+
+            logging_utils.stop_file_logging()
+            return {'FINISHED'}
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"\n  LIBRARY LINK GN FAILED: {e}")
+            self.report({'ERROR'}, f"GN Library link failed: {str(e)}")
+            context.workspace.status_text_set(None)
+            logging_utils.stop_file_logging()
+            return {'CANCELLED'}
+
+    def _find_lc(self, layer_collection, name):
+        if layer_collection.collection.name == name:
+            return layer_collection
+        for child in layer_collection.children:
+            result = self._find_lc(child, name)
+            if result:
+                return result
+        return None
+
+
+class ToggleFederationGNMode(bpy.types.Operator):
+    """Switch between GN (fast) and per-element (full color) — auto-loads if needed"""
+    bl_idname = "bim.toggle_federation_gn_mode"
+    bl_label = "Switch"
+    bl_description = (
+        "Switch between the two loaded modes.\n"
+        "If the other mode isn't loaded yet, loads it automatically"
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.BIMFederationProperties
+        gn_col = bpy.data.collections.get("Federation_Library_GN")
+        lib_col = bpy.data.collections.get("Federation_Library")
+
+        if not gn_col and not lib_col:
+            self.report({'WARNING'}, "No federation loaded. Click Library first.")
+            return {'CANCELLED'}
+
+        # Detect which is currently visible
+        gn_lc = lib_lc = None
+        gn_visible = False
+        for vl in context.scene.view_layers:
+            gn_lc = self._find_lc(vl.layer_collection, "Federation_Library_GN")
+            lib_lc = self._find_lc(vl.layer_collection, "Federation_Library")
+            if gn_lc:
+                gn_visible = not gn_lc.exclude
+            break
+
+        if gn_visible:
+            # ── GN → per-element (full color) ──
+            if gn_lc:
+                gn_lc.exclude = True
+            try:
+                from . import dlod_handler
+                dlod_handler.unregister_handler()
+            except Exception:
+                pass
+
+            if lib_col and lib_lc:
+                lib_lc.exclude = False
+                print(f"§FINE toggle: GN→Library (DLOD off)")
+                self.report({'INFO'}, "Per-element mode (full colors)")
+            else:
+                # Auto-load per-element — set gn_mode=False so Library loads right path
+                props.gn_mode = False
+                context.workspace.status_text_set("Loading per-element (full colors)...")
+                ret = bpy.ops.bim.link_federation_library()
+                context.workspace.status_text_set(None)
+                if ret != {'FINISHED'}:
+                    props.gn_mode = True
+                    if gn_lc:
+                        gn_lc.exclude = False
+                    self.report({'WARNING'}, "Per-element load failed")
+                    return {'CANCELLED'}
+                self.report({'INFO'}, "Per-element loaded (full colors)")
+            props.gn_mode = False
+        else:
+            # ── per-element → GN (fast, DLOD) ──
+            if lib_lc:
+                lib_lc.exclude = True
+
+            if gn_col and gn_lc:
+                gn_lc.exclude = False
+            else:
+                # Auto-load GN — set gn_mode=True so Library loads right path
+                props.gn_mode = True
+                ret = bpy.ops.bim.link_federation_library()
+                if ret != {'FINISHED'}:
+                    props.gn_mode = False
+                    if lib_lc:
+                        lib_lc.exclude = False
+                    self.report({'WARNING'}, "GN load failed")
+                    return {'CANCELLED'}
+
+            try:
+                from . import dlod_handler
+                dlod_handler.register_handler()
+            except Exception:
+                pass
+            print(f"§FINE toggle: Library→GN (DLOD on)")
+            self.report({'INFO'}, "GN mode (DLOD on)")
+            props.gn_mode = True
+
+        # ── §PROOF COMPARE — side-by-side performance + scene stats ──
+        self._log_comparison(context)
+        return {'FINISHED'}
+
+    def _log_comparison(self, context):
+        """Log GN vs per-element performance comparison after toggle.
+        Writes to both console and file for later reading."""
+        import os
+        from datetime import datetime
+
+        gn_col = bpy.data.collections.get("Federation_Library_GN")
+        lib_col = bpy.data.collections.get("Federation_Library")
+
+        gn_objs = gn_elements = lib_objs = 0
+        gn_discs = lib_discs = 0
+        gn_load_time = gn_link_time = gn_build_time = 0.0
+        lib_load_time = lib_link_time = lib_instance_time = 0.0
+
+        if gn_col:
+            for child in gn_col.children:
+                if child.name.startswith('_'):
+                    continue
+                gn_discs += 1
+                for obj in child.objects:
+                    gn_objs += 1
+                    if obj.type == 'MESH' and obj.data:
+                        gn_elements += len(obj.data.vertices)
+            gn_load_time = gn_col.get('load_time', 0.0)
+            gn_link_time = gn_col.get('link_time', 0.0)
+            gn_build_time = gn_col.get('gn_build_time', 0.0)
+
+        if lib_col:
+            for child in lib_col.children:
+                if child.name.startswith('_'):
+                    continue
+                lib_discs += 1
+                lib_objs += len(child.objects)
+            lib_load_time = lib_col.get('load_time', 0.0)
+            lib_link_time = lib_col.get('link_time', 0.0)
+            lib_instance_time = lib_col.get('instance_time', 0.0)
+
+        # Count meshes + total vertex data in scene
+        total_meshes = len(bpy.data.meshes)
+        total_verts = sum(len(m.vertices) for m in bpy.data.meshes)
+        total_objects = len(bpy.data.objects)
+
+        # Blend file size (if saved)
+        blend_path = bpy.data.filepath
+        blend_size_mb = 0.0
+        if blend_path and os.path.exists(blend_path):
+            blend_size_mb = os.path.getsize(blend_path) / (1024 * 1024)
+
+        # Build comparison report
+        lines = [
+            f"{'='*60}",
+            f"§PROOF COMPARE — GN vs Per-Element — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"{'='*60}",
+            f"",
+            f"  GN MODE (link=True, discipline colors, DLOD):",
+            f"    Objects:     {gn_objs} GN objects ({gn_discs} disciplines)",
+            f"    Elements:    {gn_elements:,} points",
+            f"    Link time:   {gn_link_time:.3f}s",
+            f"    GN build:    {gn_build_time:.2f}s",
+            f"    Total load:  {gn_load_time:.2f}s",
+            f"    Rate:        {gn_elements/max(gn_load_time,0.001):.0f} elements/s",
+            f"",
+            f"  PER-ELEMENT MODE (link=False, full IFC colors, selectable):",
+            f"    Objects:     {lib_objs:,} ({lib_discs} disciplines)",
+            f"    Link time:   {lib_link_time:.3f}s",
+            f"    Instance:    {lib_instance_time:.2f}s",
+            f"    Total load:  {lib_load_time:.2f}s",
+            f"    Rate:        {lib_objs/max(lib_load_time,0.001):.0f} elements/s",
+            f"",
+            f"  SPEEDUP:       {lib_load_time/max(gn_load_time,0.001):.1f}x faster (GN vs per-element)"
+                if gn_load_time > 0 and lib_load_time > 0 else
+            f"  SPEEDUP:       (need both modes loaded to compare)",
+            f"",
+            f"  SCENE TOTALS:",
+            f"    Objects:     {total_objects:,}",
+            f"    Meshes:      {total_meshes:,}",
+            f"    Vertices:    {total_verts:,}",
+            f"    .blend size: {blend_size_mb:.1f}MB" if blend_size_mb > 0 else
+            f"    .blend size: (not saved yet — Ctrl+S to measure)",
+            f"",
+            f"  §PROOF BLEND_SIZE gn_outliner={gn_objs} perel_outliner={lib_objs:,} "
+            f"speedup={lib_load_time/max(gn_load_time,0.001):.1f}x"
+                if gn_load_time > 0 and lib_load_time > 0 else
+            f"  §PROOF BLEND_SIZE (partial — load both modes for full comparison)",
+            f"{'='*60}",
+        ]
+
+        # Print to console
+        for line in lines:
+            print(line)
+
+        # Write to file for later reading
+        props = context.scene.BIMFederationProperties
+        db_path = bpy.path.abspath(props.federation_database_path) if props.federation_database_path else ""
+        if db_path:
+            log_dir = os.path.dirname(db_path)
+        else:
+            log_dir = os.path.join(os.path.expanduser("~"), "Documents", "bonsai")
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, "gn_compare.log")
+        with open(log_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+        print(f"  §LOG comparison written to {log_path}")
+
+    def _find_lc(self, layer_collection, name):
+        if layer_collection.collection.name == name:
+            return layer_collection
+        for child in layer_collection.children:
+            result = self._find_lc(child, name)
+            if result:
+                return result
+        return None
+
+
+class ClearFederationViewport(bpy.types.Operator):
+    """Clear R-Tree preview (GPU overlay + legend). Library objects stay."""
+    bl_idname = "bim.clear_federation_viewport"
+    bl_label = "Clear"
+    bl_description = (
+        "Clear R-Tree GPU overlay and discipline legend\n"
+        "Library-linked objects are NOT removed (use Outliner)"
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        import time
+        t0 = time.time()
+        cleared = []
+
+        try:
+            from . import discipline_legend
+            legend_was = discipline_legend.is_legend_enabled()
+            if legend_was:
+                discipline_legend.disable_legend()
+                cleared.append("legend")
+
+            from . import bbox_visualization
+            bbox_was = bbox_visualization.is_bbox_visualization_enabled()
+            if bbox_was:
+                bbox_visualization.disable_bbox_visualization()
+                cleared.append("R-Tree")
+
+            elapsed = time.time() - t0
+            summary = ", ".join(cleared) if cleared else "nothing to clear"
+            print(f"  §CLEAR {summary} ({elapsed:.3f}s)")
+            print(f"    legend_was={legend_was} bbox_was={bbox_was}")
+            self.report({'INFO'}, f"Cleared: {summary}")
+            return {'FINISHED'}
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.report({'ERROR'}, f"Clear failed: {str(e)}")
+            return {'CANCELLED'}
+
+
 class ExtractSampleDatabase(bpy.types.Operator):
     """Extract a small sample database for fast testing (ELEC-anchored, ~5 min)"""
     bl_idname = "bim.extract_sample_database"
@@ -5739,4 +6300,34 @@ class BIM_OT_export_nlp_results(bpy.types.Operator):
             import traceback
             traceback.print_exc()
             return {'CANCELLED'}
+
+
+# =============================================================================
+# WEB UI LAUNCHER (S56 — BIM_Designer_UserGuide.md §13)
+# =============================================================================
+
+class BIM_OT_launch_web_ui(bpy.types.Operator):
+    """Open the BIM Designer Web UI in the default browser"""
+    bl_idname = "bim.launch_web_ui"
+    bl_label = "Open Web UI"
+    bl_description = "Launch the BIM Designer Web UI at the specified tab"
+
+    tab: bpy.props.StringProperty(
+        name="Tab",
+        default="1d",
+        description="Tab to open (1d, 2d, 3d, 4d, 5d, 6d, 7d, 8, 9, 10)"
+    )
+
+    port: bpy.props.IntProperty(
+        name="Port",
+        default=9878,
+        description="WebUIServer port"
+    )
+
+    def execute(self, context):
+        import webbrowser
+        url = f"http://localhost:{self.port}/#tab={self.tab}"
+        webbrowser.open(url)
+        self.report({'INFO'}, f"Opened Web UI: {url}")
+        return {'FINISHED'}
 
