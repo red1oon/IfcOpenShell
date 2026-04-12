@@ -1206,22 +1206,14 @@ class FedRTreeLoadMesh(bpy.types.Operator):
             obj.hide_select = False
             col.objects.link(obj)
 
-            # ── Apply material from elements_meta.material_rgba (object-level override) ──
+            # ── Per-object colour from material_rgba (obj.color — safe on linked meshes) ──
+            # Never touch obj.data.materials — mesh is a linked library datablock (read-only).
+            # obj.color is object-level, zero cost, visible in Object Color shading mode.
             rgba_str = hash_to_rgba.get(ghash)
             if rgba_str:
                 try:
                     r, g, b, a = map(float, rgba_str.split(','))
-                    mat_name = f"StingyMat_{rgba_str}"
-                    mat = _bpy.data.materials.get(mat_name)
-                    if mat is None:
-                        mat = _bpy.data.materials.new(mat_name)
-                        mat.diffuse_color = (r, g, b, a)
-                        if mat.use_nodes:
-                            bsdf = mat.node_tree.nodes.get("Principled BSDF")
-                            if bsdf:
-                                bsdf.inputs["Base Color"].default_value = (r, g, b, a)
-                    obj.data.materials.clear()
-                    obj.data.materials.append(mat)
+                    obj.color = (r, g, b, a)
                     mat_applied += 1
                 except Exception:
                     mat_fallback += 1
@@ -1278,9 +1270,32 @@ class FedRTreeLoadMesh(bpy.types.Operator):
               f"mat_rgba={mat_applied} mat_fallback={mat_fallback} elapsed={elapsed:.1f}s")
         self.report({'INFO'}, f"Loaded {placed} meshes ({mat_applied} with colour) in {elapsed:.1f}s")
 
-        for area in context.screen.areas:
-            if area.type == 'VIEW_3D':
-                area.tag_redraw()
+        # ── L2 single-element load: fly to it at inspection distance ──
+        # Building load keeps current view (user already flew there).
+        # Single element: fly to its bbox centre at 3× its diagonal — close enough
+        # to inspect geometry, far enough to see context. Never Frame Selected distance.
+        if sel_elem and sel_elem.get('bbox') and placed >= 1:
+            eb = sel_elem['bbox']
+            cx_ifc = (eb[0] + eb[3]) / 2
+            cy_ifc = (eb[1] + eb[4]) / 2
+            cz_ifc = (eb[2] + eb[5]) / 2
+            ox = off.x if off else 0.0
+            oy = off.y if off else 0.0
+            oz = off.z if off else 0.0
+            diag = ((eb[3]-eb[0])**2 + (eb[4]-eb[1])**2 + (eb[5]-eb[2])**2) ** 0.5
+            view_dist = max(diag * 3.0, 2.0)   # at least 2m even for tiny elements
+            for area in context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    r3d = area.spaces[0].region_3d
+                    r3d.view_location = (cx_ifc - ox, cy_ifc - oy, cz_ifc - oz)
+                    r3d.view_distance = view_dist
+                    area.tag_redraw()
+                    break
+            print(f"[S182] §FLY_TO_MESH label={label} dist={view_dist:.1f}m")
+        else:
+            for area in context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    area.tag_redraw()
         return {'FINISHED'}
 
     # ── SQL helpers ──
@@ -1370,6 +1385,18 @@ class FedRTreeShred(bpy.types.Operator):
 
         props = context.scene.BIMFederationProperties
 
+        # ── Rebuild registry from scene if it is stale or empty ──
+        # Module reload or session restore can clear _loaded_collections.
+        # Scan actual scene collections named "Loaded_*" as ground truth.
+        scene_loaded_cols = {
+            col.name: col
+            for col in context.scene.collection.children
+            if col.name.startswith("Loaded_")
+        }
+        for lbl, col in scene_loaded_cols.items():
+            if lbl not in bv._loaded_collections:
+                bv._loaded_collections[lbl] = [o.name for o in col.objects]
+
         # Build reverse map: object_name → collection_label
         obj_to_label = {}
         for lbl, obj_names in bv._loaded_collections.items():
@@ -1377,9 +1404,11 @@ class FedRTreeShred(bpy.types.Operator):
                 obj_to_label[name] = lbl
 
         # ── Selection-based path: remove selected objects that belong to stingy loads ──
+        # Also accept objects in any "Loaded_*" collection even if not in registry.
         selected_loaded = [
             obj for obj in context.selected_objects
             if obj.name in obj_to_label
+            or any(c.name.startswith("Loaded_") for c in obj.users_collection)
         ]
 
         if selected_loaded:
