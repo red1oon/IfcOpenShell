@@ -1686,12 +1686,14 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
             for i, r in enumerate(bv._search_results):
                 building = r.get('building', '?')
                 count = r.get('count', 0)
+                n_tiles = r.get('tile_count', 1)
                 # Highlight active building row
                 active = (building == bv._active_building)
                 row = col.row(align=True)
                 row.alert = active
+                tile_badge = f"  ×{n_tiles}" if n_tiles > 1 else ""
                 op = row.operator("bim.fed_rtree_fly_to_result",
-                                  text=f"{building}  ({count})", icon='HOME')
+                                  text=f"{building}{tile_badge}  ({count})", icon='HOME')
                 op.result_index = i
 
             # ── L2: Element list for active building ──

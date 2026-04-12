@@ -1115,23 +1115,52 @@ class FedRTreeLoadMesh(bpy.types.Operator):
             if not rows:
                 raise RuntimeError(f"[S180] No geometry_hash for guid {guid[:16]}")
         elif active_bld:
-            # L1: building ARC elements within envelope × buffer
-            label = f"Loaded_{active_bld}_ARC"
+            # L1: progressive building load — each press advances discipline/offset
+            prog = bv._load_progress.get(active_bld, {'disc_idx': 0, 'offset': 0, 'exhausted': False})
+            disc = bv.LOAD_DISC_ORDER[prog['disc_idx']]
+            offset = prog['offset']
+            label = f"Loaded_{active_bld}_{disc}_{offset}"
             bbox = next((r['bbox'] for r in bv._search_results
                          if r.get('building') == active_bld), None)
-            rows = (self._query_building(db_path, active_bld, bbox)
-                    if bbox else self._query_building_no_bbox(db_path, active_bld))
+            rows = self._query_building(db_path, active_bld, bbox, disc, offset) \
+                   if bbox else self._query_building_no_bbox(db_path, active_bld, disc, offset)
             if not rows:
-                raise RuntimeError(f"[S180] No ARC geometry found for {active_bld}")
+                # Advance to next discipline
+                next_disc_idx = prog['disc_idx'] + 1
+                if next_disc_idx >= len(bv.LOAD_DISC_ORDER):
+                    bv._load_progress[active_bld] = {'disc_idx': 0, 'offset': 0, 'exhausted': True}
+                    self.report({'INFO'}, f"All disciplines loaded for {active_bld} — wrapping to start")
+                    return {'CANCELLED'}
+                disc = bv.LOAD_DISC_ORDER[next_disc_idx]
+                label = f"Loaded_{active_bld}_{disc}_0"
+                rows = self._query_building(db_path, active_bld, bbox, disc, 0) \
+                       if bbox else self._query_building_no_bbox(db_path, active_bld, disc, 0)
+                bv._load_progress[active_bld] = {'disc_idx': next_disc_idx, 'offset': 500, 'exhausted': False}
+                if not rows:
+                    raise RuntimeError(f"[S182] No geometry found for {active_bld} disc={disc}")
+            else:
+                # Advance offset (or disc if this batch was partial)
+                new_offset = offset + 500
+                new_disc_idx = prog['disc_idx'] if len(rows) >= 500 else prog['disc_idx'] + 1
+                new_offset = new_offset if len(rows) >= 500 else 0
+                if new_disc_idx >= len(bv.LOAD_DISC_ORDER):
+                    new_disc_idx = 0
+                    new_offset = 0
+                bv._load_progress[active_bld] = {'disc_idx': new_disc_idx, 'offset': new_offset, 'exhausted': False}
+            print(f"[S182] §DIAG_PROGRESS bld={active_bld} disc={disc} offset={offset} rows={len(rows)}")
         else:
             self.report({'WARNING'}, "Select a building (L1) or fly to an element (L2) first")
             return {'CANCELLED'}
 
-        # ── Deduplicate hashes — skip NULLs ──
+        # ── Deduplicate hashes — skip NULLs; carry material_rgba per hash ──
         hash_to_guid = {}
-        for row_guid, ghash in rows:
+        hash_to_rgba = {}
+        for row in rows:
+            row_guid, ghash = row[0], row[1]
+            rgba = row[2] if len(row) > 2 else None
             if ghash and ghash not in hash_to_guid:
                 hash_to_guid[ghash] = row_guid
+                hash_to_rgba[ghash] = rgba
         wanted_hashes = list(hash_to_guid.keys())
         if not wanted_hashes:
             raise RuntimeError(f"[S180] No valid geometry hashes for selection")
@@ -1166,6 +1195,8 @@ class FedRTreeLoadMesh(bpy.types.Operator):
 
         placed = 0
         no_transform = 0
+        mat_applied = 0
+        mat_fallback = 0
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
         for mesh in loaded_meshes:
@@ -1174,6 +1205,28 @@ class FedRTreeLoadMesh(bpy.types.Operator):
             obj = _bpy.data.objects.new(ghash, mesh)
             obj.hide_select = False
             col.objects.link(obj)
+
+            # ── Apply material from elements_meta.material_rgba (object-level override) ──
+            rgba_str = hash_to_rgba.get(ghash)
+            if rgba_str:
+                try:
+                    r, g, b, a = map(float, rgba_str.split(','))
+                    mat_name = f"StingyMat_{rgba_str}"
+                    mat = _bpy.data.materials.get(mat_name)
+                    if mat is None:
+                        mat = _bpy.data.materials.new(mat_name)
+                        mat.diffuse_color = (r, g, b, a)
+                        if mat.use_nodes:
+                            bsdf = mat.node_tree.nodes.get("Principled BSDF")
+                            if bsdf:
+                                bsdf.inputs["Base Color"].default_value = (r, g, b, a)
+                    obj.data.materials.clear()
+                    obj.data.materials.append(mat)
+                    mat_applied += 1
+                except Exception:
+                    mat_fallback += 1
+            else:
+                mat_fallback += 1
 
             # Fetch transform + DB bbox in one query so we can verify placement
             cur.execute("""
@@ -1221,8 +1274,9 @@ class FedRTreeLoadMesh(bpy.types.Operator):
         props.rtree_last_loaded = label
 
         elapsed = time.time() - t0
-        print(f"[S180] §PROOF LOAD_MESH label={label} hashes={placed} elapsed={elapsed:.1f}s")
-        self.report({'INFO'}, f"§PROOF LOAD_MESH label={label} hashes={placed} elapsed={elapsed:.1f}s")
+        print(f"[S182] §PROOF LOAD_MESH label={label} hashes={placed} "
+              f"mat_rgba={mat_applied} mat_fallback={mat_fallback} elapsed={elapsed:.1f}s")
+        self.report({'INFO'}, f"Loaded {placed} meshes ({mat_applied} with colour) in {elapsed:.1f}s")
 
         for area in context.screen.areas:
             if area.type == 'VIEW_3D':
@@ -1235,41 +1289,41 @@ class FedRTreeLoadMesh(bpy.types.Operator):
         import sqlite3
         conn = sqlite3.connect(db_path)
         rows = conn.execute(
-            "SELECT m.guid, i.geometry_hash "
+            "SELECT m.guid, i.geometry_hash, m.material_rgba "
             "FROM elements_meta m JOIN element_instances i ON m.guid = i.guid "
             "WHERE m.guid = ?", (guid,)
         ).fetchall()
         conn.close()
         return rows
 
-    def _query_building(self, db_path, building, bbox):
+    def _query_building(self, db_path, building, bbox, discipline='ARC', offset=0):
         import sqlite3
         mnX, mnY, mnZ, mxX, mxY, mxZ = bbox
         conn = sqlite3.connect(db_path)
         rows = conn.execute("""
-            SELECT m.guid, i.geometry_hash
+            SELECT m.guid, i.geometry_hash, m.material_rgba
             FROM elements_meta m
             JOIN element_instances i ON m.guid = i.guid
             JOIN elements_rtree r ON m.id = r.id
             WHERE m.building = ?
-              AND m.discipline = 'ARC'
+              AND m.discipline = ?
               AND r.minX <= ? AND r.maxX >= ?
               AND r.minY <= ? AND r.maxY >= ?
-            LIMIT 500
-        """, (building, mxX * 1.2, mnX * 0.8, mxY * 1.2, mnY * 0.8)).fetchall()
+            LIMIT 500 OFFSET ?
+        """, (building, discipline, mxX * 1.2, mnX * 0.8, mxY * 1.2, mnY * 0.8, offset)).fetchall()
         conn.close()
         return rows
 
-    def _query_building_no_bbox(self, db_path, building):
+    def _query_building_no_bbox(self, db_path, building, discipline='ARC', offset=0):
         import sqlite3
         conn = sqlite3.connect(db_path)
         rows = conn.execute("""
-            SELECT m.guid, i.geometry_hash
+            SELECT m.guid, i.geometry_hash, m.material_rgba
             FROM elements_meta m
             JOIN element_instances i ON m.guid = i.guid
-            WHERE m.building = ? AND m.discipline = 'ARC'
-            LIMIT 500
-        """, (building,)).fetchall()
+            WHERE m.building = ? AND m.discipline = ?
+            LIMIT 500 OFFSET ?
+        """, (building, discipline, offset)).fetchall()
         conn.close()
         return rows
 

@@ -8,6 +8,7 @@ Enables instant loading of 44K+ elements with <10MB memory usage.
 
 import bpy
 import gpu
+import re as _re
 import sqlite3
 from gpu_extras.batch import batch_for_shader
 from mathutils import Vector, Matrix
@@ -58,6 +59,10 @@ _active_building = ""        # currently drilled-into building
 # S180: Stingy Mesh Loader state
 _loaded_collections = {}     # label → [object_names]
 _library_blend_cache = None  # absolute path to library.blend, resolved at RTree load
+
+# S182: Progressive load state
+LOAD_DISC_ORDER = ['ARC', 'STR', 'MEP', 'ELEC', 'FP']
+_load_progress = {}          # building → {'disc_idx': int, 'offset': int, 'exhausted': bool}
 
 
 def create_bbox_edges(bbox: Tuple[float, float, float, float, float, float]) -> List[Vector]:
@@ -602,7 +607,7 @@ def navigate_to_element(search_term: str, context) -> dict:
         cur = conn.cursor()
 
         # One row per building: envelope bbox of all matching elements + match count.
-        # Sorted by match_count DESC so the richest building is flown to first.
+        # Fetch up to 50 so we can dedup by base building type (strips T\d+_ tile prefix).
         cur.execute("""
             SELECT m.building,
                    MIN(m.guid)          AS guid,
@@ -621,20 +626,43 @@ def navigate_to_element(search_term: str, context) -> dict:
                OR m.building    LIKE ?
             GROUP BY m.building
             ORDER BY match_count DESC
-            LIMIT 10
+            LIMIT 50
         """, (like, term, term.upper(), like, like))
 
         rows = cur.fetchall()
         conn.close()
-        print(f"[RTree] §SEARCH buildings={len(rows)} "
-              f"counts={[r[11] for r in rows]}")
 
-        for building, guid, name, disc, ifc_class, mnX, mnY, mnZ, mxX, mxY, mxZ, count in rows:
+        # S182: deduplicate by base building type (strip T\d+_ tile prefix).
+        # When a city has 18 tiles of LTU_AHouse, show one entry not 10.
+        # Fly to the tile with most matches (already first by ORDER BY match_count DESC).
+        def _building_base(name):
+            return _re.sub(r'^T\d+_', '', name)
+
+        seen_base = set()
+        tile_counts = {}   # base → total tile count across all rows
+        for row in rows:
+            base = _building_base(row[0])
+            tile_counts[base] = tile_counts.get(base, 0) + 1
+
+        deduped_rows = []
+        for row in rows:
+            base = _building_base(row[0])
+            if base not in seen_base:
+                seen_base.add(base)
+                deduped_rows.append((row, tile_counts[base]))
+            if len(deduped_rows) == 10:
+                break
+
+        print(f"[RTree] §SEARCH raw_buildings={len(rows)} deduped={len(deduped_rows)} "
+              f"counts={[r[0][11] for r in deduped_rows]}")
+
+        for (building, guid, name, disc, ifc_class, mnX, mnY, mnZ, mxX, mxY, mxZ, count), n_tiles in deduped_rows:
             bbox = (mnX, mnY, mnZ, mxX, mxY, mxZ)
             _highlighted_bboxes.append(bbox)
             entry = {'guid': guid, 'name': name, 'disc': disc,
                      'ifc_class': ifc_class, 'bbox': bbox,
-                     'building': building, 'count': count}
+                     'building': building, 'count': count,
+                     'tile_count': n_tiles}
             results.append(entry)
             _search_results.append(entry)
 
@@ -674,17 +702,64 @@ def navigate_to_element(search_term: str, context) -> dict:
 
 
 def fly_to_result(result_index: int, context) -> bool:
-    """Fly viewport to a specific building result by index in _search_results."""
+    """Fly viewport to a specific building result by index in _search_results.
+
+    If the building has multiple tiles (tile_count > 1), fly to the tile whose
+    centre is nearest to the current camera position rather than the highest-count tile.
+    """
     if result_index < 0 or result_index >= len(_search_results):
         return False
     r = _search_results[result_index]
-    bbox = r['bbox']
-    cx_ifc = (bbox[0] + bbox[3]) / 2
-    cy_ifc = (bbox[1] + bbox[4]) / 2
-    cz_ifc = (bbox[2] + bbox[5]) / 2
     ox = _model_offset.x if _model_offset else 0.0
     oy = _model_offset.y if _model_offset else 0.0
     oz = _model_offset.z if _model_offset else 0.0
+
+    # Resolve target bbox — nearest tile if this is a multi-tile building type
+    bbox = r['bbox']
+    n_tiles = r.get('tile_count', 1)
+    building_base = _re.sub(r'^T\d+_', '', r['building']) if n_tiles > 1 else None
+
+    if n_tiles > 1 and _db_path_cache:
+        # Find camera position in IFC coords
+        cam_blender = None
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                cam_blender = area.spaces[0].region_3d.view_location
+                break
+        if cam_blender:
+            cam_ifc_x = cam_blender.x + ox
+            cam_ifc_y = cam_blender.y + oy
+            # Query all tiles of this building type, pick nearest centre
+            try:
+                import sqlite3 as _sq
+                conn = _sq.connect(_db_path_cache)
+                tiles = conn.execute("""
+                    SELECT building,
+                           (MIN(r.minX)+MAX(r.maxX))/2 AS cx,
+                           (MIN(r.minY)+MAX(r.maxY))/2 AS cy,
+                           (MIN(r.minZ)+MAX(r.maxZ))/2 AS cz,
+                           MIN(r.minX), MIN(r.minY), MIN(r.minZ),
+                           MAX(r.maxX), MAX(r.maxY), MAX(r.maxZ)
+                    FROM elements_meta m
+                    JOIN elements_rtree r ON m.id = r.id
+                    WHERE m.building LIKE ?
+                    GROUP BY m.building
+                """, (f"%{building_base}",)).fetchall()
+                conn.close()
+                if tiles:
+                    best = min(tiles, key=lambda t: (t[1]-cam_ifc_x)**2 + (t[2]-cam_ifc_y)**2)
+                    bbox = (best[4], best[5], best[6], best[7], best[8], best[9])
+                    # Update active building to the nearest tile
+                    global _active_building
+                    _active_building = best[0]
+                    print(f"[RTree] §FLY_NEAREST base='{building_base}' nearest='{best[0]}' "
+                          f"tiles={len(tiles)}")
+            except Exception as e:
+                print(f"[RTree] §FLY_NEAREST_FAIL {e} — falling back to search result bbox")
+
+    cx_ifc = (bbox[0] + bbox[3]) / 2
+    cy_ifc = (bbox[1] + bbox[4]) / 2
+    cz_ifc = (bbox[2] + bbox[5]) / 2
     cx, cy, cz = cx_ifc - ox, cy_ifc - oy, cz_ifc - oz
     size = max(bbox[3]-bbox[0], bbox[4]-bbox[1], bbox[5]-bbox[2], 10.0)
     for area in context.screen.areas:
