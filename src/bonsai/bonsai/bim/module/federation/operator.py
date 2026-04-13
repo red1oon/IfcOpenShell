@@ -1115,37 +1115,27 @@ class FedRTreeLoadMesh(bpy.types.Operator):
             if not rows:
                 raise RuntimeError(f"[S180] No geometry_hash for guid {guid[:16]}")
         elif active_bld and self.target_disc != 'NEXT':
-            # S183: targeted discipline — tracks its own offset so pressing +ARC
-            # repeatedly pages through ARC elements just like +NEXT pages through discs.
+            # S184: targeted discipline — viewport-centre query
             disc = self.target_disc
             disc_prog = bv._load_progress.get(active_bld, {})
             offset = disc_prog.get(f'{disc}_offset', 0)
             label = f"Loaded_{active_bld}_{disc}_{offset}"
-            bbox = next((r['bbox'] for r in bv._search_results
-                         if r.get('building') == active_bld), None)
-            rows = self._query_building(db_path, active_bld, bbox, disc, offset, storey) \
-                   if bbox else self._query_building_no_bbox(db_path, active_bld, disc, offset, storey)
+            rows = self._query_viewport(context, db_path, disc, active_bld, 500, offset, storey)
             if not rows:
-                # Wrap offset back to 0
                 disc_prog[f'{disc}_offset'] = 0
                 bv._load_progress[active_bld] = disc_prog
                 self.report({'INFO'}, f"{disc} fully loaded — wrapping to start")
                 return {'CANCELLED'}
-            # Advance this disc's offset
             disc_prog[f'{disc}_offset'] = offset + (500 if len(rows) >= 500 else 0)
             bv._load_progress[active_bld] = disc_prog
         elif active_bld:
-            # L1: progressive building load — each press advances discipline/offset
+            # S184: progressive load — viewport-centre query
             prog = bv._load_progress.get(active_bld, {'disc_idx': 0, 'offset': 0, 'exhausted': False})
             disc = bv.LOAD_DISC_ORDER[prog['disc_idx']]
             offset = prog['offset']
             label = f"Loaded_{active_bld}_{disc}_{offset}"
-            bbox = next((r['bbox'] for r in bv._search_results
-                         if r.get('building') == active_bld), None)
-            rows = self._query_building(db_path, active_bld, bbox, disc, offset, storey) \
-                   if bbox else self._query_building_no_bbox(db_path, active_bld, disc, offset, storey)
+            rows = self._query_viewport(context, db_path, disc, active_bld, 500, offset, storey)
             if not rows:
-                # Advance to next discipline
                 next_disc_idx = prog['disc_idx'] + 1
                 if next_disc_idx >= len(bv.LOAD_DISC_ORDER):
                     bv._load_progress[active_bld] = {'disc_idx': 0, 'offset': 0, 'exhausted': True}
@@ -1153,13 +1143,12 @@ class FedRTreeLoadMesh(bpy.types.Operator):
                     return {'CANCELLED'}
                 disc = bv.LOAD_DISC_ORDER[next_disc_idx]
                 label = f"Loaded_{active_bld}_{disc}_0"
-                rows = self._query_building(db_path, active_bld, bbox, disc, 0) \
-                       if bbox else self._query_building_no_bbox(db_path, active_bld, disc, 0)
+                rows = self._query_viewport(context, db_path, disc, active_bld, 500, 0, storey)
                 bv._load_progress[active_bld] = {'disc_idx': next_disc_idx, 'offset': 500, 'exhausted': False}
                 if not rows:
-                    raise RuntimeError(f"[S182] No geometry found for {active_bld} disc={disc}")
+                    self.report({'INFO'}, f"No {disc} elements in viewport — pan camera and retry")
+                    return {'CANCELLED'}
             else:
-                # Advance offset (or disc if this batch was partial)
                 new_offset = offset + 500
                 new_disc_idx = prog['disc_idx'] if len(rows) >= 500 else prog['disc_idx'] + 1
                 new_offset = new_offset if len(rows) >= 500 else 0
@@ -1167,17 +1156,19 @@ class FedRTreeLoadMesh(bpy.types.Operator):
                     new_disc_idx = 0
                     new_offset = 0
                 bv._load_progress[active_bld] = {'disc_idx': new_disc_idx, 'offset': new_offset, 'exhausted': False}
-            pass  # DIAG_PROGRESS removed — folded into PROOF LOAD_MESH summary
         else:
             self.report({'WARNING'}, "Select a building (L1) or fly to an element (L2) first")
             return {'CANCELLED'}
 
-        # ── Deduplicate hashes — skip NULLs ──
+        # ── Deduplicate hashes — skip NULLs; carry material_rgba ──
         hash_to_guid = {}
+        hash_to_rgba = {}
         for row in rows:
             row_guid, ghash = row[0], row[1]
             if ghash and ghash not in hash_to_guid:
                 hash_to_guid[ghash] = row_guid
+                if len(row) > 2 and row[2]:
+                    hash_to_rgba[ghash] = row[2]
         wanted_hashes = list(hash_to_guid.keys())
         if not wanted_hashes:
             raise RuntimeError(f"[S180] No valid geometry hashes for selection")
@@ -1186,10 +1177,11 @@ class FedRTreeLoadMesh(bpy.types.Operator):
         if label in bv._loaded_collections:
             _remove_stingy_collection(label, bv._loaded_collections)
 
-        # ── Link meshes from library.blend — skip already-linked (avoids "already linked" warnings) ──
+        # ── Link meshes from library.blend — skip already-linked ──
         already_in_scene = {m.name for m in _bpy.data.meshes}
         to_link = [h for h in wanted_hashes if h not in already_in_scene]
         reused  = [h for h in wanted_hashes if h in already_in_scene]
+        t_link = time.time()
         if to_link:
             with _bpy.data.libraries.load(lib_path, link=True) as (data_from, data_to):
                 available = set(data_from.meshes)
@@ -1197,19 +1189,39 @@ class FedRTreeLoadMesh(bpy.types.Operator):
             newly_linked = [m for m in data_to.meshes if m is not None]
         else:
             newly_linked = []
+        t_link_ms = (time.time() - t_link) * 1000
 
         # ── Collect all meshes (newly linked + reused) ──
         loaded_meshes = newly_linked + [_bpy.data.meshes[h] for h in reused if h in _bpy.data.meshes]
 
         # ── Geo-hash hell check: BLOCKER if any mesh was renamed ──
+        geo_hell = 0
         for mesh in newly_linked:
             if mesh.name not in hash_to_guid:
-                raise RuntimeError(
-                    f"[S180] §GEO_HASH_HELL {mesh.name} — renamed by Blender "
-                    f"(expected one of {list(hash_to_guid)[:3]})"
-                )
+                geo_hell += 1
+        if geo_hell:
+            raise RuntimeError(
+                f"[S184] §GEO_HASH_HELL {geo_hell} meshes renamed by Blender"
+            )
 
-        # ── Build collection + place objects with full transform ──
+        # ── Batch-fetch transforms (single query, not per-mesh) ──
+        all_guids = list(hash_to_guid.values())
+        t_sql = time.time()
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        placeholders = ','.join('?' * len(all_guids))
+        cur.execute(f"""
+            SELECT t.guid,
+                   t.center_x, t.center_y, t.center_z,
+                   t.rotation_x, t.rotation_y, t.rotation_z
+            FROM element_transforms t
+            WHERE t.guid IN ({placeholders})
+        """, all_guids)
+        transform_by_guid = {row[0]: row[1:] for row in cur.fetchall()}
+        conn.close()
+        t_sql_ms = (time.time() - t_sql) * 1000
+
+        # ── Build collection + place objects ──
         col = _bpy.data.collections.new(label)
         _bpy.context.scene.collection.children.link(col)
 
@@ -1220,57 +1232,52 @@ class FedRTreeLoadMesh(bpy.types.Operator):
 
         placed = 0
         no_transform = 0
-        bbox_fails = 0
-        bbox_fail_log_limit = 3   # only log first 3 failures, rest counted silently
-        conn = sqlite3.connect(db_path)
-        cur = conn.cursor()
+        mat_applied = 0
         for mesh in loaded_meshes:
             ghash = mesh.name
             row_guid = hash_to_guid[ghash]
             obj = _bpy.data.objects.new(ghash, mesh)
             obj.hide_select = False
             col.objects.link(obj)
-            # Materials come from library.blend via link=True — do not touch.
 
-            cur.execute("""
-                SELECT t.center_x, t.center_y, t.center_z,
-                       t.rotation_x, t.rotation_y, t.rotation_z,
-                       r.minX, r.minY, r.minZ, r.maxX, r.maxY, r.maxZ
-                FROM element_transforms t
-                JOIN elements_meta m ON t.guid = m.guid
-                JOIN elements_rtree r ON m.id = r.id
-                WHERE t.guid = ?
-                LIMIT 1
-            """, (row_guid,))
-            tr = cur.fetchone()
+            # S184: material color — two paths so it works in any Solid Color mode.
+            # 1) obj.color for Color:Object  2) material_slot for Color:Material
+            rgba_str = hash_to_rgba.get(ghash)
+            if rgba_str:
+                try:
+                    r, g, b, a = map(float, rgba_str.split(','))
+                    obj.color = (r, g, b, a)
+                    if len(obj.material_slots) > 0:
+                        mat_key = f"Stingy_{rgba_str}"
+                        mat = _bpy.data.materials.get(mat_key)
+                        if mat is None:
+                            mat = _bpy.data.materials.new(name=mat_key)
+                            mat.diffuse_color = (r, g, b, a)
+                        obj.material_slots[0].link = 'OBJECT'
+                        obj.material_slots[0].material = mat
+                    mat_applied += 1
+                except Exception:
+                    pass
+
+            tr = transform_by_guid.get(row_guid)
             if tr:
-                cx, cy, cz, rx, ry, rz, mnX, mnY, mnZ, mxX, mxY, mxZ = tr
-                rx = rx or 0.0; ry = ry or 0.0; rz = rz or 0.0
-                bx, by, bz = cx - ox, cy - oy, cz - oz
-                obj.location = (bx, by, bz)
+                cx, cy, cz = tr[0], tr[1], tr[2]
+                rx, ry, rz = tr[3] or 0.0, tr[4] or 0.0, tr[5] or 0.0
+                obj.location = (cx - ox, cy - oy, cz - oz)
                 obj.rotation_euler = (rx, ry, rz)
-                in_bbox = (mnX - ox <= bx <= mxX - ox and
-                           mnY - oy <= by <= mxY - oy and
-                           mnZ - oz <= bz <= mxZ - oz)
-                if not in_bbox:
-                    if bbox_fails < bbox_fail_log_limit:
-                        print(f"[S180] §TRANSFORM_FAIL hash={ghash[:12]} "
-                              f"ifc=({cx:.2f},{cy:.2f},{cz:.2f}) not inside bbox")
-                    bbox_fails += 1
                 placed += 1
             else:
                 no_transform += 1
 
-        conn.close()
-
-        # ── Register + report ──
+        # ── Register + report (summary only, no per-element spam) ──
         bv._loaded_collections[label] = [obj.name for obj in col.objects]
         props.rtree_last_loaded = label
 
         elapsed = time.time() - t0
-        warn = f" no_transform={no_transform}" if no_transform else ""
-        warn += f" bbox_fails={bbox_fails}" if bbox_fails else ""
-        print(f"[S182] §PROOF LOAD_MESH label={label} placed={placed}{warn} elapsed={elapsed:.1f}s")
+        print(f"[S184] §PROOF LOAD_MESH label={label} placed={placed} "
+              f"linked={len(newly_linked)} reused={len(reused)} "
+              f"mat={mat_applied} no_xform={no_transform} "
+              f"link={t_link_ms:.0f}ms sql={t_sql_ms:.0f}ms total={elapsed:.1f}s")
         self.report({'INFO'}, f"Loaded {placed} meshes in {elapsed:.1f}s")
 
         # ── L2 single-element load: fly to it at inspection distance ──
@@ -1280,9 +1287,12 @@ class FedRTreeLoadMesh(bpy.types.Operator):
         for area in context.screen.areas:
             if area.type == 'VIEW_3D':
                 space = area.spaces[0]
-                # Auto-switch to Material Preview so library.blend materials show
-                if space.shading.type not in ('MATERIAL', 'RENDERED'):
-                    space.shading.type = 'MATERIAL'
+                # S184: stay in Solid mode (x-ray works) but set Color:Material
+                # so diffuse_color from our Stingy materials shows.
+                if space.shading.type == 'WIREFRAME':
+                    space.shading.type = 'SOLID'
+                if space.shading.type == 'SOLID':
+                    space.shading.color_type = 'MATERIAL'
                 # L2 single element: fly to it at inspection distance
                 if sel_elem and sel_elem.get('bbox') and placed >= 1:
                     eb = sel_elem['bbox']
@@ -1312,6 +1322,55 @@ class FedRTreeLoadMesh(bpy.types.Operator):
             "WHERE m.guid = ?", (guid,)
         ).fetchall()
         conn.close()
+        return rows
+
+    def _query_viewport(self, context, db_path, discipline, building=None,
+                        limit=500, offset=0, storey=''):
+        """S184: Query elements within viewport centre radius.
+        Camera IS the selector — loads only what the user is looking at."""
+        import sqlite3
+        from . import bbox_visualization as bv
+
+        # Get viewport centre in IFC coordinate space
+        r3d = None
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                r3d = area.spaces[0].region_3d
+                break
+        if r3d is None:
+            return []
+
+        off = bv._model_offset
+        cx = r3d.view_location.x + (off.x if off else 0.0)
+        cy = r3d.view_location.y + (off.y if off else 0.0)
+        radius = min(r3d.view_distance * 1.2, 50.0)
+
+        clauses = ["r.minX <= ?", "r.maxX >= ?",
+                   "r.minY <= ?", "r.maxY >= ?",
+                   "m.discipline = ?"]
+        params = [cx + radius, cx - radius,
+                  cy + radius, cy - radius,
+                  discipline]
+        if building:
+            clauses.append("m.building = ?")
+            params.append(building)
+        if storey:
+            clauses.append("m.storey = ?")
+            params.append(storey)
+        params += [limit, offset]
+
+        conn = sqlite3.connect(db_path)
+        rows = conn.execute(f"""
+            SELECT m.guid, i.geometry_hash, m.material_rgba
+            FROM elements_meta m
+            JOIN element_instances i ON m.guid = i.guid
+            JOIN elements_rtree r ON m.id = r.id
+            WHERE {' AND '.join(clauses)}
+            LIMIT ? OFFSET ?
+        """, params).fetchall()
+        conn.close()
+        print(f"[S184] §PROOF VP_QUERY disc={discipline} radius={radius:.0f}m "
+              f"rows={len(rows)} building={building or 'any'}")
         return rows
 
     def _query_building(self, db_path, building, bbox, discipline='ARC', offset=0, storey=''):
@@ -2206,11 +2265,8 @@ class LinkFederationLibrary(bpy.types.Operator):
             self.report({'ERROR'}, "No federation database selected")
             return {'CANCELLED'}
 
-        # S175: GN checkbox controls which path
-        if props.gn_mode:
-            return self._load_gn(context, props)
-        else:
-            return self._load_per_element(context, props)
+        # S184: GN mode halted — always use Library (per-element) path
+        return self._load_per_element(context, props)
 
     def _load_common(self, context, props):
         """Shared setup: find library, register index."""
@@ -2223,6 +2279,22 @@ class LinkFederationLibrary(bpy.types.Operator):
             self.report({'ERROR'},
                 "library.blend not found. Run bake_library_blend.py first.")
             return None, None, None
+
+        # S184: set db/library cache so RTree search works after Full Load too
+        from . import bbox_visualization as bv
+        from mathutils import Vector
+        bv._db_path_cache = db_path
+        bv._library_blend_cache = lib_blend
+        if bv._model_offset is None:
+            bv._model_offset = Vector((0.0, 0.0, 0.0))
+        # Clear stale search state from previous DB
+        bv._search_results.clear()
+        bv._building_elements.clear()
+        bv._highlighted_bboxes.clear()
+        bv._active_building = ""
+        bv._selected_element = {}
+        bv._loaded_collections.clear()
+        bv._load_progress.clear()
 
         if discipline_legend.is_legend_enabled():
             discipline_legend.disable_legend()
@@ -6797,11 +6869,16 @@ class FedRTreeCountBuilding(bpy.types.Operator):
         props.rtree_bld_total = sum(counts.values())
         bv._building_storeys = [r[0] for r in storeys if r[0]]
         elapsed_ms = (time.time() - t0) * 1000
-        print(f"[S183] §PROOF COUNT_BLD bld={building} arc={props.rtree_bld_arc} "
-              f"str={props.rtree_bld_str} mep={props.rtree_bld_mep} "
-              f"elec={props.rtree_bld_elec} fp={props.rtree_bld_fp} elapsed={elapsed_ms:.0f}ms")
-        print(f"[S183] §PROOF STOREYS_LOADED bld={building} count={len(bv._building_storeys)} "
-              f"list={bv._building_storeys[:8]}")
+        print(f"[S184] §PROOF COUNT_BLD bld={building} total={props.rtree_bld_total} "
+              f"storeys={len(bv._building_storeys)} {elapsed_ms:.0f}ms")
+
+        # S184: pre-warm library meshes in background while user reads cockpit
+        import bpy as _bpy
+        if bv._library_blend_cache:
+            if _bpy.app.timers.is_registered(bv._prewarm_building_meshes):
+                _bpy.app.timers.unregister(bv._prewarm_building_meshes)
+            _bpy.app.timers.register(bv._prewarm_building_meshes, first_interval=0.5)
+
         for area in context.screen.areas:
             if area.type == 'VIEW_3D':
                 area.tag_redraw()

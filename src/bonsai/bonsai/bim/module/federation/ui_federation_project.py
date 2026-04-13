@@ -116,9 +116,7 @@ class BIM_PT_federation_setup(Panel):
         row.operator("bim.link_federation_library", icon="ASSET_MANAGER", text="Library")
         row.operator("bim.clear_federation_viewport", icon="X", text="Clear")
 
-        # S175: GN + NEAR checkbox — controls Library button mode
-        row2 = box.row(align=True)
-        row2.prop(props, "gn_mode", text="FAST", icon="GEOMETRY_NODES", toggle=True)
+        # S184: GN mode halted — RTree + Stingy Loader is the primary path
 
         draw_web_ui_button(layout, "3d")
 

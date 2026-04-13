@@ -1689,7 +1689,7 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
                 row2 = col.row(align=True)
                 row2.alert = active
                 badge = f" \u00d7{n_tiles}" if n_tiles > 1 else ""
-                disp = _re.sub(r'^T\d+_', '', building)
+                disp = _re.sub(r'^[TS]\d+_(\d+_)?', '', building)
                 op = row2.operator("bim.fed_rtree_fly_to_result",
                                    text=f"{disp}{badge}  ({count:,})", icon='HOME')
                 op.result_index = i
@@ -1701,7 +1701,7 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
         if bv._active_building and props.rtree_bld_total > 0:
             layout.separator(factor=0.3)
             bx = layout.box()
-            disp_bld = _re.sub(r'^T\d+_', '', bv._active_building)
+            disp_bld = _re.sub(r'^[TS]\d+_(\d+_)?', '', bv._active_building)
             bx.label(text=disp_bld, icon='HOME')
 
             # Storey filter
@@ -1726,16 +1726,12 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
             for disc, cnt in disc_data:
                 if cnt == 0:
                     continue
-                ratio = max(cnt / max_count, 0.04)
-                split = bx.split(factor=ratio, align=True)
-                left = split.row(align=True)
-                left.alert = True
-                left.scale_y = 0.7
-                left.label(text=f"{disc} {cnt:,}")
-                right = split.row(align=True)
-                right.enabled = False
-                right.scale_y = 0.7
-                right.label(text="")
+                # Unicode block bar: 12 chars max width, proportional fill
+                n_full = max(int(round(12 * cnt / max_count)), 1)
+                bar = '\u2588' * n_full + '\u2591' * (12 - n_full)
+                row_d = bx.row(align=True)
+                row_d.scale_y = 0.8
+                row_d.label(text=f"{disc:4s} {bar}  {cnt:,}")
 
             bx.label(text=f"Total  {props.rtree_bld_total:,}", icon='OBJECT_DATA')
 
@@ -1783,7 +1779,7 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
             inv = layout.box()
             inv.label(text="LOADED", icon='CHECKMARK')
             for lbl in list(bv._loaded_collections.keys()):
-                disp_lbl = _re.sub(r'^Loaded_T\d+_', 'Loaded_', lbl)
+                disp_lbl = _re.sub(r'^Loaded_[TS]\d+_(\d+_)?', 'Loaded_', lbl)
                 row4 = inv.row(align=True)
                 row4.label(text=disp_lbl, icon='OUTLINER_COLLECTION')
 
@@ -1802,4 +1798,4 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
                 gr.label(text=guid[:28], icon='COPY_ID')
                 op_cp2 = gr.operator("bim.fed_rtree_copy_guid", text="", icon='COPYDOWN')
                 op_cp2.guid = guid
-        col.label(text="Eye icon on ● DISC = hide/show")
+        layout.label(text="Eye icon on ● DISC = hide/show")

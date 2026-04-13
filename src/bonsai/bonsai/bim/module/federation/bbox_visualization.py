@@ -68,6 +68,43 @@ LOAD_DISC_ORDER = ['ARC', 'STR', 'MEP', 'ELEC', 'FP']
 _load_progress = {}          # building → {'disc_idx': int, 'offset': int, 'exhausted': bool}
 
 
+# S184: Pre-warm — background-link building meshes during cockpit read
+_PREWARM_CAP = 800  # max hashes to pre-warm per building (~2s, keeps UI responsive)
+
+def _prewarm_building_meshes():
+    """One-shot timer: link geometry hashes for active building from library.blend.
+    Fires 0.5s after cockpit drill-in. Capped at _PREWARM_CAP hashes to stay <3s.
+    Any overflow is handled at MESH press time (cold link for those, still fast)."""
+    import bpy
+    import sqlite3
+    import time
+    building = _active_building
+    if not building or not _db_path_cache or not _library_blend_cache:
+        return None
+    t0 = time.time()
+    conn = sqlite3.connect(_db_path_cache)
+    hashes = [r[0] for r in conn.execute(
+        "SELECT DISTINCT i.geometry_hash FROM elements_meta m "
+        "JOIN element_instances i ON m.guid = i.guid "
+        "WHERE m.building = ? AND i.geometry_hash IS NOT NULL "
+        "LIMIT ?", (building, _PREWARM_CAP)
+    ).fetchall()]
+    conn.close()
+    already = {m.name for m in bpy.data.meshes}
+    to_link = [h for h in hashes if h not in already]
+    if to_link:
+        from pathlib import Path
+        if not Path(_library_blend_cache).exists():
+            return None
+        with bpy.data.libraries.load(_library_blend_cache, link=True) as (df, dt):
+            available = set(df.meshes)
+            dt.meshes = [h for h in to_link if h in available]
+        elapsed_ms = (time.time() - t0) * 1000
+        print(f"[S184] §PROOF PREWARM building={building} "
+              f"linked={len(to_link)} cap={_PREWARM_CAP} {elapsed_ms:.0f}ms")
+    return None  # one-shot, don't repeat
+
+
 def create_bbox_edges(bbox: Tuple[float, float, float, float, float, float]) -> List[Vector]:
     """
     Create the 12 edges of a bounding box as line segments.
@@ -297,10 +334,20 @@ def draw_bboxes():
             continue
 
         color = _color_override if _color_override else DISCIPLINE_COLORS.get(discipline, DISCIPLINE_COLORS['DEFAULT'])
-        # Ghost wireframes when building is active — deeper ghost when meshes are loaded
-        # so the solid geometry shines through.
+        # Ghost wireframes when building is active and solid meshes block the view.
+        # Keep full alpha when x-ray is on (user wants to see through).
         if _active_building:
-            alpha = 0.05 if _loaded_collections else 0.12
+            xray_on = False
+            for area in bpy.context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    xray_on = area.spaces[0].shading.show_xray
+                    break
+            if _loaded_collections and not xray_on:
+                alpha = 0.15
+            elif not xray_on:
+                alpha = 0.25
+            else:
+                alpha = color[3]  # keep original alpha when x-ray on
             color = (color[0], color[1], color[2], alpha)
         shader.bind()
         shader.uniform_float("color", color)
@@ -616,7 +663,8 @@ def navigate_to_element(search_term: str, context) -> dict:
         cur = conn.cursor()
 
         # One row per building: envelope bbox of all matching elements + match count.
-        # Fetch up to 50 so we can dedup by base building type (strips T\d+_ tile prefix).
+        # LIMIT 500 to survive tile-heavy sandboxes (43 tiles × 25 buildings).
+        # Python dedup (below) collapses tiles to base types, caps display at 10.
         cur.execute("""
             SELECT m.building,
                    MIN(m.guid)          AS guid,
@@ -635,7 +683,7 @@ def navigate_to_element(search_term: str, context) -> dict:
                OR m.building    LIKE ?
             GROUP BY m.building
             ORDER BY match_count DESC
-            LIMIT 50
+            LIMIT 500
         """, (like, term, term.upper(), like, like))
 
         rows = cur.fetchall()
@@ -645,7 +693,8 @@ def navigate_to_element(search_term: str, context) -> dict:
         # When a city has 18 tiles of LTU_AHouse, show one entry not 10.
         # Fly to the tile with most matches (already first by ORDER BY match_count DESC).
         def _building_base(name):
-            return _re.sub(r'^T\d+_', '', name)
+            # Strip tile prefix: T0_, T12_, S0_0_, S31_0_, etc.
+            return _re.sub(r'^[TS]\d+_(\d+_)?', '', name)
 
         seen_base = set()
         tile_counts = {}   # base → total tile count across all rows
