@@ -58,51 +58,124 @@ _active_building = ""        # currently drilled-into building
 
 # S180: Stingy Mesh Loader state
 _loaded_collections = {}     # label → [object_names]
+_loaded_guids = set()        # S185: all guids that have been meshed (dedup across presses)
 _library_blend_cache = None  # absolute path to library.blend, resolved at RTree load
 
 # S183: Building storey list — populated by FedRTreeCountBuilding
 _building_storeys = []       # storeys for active building, from last count query
+
+# S186: Drill-down state
+_active_storey = ""          # currently drilled-into storey (empty = all)
+_search_suggestions = []     # 5 random meaningful search terms, populated at load
+_building_class_groups = []  # [{ifc_class, count}] — fallback breakdown when no storeys
+_has_building_column = False # True if elements_meta has 'building' column (multi-building DB)
+_single_building_name = ""   # synthetic building name for single-building DBs
+_building_disc_counts = {}   # discipline → count (dynamic, replaces hardcoded 5 props)
+_prewarmed_discs = set()     # S186: disciplines already pre-warmed (per-disc lazy warm)
+_overnight_running = False   # S186: True while overnight loader is active
+_overnight_paused = False    # S186: True while paused (modal stays alive)
+_overnight_progress = ""     # S186: status text for UI display
+_overnight_placed = 0        # S186: total elements placed so far
+_overnight_total = 0         # S186: total elements to place
 
 # S182: Progressive load state
 LOAD_DISC_ORDER = ['ARC', 'STR', 'MEP', 'ELEC', 'FP']
 _load_progress = {}          # building → {'disc_idx': int, 'offset': int, 'exhausted': bool}
 
 
-# S184: Pre-warm — background-link building meshes during cockpit read
-_PREWARM_CAP = 800  # max hashes to pre-warm per building (~2s, keeps UI responsive)
-
+# S185: Pre-warm — background-link ALL building meshes in one shot
 def _prewarm_building_meshes():
-    """One-shot timer: link geometry hashes for active building from library.blend.
-    Fires 0.5s after cockpit drill-in. Capped at _PREWARM_CAP hashes to stay <3s.
-    Any overflow is handled at MESH press time (cold link for those, still fast)."""
+    """One-shot timer: link ALL geometry hashes for active building from library.blend.
+    Fires 0.5s after cockpit drill-in. Single library.blend open (~3s) loads
+    every unique mesh for the building. After this, +MESH never opens the file."""
     import bpy
     import sqlite3
     import time
     building = _active_building
     if not building or not _db_path_cache or not _library_blend_cache:
         return None
+    # S185: show wait cursor during pre-warm
+    for window in bpy.context.window_manager.windows:
+        window.cursor_set('WAIT')
     t0 = time.time()
     conn = sqlite3.connect(_db_path_cache)
-    hashes = [r[0] for r in conn.execute(
-        "SELECT DISTINCT i.geometry_hash FROM elements_meta m "
-        "JOIN element_instances i ON m.guid = i.guid "
-        "WHERE m.building = ? AND i.geometry_hash IS NOT NULL "
-        "LIMIT ?", (building, _PREWARM_CAP)
-    ).fetchall()]
+    if _has_building_column:
+        hashes = [r[0] for r in conn.execute(
+            "SELECT DISTINCT i.geometry_hash FROM elements_meta m "
+            "JOIN element_instances i ON m.guid = i.guid "
+            "WHERE m.building = ? AND i.geometry_hash IS NOT NULL",
+            (building,)
+        ).fetchall()]
+    else:
+        hashes = [r[0] for r in conn.execute(
+            "SELECT DISTINCT i.geometry_hash FROM elements_meta m "
+            "JOIN element_instances i ON m.guid = i.guid "
+            "WHERE i.geometry_hash IS NOT NULL"
+        ).fetchall()]
     conn.close()
     already = {m.name for m in bpy.data.meshes}
     to_link = [h for h in hashes if h not in already]
     if to_link:
         from pathlib import Path
         if not Path(_library_blend_cache).exists():
+            for window in bpy.context.window_manager.windows:
+                window.cursor_set('DEFAULT')
             return None
         with bpy.data.libraries.load(_library_blend_cache, link=True) as (df, dt):
             available = set(df.meshes)
             dt.meshes = [h for h in to_link if h in available]
         elapsed_ms = (time.time() - t0) * 1000
-        print(f"[S184] §PROOF PREWARM building={building} "
-              f"linked={len(to_link)} cap={_PREWARM_CAP} {elapsed_ms:.0f}ms")
-    return None  # one-shot, don't repeat
+        print(f"[S185] §PROOF PREWARM building={building} "
+              f"linked={len(to_link)}/{len(hashes)} unique hashes {elapsed_ms:.0f}ms")
+    else:
+        print(f"[S185] §PROOF PREWARM building={building} "
+              f"all {len(hashes)} already cached")
+    for window in bpy.context.window_manager.windows:
+        window.cursor_set('DEFAULT')
+    return None  # one-shot, done
+
+
+def prewarm_discipline(discipline: str):
+    """S186: Link all geometry hashes for ONE discipline from library.blend.
+    Called on first +DISC press. One library.blend open, scoped to discipline.
+    After this, subsequent presses for the same discipline are instant (link=0ms)."""
+    import bpy
+    import sqlite3
+    import time
+    building = _active_building
+    if not building or not _db_path_cache or not _library_blend_cache:
+        return
+    if discipline in _prewarmed_discs:
+        return  # already done
+    for window in bpy.context.window_manager.windows:
+        window.cursor_set('WAIT')
+    t0 = time.time()
+    conn = sqlite3.connect(_db_path_cache)
+    bld_clause = "m.building = ? AND" if _has_building_column else ""
+    bld_params = (building,) if _has_building_column else ()
+    hashes = [r[0] for r in conn.execute(f"""
+        SELECT DISTINCT i.geometry_hash FROM elements_meta m
+        JOIN element_instances i ON m.guid = i.guid
+        WHERE {bld_clause} m.discipline = ? AND i.geometry_hash IS NOT NULL
+    """, bld_params + (discipline,)).fetchall()]
+    conn.close()
+    already = {m.name for m in bpy.data.meshes}
+    to_link = [h for h in hashes if h not in already]
+    if to_link:
+        from pathlib import Path
+        if not Path(_library_blend_cache).exists():
+            for window in bpy.context.window_manager.windows:
+                window.cursor_set('DEFAULT')
+            return
+        with bpy.data.libraries.load(_library_blend_cache, link=True) as (df, dt):
+            available = set(df.meshes)
+            dt.meshes = [h for h in to_link if h in available]
+    _prewarmed_discs.add(discipline)
+    elapsed_ms = (time.time() - t0) * 1000
+    print(f"[S186] §PROOF PREWARM_DISC disc={discipline} building={building} "
+          f"linked={len(to_link)}/{len(hashes)} hashes {elapsed_ms:.0f}ms")
+    for window in bpy.context.window_manager.windows:
+        window.cursor_set('DEFAULT')
 
 
 def create_bbox_edges(bbox: Tuple[float, float, float, float, float, float]) -> List[Vector]:
@@ -226,13 +299,15 @@ def get_model_offset(db_path: str = None) -> Vector:
     return Vector((0, 0, 0))
 
 
-def load_federation_bboxes(db_path: str, limit: Optional[int] = None) -> Dict[str, List[Tuple]]:
+def load_federation_bboxes(db_path: str, limit: Optional[int] = None,
+                          progress_cb=None) -> Dict[str, List[Tuple]]:
     """
     Load bounding boxes from federation database, grouped by discipline.
 
     Args:
         db_path: Path to federation database
         limit: Optional limit on number of elements (for testing)
+        progress_cb: Optional callback(current, total) for progress reporting
 
     Returns:
         Dict mapping discipline to list of (bbox, guid) tuples
@@ -243,6 +318,12 @@ def load_federation_bboxes(db_path: str, limit: Optional[int] = None) -> Dict[st
 
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
+
+    # S185: get total count first for progress reporting
+    if progress_cb:
+        count_q = "SELECT COUNT(*) FROM elements_meta"
+        total = cursor.execute(count_q).fetchone()[0]
+        progress_cb(0, total)
 
     # Query bboxes with discipline
     query = """
@@ -259,16 +340,22 @@ def load_federation_bboxes(db_path: str, limit: Optional[int] = None) -> Dict[st
 
     # Group by discipline
     discipline_bboxes = {}
-    for row in rows:
+    for i, row in enumerate(rows):
         discipline = row[0]
-        # Database already has meters (site-local coordinates), no conversion needed
-        bbox = tuple(row[1:7])  # min_x, min_y, min_z, max_x, max_y, max_z (already in meters)
+        bbox = tuple(row[1:7])
         guid = row[7]
 
         if discipline not in discipline_bboxes:
             discipline_bboxes[discipline] = []
 
         discipline_bboxes[discipline].append((bbox, guid))
+
+        # S185: progress callback every 100K rows
+        if progress_cb and i % 100000 == 0 and i > 0:
+            progress_cb(i, len(rows))
+
+    if progress_cb:
+        progress_cb(len(rows), len(rows))
 
     return discipline_bboxes
 
@@ -485,6 +572,21 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
     _db_path_cache = db_path
     _model_offset = offset
     print(f"[RTree] §CACHE db='{Path(db_path).name}' offset=({offset.x:.1f},{offset.y:.1f},{offset.z:.1f})")
+    # S186: detect building column (single vs multi-building DB)
+    global _has_building_column, _single_building_name
+    try:
+        _tc = sqlite3.connect(db_path)
+        cols = [r[1] for r in _tc.execute("PRAGMA table_info(elements_meta)").fetchall()]
+        _has_building_column = 'building' in cols
+        if not _has_building_column:
+            # Derive name from DB filename (e.g. LTU_AHouse_extracted.db → LTU_AHouse)
+            _single_building_name = Path(db_path).stem.replace('_extracted', '').replace('_fine_disc', '')
+        _tc.close()
+    except Exception:
+        _has_building_column = False
+    print(f"[S186] §CACHE has_building_col={_has_building_column} single='{_single_building_name}'")
+    # S186: populate search suggestions
+    _populate_search_suggestions(db_path)
     # S180: resolve library.blend once at load time
     _library_blend_cache = _find_library_blend(db_path)
     if _library_blend_cache:
@@ -494,11 +596,20 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
 
     # S178: Create Outliner discipline collections + proxy objects
     # Each proxy empty: eye icon in Outliner → hide_viewport → GPU skips that batch
+    # S186: name the parent collection after the project so user knows what's loaded
     _disc_proxy_objects.clear()
-    parent_rtree = bpy.data.collections.get("Federation_RTree")
+    project_name = Path(db_path).stem.replace('_extracted', '').replace('_fine_disc', '').replace('_backup_coarse_disc', '')
+    rtree_col_name = f"{project_name}_RTree"
+    parent_rtree = bpy.data.collections.get(rtree_col_name)
     if parent_rtree is None:
-        parent_rtree = bpy.data.collections.new("Federation_RTree")
-    if "Federation_RTree" not in {c.name for c in bpy.context.scene.collection.children}:
+        # Remove old generic name if exists
+        old = bpy.data.collections.get("Federation_RTree")
+        if old:
+            old.name = rtree_col_name
+            parent_rtree = old
+        else:
+            parent_rtree = bpy.data.collections.new(rtree_col_name)
+    if rtree_col_name not in {c.name for c in bpy.context.scene.collection.children}:
         bpy.context.scene.collection.children.link(parent_rtree)
 
     for disc in sorted(_bbox_batches.keys()):
@@ -540,7 +651,7 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
             bbox_size = coords_array.max(axis=0) - coords_array.min(axis=0)
             max_dim = max(bbox_size)
 
-            # Frame viewport
+            # Frame viewport + auto clip for model extent
             for area in bpy.context.screen.areas:
                 if area.type == 'VIEW_3D':
                     for region in area.regions:
@@ -549,9 +660,15 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
                             # Set view location and distance
                             space.region_3d.view_location = center
                             space.region_3d.view_distance = max_dim * 1.5
+                            # S185: auto clip — fit to model extent so user
+                            # never needs to manually set View End Clip.
+                            # clip_start stays small (0.1m) so close-up viewing works.
+                            space.clip_end = max(max_dim * 4.0, 5000.0)
+                            space.clip_start = 0.1
                             break
 
-            print(f"Viewport: Framed to center ({center[0]:.1f}, {center[1]:.1f}, {center[2]:.1f})")
+            print(f"Viewport: Framed to center ({center[0]:.1f}, {center[1]:.1f}, {center[2]:.1f}) "
+                  f"clip_end={max(max_dim * 4.0, 5000.0):.0f}")
 
     print(f"\n{'='*70}")
     print(f"✅ BBOX VISUALIZATION ENABLED")
@@ -632,6 +749,59 @@ def clear_color_override() -> None:
     _color_override = None
 
 
+# ── S186: Search suggestions ──────────────────────────────────────────────
+
+def _populate_search_suggestions(db_path: str):
+    """Pick 5 random meaningful search hints from the loaded DB.
+
+    Strategy: 3 common IFC class short names (Wall, Door, Window…)
+    + 1 discipline + 1 building name. All human-readable, no GUIDs.
+    Cached in _search_suggestions for the session.
+    """
+    global _search_suggestions
+    _search_suggestions.clear()
+    try:
+        conn = sqlite3.connect(db_path)
+        # Top IFC classes by frequency — pick 3 random from top 15
+        classes = [r[0] for r in conn.execute(
+            "SELECT ifc_class FROM elements_meta "
+            "WHERE ifc_class IS NOT NULL "
+            "GROUP BY ifc_class ORDER BY COUNT(*) DESC LIMIT 15"
+        ).fetchall()]
+        # Strip 'Ifc' prefix + 'StandardCase' suffix for readability
+        import random
+        friendly = []
+        for c in classes:
+            short = c.replace('Ifc', '').replace('StandardCase', '')
+            if short and short not in friendly:
+                friendly.append(short)
+        random.shuffle(friendly)
+        _search_suggestions.extend(friendly[:3])
+        # 1 discipline
+        discs = [r[0] for r in conn.execute(
+            "SELECT DISTINCT discipline FROM elements_meta "
+            "WHERE discipline IS NOT NULL"
+        ).fetchall()]
+        if discs:
+            _search_suggestions.append(random.choice(discs))
+        # 1 building (if multi-building DB)
+        if _has_building_column:
+            buildings = [r[0] for r in conn.execute(
+                "SELECT DISTINCT building FROM elements_meta "
+                "WHERE building IS NOT NULL AND building != ''"
+            ).fetchall()]
+            if buildings:
+                bases = list({_re.sub(r'^[TS]\d+_(\d+_)?', '', b) for b in buildings})
+                if bases:
+                    _search_suggestions.append(random.choice(bases))
+        # S186: always add '*' hint so users discover wildcard search
+        _search_suggestions.append("*")
+        conn.close()
+        print(f"[S186] §SUGGESTIONS {_search_suggestions}")
+    except Exception as e:
+        print(f"[S186] §SUGGESTIONS ERROR {e}")
+
+
 # ── S178: Search + Navigate ────────────────────────────────────────────────────
 
 def navigate_to_element(search_term: str, context) -> dict:
@@ -655,8 +825,14 @@ def navigate_to_element(search_term: str, context) -> dict:
     _search_results.clear()
     results = []
     term = search_term.strip()
-    like = f"%{term}%"
-    print(f"[RTree] §SEARCH term='{term}' db='{Path(_db_path_cache).name}'")
+    # S186: wildcard support — * maps to SQL % for LIKE patterns
+    # '*' alone → all buildings; 'duct*' → starts with; '*door' → ends with
+    is_wildcard_all = (term == '*')
+    if '*' in term:
+        like = term.replace('*', '%')
+    else:
+        like = f"%{term}%"
+    print(f"[RTree] §SEARCH term='{term}' like='{like}' db='{Path(_db_path_cache).name}'")
 
     try:
         conn = sqlite3.connect(_db_path_cache)
@@ -665,26 +841,73 @@ def navigate_to_element(search_term: str, context) -> dict:
         # One row per building: envelope bbox of all matching elements + match count.
         # LIMIT 500 to survive tile-heavy sandboxes (43 tiles × 25 buildings).
         # Python dedup (below) collapses tiles to base types, caps display at 10.
-        cur.execute("""
-            SELECT m.building,
-                   MIN(m.guid)          AS guid,
-                   MIN(m.element_name)  AS element_name,
-                   m.discipline,
-                   m.ifc_class,
-                   MIN(r.minX) AS mnX, MIN(r.minY) AS mnY, MIN(r.minZ) AS mnZ,
-                   MAX(r.maxX) AS mxX, MAX(r.maxY) AS mxY, MAX(r.maxZ) AS mxZ,
-                   COUNT(*)    AS match_count
-            FROM elements_meta m
-            JOIN elements_rtree r ON m.id = r.id
-            WHERE m.element_name LIKE ?
-               OR m.guid        =    ?
-               OR m.discipline  =    ?
-               OR m.ifc_class   LIKE ?
-               OR m.building    LIKE ?
-            GROUP BY m.building
-            ORDER BY match_count DESC
-            LIMIT 500
-        """, (like, term, term.upper(), like, like))
+        if not _has_building_column:
+            # S186: single-building DB — no building column, synthesise building name
+            bld_name = _single_building_name or Path(_db_path_cache).stem
+            if is_wildcard_all:
+                cur.execute("""
+                    SELECT ? AS building,
+                           MIN(m.guid), MIN(m.element_name),
+                           MIN(m.discipline), MIN(m.ifc_class),
+                           MIN(r.minX), MIN(r.minY), MIN(r.minZ),
+                           MAX(r.maxX), MAX(r.maxY), MAX(r.maxZ),
+                           COUNT(*) AS match_count
+                    FROM elements_meta m
+                    JOIN elements_rtree r ON m.id = r.id
+                """, (bld_name,))
+            else:
+                cur.execute("""
+                    SELECT ? AS building,
+                           MIN(m.guid), MIN(m.element_name),
+                           MIN(m.discipline), MIN(m.ifc_class),
+                           MIN(r.minX), MIN(r.minY), MIN(r.minZ),
+                           MAX(r.maxX), MAX(r.maxY), MAX(r.maxZ),
+                           COUNT(*) AS match_count
+                    FROM elements_meta m
+                    JOIN elements_rtree r ON m.id = r.id
+                    WHERE m.element_name LIKE ?
+                       OR m.guid        =    ?
+                       OR m.discipline  =    ?
+                       OR m.ifc_class   LIKE ?
+                """, (bld_name, like, term, term.upper(), like))
+        elif is_wildcard_all:
+            # S186: bare '*' — list all buildings, no element filter
+            cur.execute("""
+                SELECT m.building,
+                       MIN(m.guid)          AS guid,
+                       MIN(m.element_name)  AS element_name,
+                       MIN(m.discipline)    AS discipline,
+                       MIN(m.ifc_class)     AS ifc_class,
+                       MIN(r.minX) AS mnX, MIN(r.minY) AS mnY, MIN(r.minZ) AS mnZ,
+                       MAX(r.maxX) AS mxX, MAX(r.maxY) AS mxY, MAX(r.maxZ) AS mxZ,
+                       COUNT(*)    AS match_count
+                FROM elements_meta m
+                JOIN elements_rtree r ON m.id = r.id
+                GROUP BY m.building
+                ORDER BY match_count DESC
+                LIMIT 500
+            """)
+        else:
+            cur.execute("""
+                SELECT m.building,
+                       MIN(m.guid)          AS guid,
+                       MIN(m.element_name)  AS element_name,
+                       m.discipline,
+                       m.ifc_class,
+                       MIN(r.minX) AS mnX, MIN(r.minY) AS mnY, MIN(r.minZ) AS mnZ,
+                       MAX(r.maxX) AS mxX, MAX(r.maxY) AS mxY, MAX(r.maxZ) AS mxZ,
+                       COUNT(*)    AS match_count
+                FROM elements_meta m
+                JOIN elements_rtree r ON m.id = r.id
+                WHERE m.element_name LIKE ?
+                   OR m.guid        =    ?
+                   OR m.discipline  =    ?
+                   OR m.ifc_class   LIKE ?
+                   OR m.building    LIKE ?
+                GROUP BY m.building
+                ORDER BY match_count DESC
+                LIMIT 500
+            """, (like, term, term.upper(), like, like))
 
         rows = cur.fetchall()
         conn.close()
@@ -848,22 +1071,40 @@ def fetch_building_elements(building: str, search_term: str) -> list:
     _selected_element.clear()
 
     term = search_term.strip()
-    like = f"%{term}%"
+    # S186: wildcard support — * → %, bare * matches all elements
+    is_wildcard_all = (term == '*')
+    if '*' in term:
+        like = term.replace('*', '%')
+    else:
+        like = f"%{term}%"
 
     try:
         conn = sqlite3.connect(_db_path_cache)
         cur = conn.cursor()
-        cur.execute("""
-            SELECT m.guid, m.element_name, m.discipline, m.ifc_class, m.storey,
-                   r.minX, r.minY, r.minZ, r.maxX, r.maxY, r.maxZ
-            FROM elements_meta m
-            JOIN elements_rtree r ON m.id = r.id
-            WHERE m.building = ?
-              AND (m.element_name LIKE ?
-                OR m.ifc_class   LIKE ?
-                OR m.discipline  =    ?)
-            LIMIT 10
-        """, (building, like, like, term.upper()))
+        # S186: building filter only when DB has building column
+        bld_clause = "m.building = ? AND" if _has_building_column else ""
+        bld_params = (building,) if _has_building_column else ()
+        if is_wildcard_all:
+            cur.execute(f"""
+                SELECT m.guid, m.element_name, m.discipline, m.ifc_class, m.storey,
+                       r.minX, r.minY, r.minZ, r.maxX, r.maxY, r.maxZ
+                FROM elements_meta m
+                JOIN elements_rtree r ON m.id = r.id
+                {"WHERE m.building = ?" if _has_building_column else ""}
+                LIMIT 10
+            """, bld_params)
+        else:
+            cur.execute(f"""
+                SELECT m.guid, m.element_name, m.discipline, m.ifc_class, m.storey,
+                       r.minX, r.minY, r.minZ, r.maxX, r.maxY, r.maxZ
+                FROM elements_meta m
+                JOIN elements_rtree r ON m.id = r.id
+                WHERE {bld_clause}
+                      (m.element_name LIKE ?
+                    OR m.ifc_class   LIKE ?
+                    OR m.discipline  =    ?)
+                LIMIT 10
+            """, bld_params + (like, like, term.upper()))
         rows = cur.fetchall()
         conn.close()
     except Exception as e:
@@ -879,6 +1120,93 @@ def fetch_building_elements(building: str, search_term: str) -> list:
 
     print(f"[RTree] §L2 building='{building}' term='{term}' elements={len(_building_elements)}")
     return _building_elements
+
+
+def fly_to_storey(storey: str, context) -> bool:
+    """S186: Drill into a storey — fly to its bbox centroid, set _active_storey."""
+    global _active_storey, _highlighted_bboxes, _building_elements, _selected_element
+
+    building = _active_building
+    if not building or not _db_path_cache:
+        return False
+
+    _active_storey = storey
+    _highlighted_bboxes.clear()
+    _building_elements.clear()
+    _selected_element.clear()
+
+    try:
+        conn = sqlite3.connect(_db_path_cache)
+        # S186: building clause conditional on column existence
+        if _has_building_column:
+            bld_where = "m.building = ? AND"
+            bld_p = (building,)
+        else:
+            bld_where = ""
+            bld_p = ()
+        # Envelope bbox for this storey
+        row = conn.execute(f"""
+            SELECT MIN(r.minX), MIN(r.minY), MIN(r.minZ),
+                   MAX(r.maxX), MAX(r.maxY), MAX(r.maxZ), COUNT(*)
+            FROM elements_meta m
+            JOIN elements_rtree r ON m.id = r.id
+            WHERE {bld_where} m.storey = ?
+        """, bld_p + (storey,)).fetchone()
+        # Top 10 elements in this storey
+        elems = conn.execute(f"""
+            SELECT m.guid, m.element_name, m.discipline, m.ifc_class, m.storey,
+                   r.minX, r.minY, r.minZ, r.maxX, r.maxY, r.maxZ
+            FROM elements_meta m
+            JOIN elements_rtree r ON m.id = r.id
+            WHERE {bld_where} m.storey = ?
+            LIMIT 10
+        """, bld_p + (storey,)).fetchall()
+        conn.close()
+    except Exception as e:
+        print(f"[S186] §FLY_STOREY ERROR {e}")
+        return False
+
+    if not row or row[6] == 0:
+        return False
+
+    mnX, mnY, mnZ, mxX, mxY, mxZ, cnt = row
+    bbox = (mnX, mnY, mnZ, mxX, mxY, mxZ)
+    _highlighted_bboxes.append(bbox)
+
+    for guid, name, disc, ifc_class, st, mnX2, mnY2, mnZ2, mxX2, mxY2, mxZ2 in elems:
+        eb = (mnX2, mnY2, mnZ2, mxX2, mxY2, mxZ2)
+        _highlighted_bboxes.append(eb)
+        _building_elements.append({'guid': guid, 'name': name, 'disc': disc,
+                                   'ifc_class': ifc_class, 'storey': st or '',
+                                   'bbox': eb})
+
+    # Fly to storey centroid
+    off = _model_offset
+    ox = off.x if off else 0.0
+    oy = off.y if off else 0.0
+    oz = off.z if off else 0.0
+    cx = (bbox[0] + bbox[3]) / 2 - ox
+    cy = (bbox[1] + bbox[4]) / 2 - oy
+    cz = (bbox[2] + bbox[5]) / 2 - oz
+    size = max(bbox[3]-bbox[0], bbox[4]-bbox[1], bbox[5]-bbox[2], 10.0)
+
+    for area in context.screen.areas:
+        if area.type == 'VIEW_3D':
+            space = area.spaces[0]
+            space.region_3d.view_location = Vector((cx, cy, cz))
+            space.region_3d.view_distance = size * 1.2
+            area.tag_redraw()
+            break
+
+    print(f"[S186] §PROOF FLY_STOREY bld={building} storey='{storey}' "
+          f"elements={cnt} blender=({cx:.1f},{cy:.1f},{cz:.1f})")
+    return True
+
+
+def clear_storey():
+    """S186: Go back from storey to building level."""
+    global _active_storey
+    _active_storey = ""
 
 
 def fly_to_element(elem_index: int, context) -> bool:

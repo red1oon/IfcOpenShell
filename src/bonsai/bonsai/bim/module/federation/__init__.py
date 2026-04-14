@@ -76,8 +76,14 @@ classes = (
     operator.FedRTreeSearch,                # S178: search + fly-to
     operator.FedRTreeFlyToResult,           # S178: click building → L2 drill-down
     operator.FedRTreeFlyToElement,          # S178: click element in L2 list
+    operator.FedRTreeFlyToStorey,           # S186: click storey → L2 drill-down
+    operator.FedRTreeBackToBuilding,        # S186: back from storey to building
     operator.FedRTreePick,                  # S178: click-to-identify
     operator.FedRTreeLoadMesh,              # S180: stingy mesh loader
+    operator.FedRTreeOvernight,             # S186: batch-load all meshes
+    operator.FedRTreeOvernightPause,        # S186: pause overnight
+    operator.FedRTreeOvernightCancel,       # S186: cancel overnight
+    operator.FedRTreeOvernightDismiss,      # S186: dismiss DONE box
     operator.FedRTreeShred,                 # S180: remove last loaded collection
     operator.FedRTreeCountBuilding,         # S183: cockpit discipline counts
     operator.FedRTreeCopyGuid,              # S183: clipboard GUID copy

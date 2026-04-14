@@ -1670,15 +1670,26 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
         from . import bbox_visualization as bv
         import re as _re
 
+        has_building = bool(bv._active_building)
+        has_storey = bool(bv._active_storey)
+        has_storeys_list = bool(bv._building_storeys)
+
         # ── SEARCH ──
         row = layout.row(align=True)
         row.prop(props, "rtree_search", text="", icon='VIEWZOOM')
         row.operator("bim.fed_rtree_search", text="", icon='PLAY')
 
-        # ── BUILDING LIST (L1) ──
+        # ── S186: Search suggestions (shown when idle — no results, no drill-down) ──
+        if not bv._search_results and not has_building and bv._search_suggestions:
+            hint = layout.row()
+            hint.scale_y = 0.8
+            hint.enabled = False
+            hint.label(text="Try:  " + ",  ".join(bv._search_suggestions))
+
+        # ── L0: BUILDING LIST (city level — no building drilled into) ──
         if props.rtree_result_count and bv._search_results:
             box = layout.box()
-            box.label(text=f"BUILDINGS  — '{props.rtree_search}'", icon='WORLD')
+            box.label(text=f"BUILDINGS  \u2014 '{props.rtree_search}'", icon='WORLD')
             col = box.column(align=True)
             col.scale_y = 1.1
             for i, r in enumerate(bv._search_results):
@@ -1697,49 +1708,53 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
         elif props.rtree_search:
             layout.label(text="No results", icon='ERROR')
 
-        # ── BUILDING COCKPIT (when L1 active) ──
-        if bv._active_building and props.rtree_bld_total > 0:
+        # ── L1+: BUILDING COCKPIT (when building drilled into) ──
+        if has_building and props.rtree_bld_total > 0:
             layout.separator(factor=0.3)
             bx = layout.box()
             disp_bld = _re.sub(r'^[TS]\d+_(\d+_)?', '', bv._active_building)
-            bx.label(text=disp_bld, icon='HOME')
 
-            # Storey filter
-            row_s = bx.row(align=True)
-            row_s.prop(props, "rtree_storey", text="Floor")
-            if bv._building_storeys:
-                row_s.label(text=f"({len(bv._building_storeys)})")
+            # S186: Breadcrumb header with back navigation
+            if has_storey:
+                # L2: Building > Storey — back button returns to building
+                hdr = bx.row(align=True)
+                hdr.operator("bim.fed_rtree_back_to_building",
+                             text="", icon='BACK')
+                hdr.label(text=f"{disp_bld}  >  {bv._active_storey}")
+            else:
+                bx.label(text=disp_bld, icon='HOME')
 
-            # Discipline bars
-            max_count = max(
-                props.rtree_bld_arc, props.rtree_bld_str,
-                props.rtree_bld_mep, props.rtree_bld_elec,
-                props.rtree_bld_fp, 1
-            )
-            disc_data = [
-                ('ARC',  props.rtree_bld_arc),
-                ('STR',  props.rtree_bld_str),
-                ('MEP',  props.rtree_bld_mep),
-                ('ELEC', props.rtree_bld_elec),
-                ('FP',   props.rtree_bld_fp),
-            ]
-            for disc, cnt in disc_data:
-                if cnt == 0:
-                    continue
-                # Unicode block bar: 12 chars max width, proportional fill
-                n_full = max(int(round(12 * cnt / max_count)), 1)
-                bar = '\u2588' * n_full + '\u2591' * (12 - n_full)
-                row_d = bx.row(align=True)
-                row_d.scale_y = 0.8
-                row_d.label(text=f"{disc:4s} {bar}  {cnt:,}")
+            # ── STOREY LIST (L1: building has storeys, none selected yet) ──
+            if has_storeys_list and not has_storey:
+                st_box = bx.box()
+                st_box.label(text=f"FLOORS ({len(bv._building_storeys)})",
+                             icon='LINENUMBERS_ON')
+                st_col = st_box.column(align=True)
+                st_col.scale_y = 1.0
+                for st in bv._building_storeys:
+                    op_st = st_col.operator("bim.fed_rtree_fly_to_storey",
+                                            text=st, icon='TRIA_RIGHT')
+                    op_st.storey = st
 
-            bx.label(text=f"Total  {props.rtree_bld_total:,}", icon='OBJECT_DATA')
+            # ── CLASS GROUPS (fallback: no storeys at all) ──
+            elif not has_storeys_list and not has_storey and bv._building_class_groups:
+                cg_box = bx.box()
+                cg_box.label(text="ELEMENT TYPES", icon='OBJECT_DATA')
+                cg_col = cg_box.column(align=True)
+                cg_col.scale_y = 0.9
+                for cg in bv._building_class_groups:
+                    short = cg['ifc_class'].replace('Ifc', '').replace('StandardCase', '')
+                    cg_col.label(text=f"{short}  ({cg['count']:,})")
 
-        # ── ELEMENT LIST (L2) ──
-        if bv._active_building and bv._building_elements:
+            # ── Discipline bars ──
+            self._draw_discipline_bars(bx, props, bv)
+
+        # ── ELEMENT LIST (L2 — shown when storey is active, or building has no storeys) ──
+        if has_building and bv._building_elements:
             layout.separator(factor=0.3)
             box2 = layout.box()
-            box2.label(text=f"ELEMENTS \u2014 top {len(bv._building_elements)}",
+            scope_label = bv._active_storey if has_storey else "top"
+            box2.label(text=f"ELEMENTS \u2014 {scope_label} ({len(bv._building_elements)})",
                        icon='RESTRICT_SELECT_OFF')
             col2 = box2.column(align=True)
             col2.scale_y = 0.95
@@ -1758,30 +1773,58 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
                     op_cp = row3.operator("bim.fed_rtree_copy_guid", text="", icon='COPYDOWN')
                     op_cp.guid = guid
 
-            # ── MESH / SHRED actions ──
+        # ── MESH / SHRED actions ──
+        # S186: Only shown after drilling into a building (L1+), NOT at L0 city level.
+        # Discipline buttons are DYNAMIC — read from actual DB data.
+        if has_building and props.rtree_bld_total > 0:
             layout.separator(factor=0.3)
             act_box = layout.box()
-            act_box.label(text="MESH ACTIONS", icon='IMPORT')
+            scope_txt = f"MESH ({bv._active_storey})" if has_storey else "MESH ACTIONS"
+            act_box.label(text=scope_txt, icon='IMPORT')
+            disc_list = list(bv._building_disc_counts.keys()) if bv._building_disc_counts else ['ARC', 'STR', 'MEP', 'ELEC', 'FP']
             grid = act_box.grid_flow(row_major=True, columns=3, align=True)
-            for disc in ['ARC', 'STR', 'MEP', 'ELEC', 'FP', 'NEXT']:
+            for disc in disc_list:
                 op3 = grid.operator("bim.fed_rtree_load_mesh",
-                                    text=f"+{disc}",
-                                    icon='IMPORT' if disc == 'NEXT' else 'NONE')
+                                    text=f"+{disc}", icon='NONE')
                 op3.target_disc = disc
 
             sh_row = act_box.row(align=True)
             sh_row.scale_y = 1.2
             sh_row.operator("bim.fed_rtree_shred", text="SHRED SELECTED  \u2702", icon='TRASH')
 
-        # ── SCENE INVENTORY ──
-        if bv._loaded_collections:
-            layout.separator(factor=0.3)
-            inv = layout.box()
-            inv.label(text="LOADED", icon='CHECKMARK')
-            for lbl in list(bv._loaded_collections.keys()):
-                disp_lbl = _re.sub(r'^Loaded_[TS]\d+_(\d+_)?', 'Loaded_', lbl)
-                row4 = inv.row(align=True)
-                row4.label(text=disp_lbl, icon='OUTLINER_COLLECTION')
+            # S186: Overnight loader — batch-load everything
+            act_box.separator(factor=0.3)
+            if bv._overnight_running:
+                prog_box = act_box.box()
+                prog_box.alert = True
+                prog_box.label(text=bv._overnight_progress, icon='SORTTIME')
+                pct = int(100 * bv._overnight_placed / max(bv._overnight_total, 1))
+                prog_box.progress(factor=pct / 100.0, type='BAR')
+                btn_row = prog_box.row(align=True)
+                if bv._overnight_paused:
+                    btn_row.operator("bim.fed_rtree_overnight_pause",
+                                     text="RESUME", icon='PLAY')
+                else:
+                    btn_row.operator("bim.fed_rtree_overnight_pause",
+                                     text="PAUSE", icon='PAUSE')
+                btn_row.operator("bim.fed_rtree_overnight_cancel",
+                                 text="CANCEL", icon='X')
+            elif bv._overnight_progress:
+                # Paused or Done — show status message
+                prog_box = act_box.box()
+                is_done = bv._overnight_progress.startswith("DONE")
+                prog_box.label(text=bv._overnight_progress,
+                               icon='CHECKMARK' if is_done else 'INFO')
+                if is_done:
+                    prog_box.operator("bim.fed_rtree_overnight_dismiss",
+                                      text="OK", icon='NONE')
+                else:
+                    prog_box.operator("bim.fed_rtree_overnight",
+                                      text="OVERNIGHT", icon='TIME')
+            else:
+                ov_row = act_box.row(align=True)
+                ov_row.operator("bim.fed_rtree_overnight",
+                                text="OVERNIGHT", icon='TIME')
 
         # ── PICK ──
         layout.separator(factor=0.3)
@@ -1798,4 +1841,45 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
                 gr.label(text=guid[:28], icon='COPY_ID')
                 op_cp2 = gr.operator("bim.fed_rtree_copy_guid", text="", icon='COPYDOWN')
                 op_cp2.guid = guid
-        layout.label(text="Eye icon on ● DISC = hide/show")
+        layout.label(text="Eye icon on \u25cf DISC = hide/show")
+
+    def _draw_discipline_bars(self, bx, props, bv):
+        """Draw discipline bar graph with LOD progress. S186: fully dynamic."""
+        disc_counts = bv._building_disc_counts
+        if not disc_counts:
+            return
+
+        max_count = max(disc_counts.values()) if disc_counts else 1
+
+        # Count loaded meshes per discipline from _loaded_collections
+        _loaded_per_disc = {}
+        for lbl, obj_names in bv._loaded_collections.items():
+            if bv._active_building and bv._active_building in lbl:
+                for d_name in disc_counts:
+                    if lbl.endswith(f'_{d_name}') or f'_{d_name}_' in lbl:
+                        _loaded_per_disc[d_name] = _loaded_per_disc.get(d_name, 0) + len(obj_names)
+
+        total_loaded = sum(_loaded_per_disc.values())
+        for disc, cnt in disc_counts.items():
+            if cnt == 0:
+                continue
+            loaded = _loaded_per_disc.get(disc, 0)
+            bar_width = 12
+            n_total = max(int(round(bar_width * cnt / max_count)), 1)
+            if cnt > 0 and loaded > 0:
+                n_loaded = max(int(round(n_total * min(loaded, cnt) / cnt)), 0)
+            else:
+                n_loaded = 0
+            bar = '\u2588' * n_loaded + '\u2592' * (n_total - n_loaded) + '\u2591' * (bar_width - n_total)
+            suffix = f"  {loaded:,}/{cnt:,}" if loaded > 0 else f"  {cnt:,}"
+            row_d = bx.row(align=True)
+            row_d.scale_y = 0.8
+            # Pad short names for alignment
+            row_d.label(text=f"{disc:5s}{bar}{suffix}")
+
+        if total_loaded >= props.rtree_bld_total and total_loaded > 0:
+            row_done = bx.row(align=True)
+            row_done.alert = True
+            row_done.label(text="ALL DONE \u2014 FULLY MESHED", icon='CHECKMARK')
+        else:
+            bx.label(text=f"Total  {total_loaded:,} / {props.rtree_bld_total:,}", icon='OBJECT_DATA')
