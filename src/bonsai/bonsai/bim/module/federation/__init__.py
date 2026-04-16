@@ -87,6 +87,7 @@ classes = (
     operator.FedRTreeOvernightDismiss,      # S186: dismiss DONE box
     operator.FedRTreeSwitchOffline,         # S186-s2: accept offline bake
     operator.FedRTreeReopenBaked,           # S189: reopen baked .blend
+    operator.FedRTreeMergeCountdown,       # S189l: countdown modal for save & close
     operator.FedRTreeKeepGoing,             # S186-s2: decline offline bake
     operator.FedRTreeCancelBake,            # S186-s2: cancel bake subprocess
     operator.FedRTreeBakeAll,               # S188: parallel bake all buildings

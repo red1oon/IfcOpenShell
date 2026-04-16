@@ -2584,7 +2584,8 @@ class FedRTreeReopenBaked(bpy.types.Operator):
 
         print(f"[S189] {_ts()} §MERGE_SPAWN pid={merge_proc.pid} "
               f"buildings={bld_names} wait=60s output={Path(session_path).name}")
-        self.report({'INFO'}, f"Merging {n} buildings in 60s. Save & Close Blender.")
+        # Launch countdown modal — shows timer, saves & quits on OK or expiry
+        bpy.ops.bim.fed_rtree_merge_countdown('INVOKE_DEFAULT')
         return {'FINISHED'}
 
 
@@ -2596,6 +2597,70 @@ class FedRTreeKeepGoing(bpy.types.Operator):
 
     def execute(self, context):
         return {'FINISHED'}
+
+
+class FedRTreeMergeCountdown(bpy.types.Operator):
+    """S189l: Modal countdown — saves & quits Blender, subprocess finalizes."""
+    bl_idname = "bim.fed_rtree_merge_countdown"
+    bl_label = "BACKEND Finalizing"
+    bl_options = {'INTERNAL'}
+
+    _timer = None
+    _remaining = 60
+
+    def invoke(self, context, event):
+        self._remaining = 60
+        self._timer = context.window_manager.event_timer_add(1.0, window=context.window)
+        context.window_manager.modal_handler_add(self)
+        context.workspace.status_text_set(
+            f"BACKEND: Save & Close in {self._remaining}s — Enter/click OK to close now, ESC to cancel")
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context, event):
+        from . import bbox_visualization as bv
+
+        if event.type == 'ESC':
+            self._cleanup(context)
+            self.report({'INFO'}, "Merge cancelled — baked files kept for next time")
+            return {'CANCELLED'}
+
+        if event.type in {'RET', 'NUMPAD_ENTER'} and event.value == 'PRESS':
+            # User pressed OK — save & quit now
+            self._save_and_quit(context)
+            return {'FINISHED'}
+
+        if event.type == 'TIMER':
+            self._remaining -= 1
+            context.workspace.status_text_set(
+                f"BACKEND: Save & Close in {self._remaining}s — Enter to close now, ESC to cancel")
+            bv._overnight_progress = (
+                f"\u23f3 Finalizing in {self._remaining}s \u2014 Save & Close"
+            )
+            # Tag redraw
+            for area in context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    area.tag_redraw()
+            if self._remaining <= 0:
+                self._save_and_quit(context)
+                return {'FINISHED'}
+
+        return {'RUNNING_MODAL'}
+
+    def _save_and_quit(self, context):
+        self._cleanup(context)
+        print(f"[S189] {_ts()} §MERGE_SAVE_QUIT saving & closing Blender")
+        try:
+            bpy.ops.wm.save_mainfile()
+        except Exception as e:
+            print(f"[S189] §MERGE_SAVE_WARN {e}")
+        # Quit — subprocess outlives us and finalizes
+        bpy.ops.wm.quit_blender()
+
+    def _cleanup(self, context):
+        if self._timer:
+            context.window_manager.event_timer_remove(self._timer)
+            self._timer = None
+        context.workspace.status_text_set(None)
 
 
 class FedRTreeCancelBake(bpy.types.Operator):
