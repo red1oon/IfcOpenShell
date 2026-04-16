@@ -2278,8 +2278,9 @@ def _spawn_bake(building, total_elements=0):
     total = total_elements
 
     if use_blob and total >= bv._CHUNK_THRESHOLD:
-        # ── S189: Chunk-parallel — split into up to 4 equal workers ──
-        num_chunks = min(4, max(1, total // (bv._CHUNK_THRESHOLD // 2)))
+        # ── S189: Chunk-parallel — split into up to 4 equal workers + merge ──
+        # Smart sizing: ~25K per chunk. 50K→2, 100K→4, 250K→4, 1M→4
+        num_chunks = min(4, max(2, total // 25000))
         chunk_size = (total + num_chunks - 1) // num_chunks
         procs = []
         chunk_paths = []
@@ -2649,25 +2650,59 @@ def _poll_bake_subprocess():
                     pass
             print(f"[S189] {_ts()} §BLOB_ALL_DONE bld={bld} chunks={len(chunk_procs)} "
                   f"total_size={_baked_size_mb:.1f}MB elapsed={elapsed:.0f}s")
-            # S189: No merge-back for chunks either — store first chunk for reopen
             _shred_building_partial(bld)
-            # For chunked builds, the baked_path is the "combined" name.
-            # Store the first existing chunk as the reopen target.
-            reopen_path = info.get('baked_path', '')
-            for cp in chunk_paths:
-                if _P(cp).exists():
-                    reopen_path = cp
+            # S189: Spawn merge subprocess — combine chunks into one .blend
+            baked_path = info.get('baked_path', '')
+            blob_script = None
+            for anc in _P(info['db_path']).resolve().parents:
+                c = anc / "scripts" / "blob_tessellate_worker.py"
+                if c.exists():
+                    blob_script = str(c)
                     break
-            bv._bake_done[bld] = reopen_path
-            if bld == bv._active_building:
-                bv._overnight_progress = (
-                    f"\u2713 BACKEND DONE \u2014 {_baked_size_mb:.0f}MB, "
-                    f"{info['total']:,} elements ({elapsed:.0f}s, "
-                    f"{len(chunk_procs)} chunks)"
-                )
-            print(f"[S189] {_ts()} §BAKE_DONE bld={bld} chunks={len(chunk_procs)} "
-                  f"size={_baked_size_mb:.1f}MB path={reopen_path} — ready to reopen")
-            done_buildings.append(bld)
+            if blob_script and chunk_paths:
+                import subprocess as _sp2
+                merge_cmd = [
+                    "nice", "-n", "10",
+                    _bpy.app.binary_path, "--background", "--factory-startup",
+                    "--python", blob_script, "--",
+                    "--db", info['db_path'],
+                    "--building", bld,
+                    "--output", baked_path,
+                    "--merge",
+                ] + [cp for cp in chunk_paths if _P(cp).exists()]
+                try:
+                    merge_proc = _sp2.Popen(merge_cmd, stdout=_sp2.PIPE, stderr=_sp2.STDOUT)
+                    # Replace chunked entry with merge entry (single process)
+                    bv._baking_buildings[bld] = {
+                        'process': merge_proc,
+                        'start_time': info['start_time'],  # keep original start
+                        'total': info['total'],
+                        'offline_eta': elapsed + 15,  # merge ~10-15s
+                        'baked_path': baked_path,
+                        'db_path': info['db_path'],
+                        '_is_merge': True,
+                    }
+                    print(f"[S189] {_ts()} §MERGE_SPAWN bld={bld} pid={merge_proc.pid} "
+                          f"chunks={len(chunk_paths)} output={_P(baked_path).name}")
+                    if bld == bv._active_building:
+                        bv._overnight_progress = (
+                            f"\u23f3 Merging {len(chunk_paths)} chunks..."
+                        )
+                except Exception as e:
+                    print(f"[S189] §MERGE_ERROR bld={bld} {e}")
+                    # Fallback — store first chunk
+                    for cp in chunk_paths:
+                        if _P(cp).exists():
+                            bv._bake_done[bld] = cp
+                            break
+                    done_buildings.append(bld)
+            else:
+                # No merge script — store first chunk as fallback
+                for cp in chunk_paths:
+                    if _P(cp).exists():
+                        bv._bake_done[bld] = cp
+                        break
+                done_buildings.append(bld)
             continue
 
         proc = info['process']
@@ -2678,12 +2713,15 @@ def _poll_bake_subprocess():
             elapsed = time.time() - info['start_time']
             remaining_est = max(info['offline_eta'] - elapsed, 0)
             if bld == bv._active_building:
-                if remaining_est > 0:
+                if info.get('_is_merge'):
+                    bv._overnight_progress = (
+                        f"\u23f3 Merging chunks... {_fmt(elapsed)} total"
+                    )
+                elif remaining_est > 0:
                     bv._overnight_progress = (
                         f"\u23f3 Baking {bld}... {_fmt(elapsed)} elapsed, ~{_fmt(remaining_est)} left"
                     )
                 else:
-                    # S187: ETA exceeded — subprocess still working (save/link phase)
                     bv._overnight_progress = (
                         f"\u23f3 Still baking {bld}... {_fmt(elapsed)} elapsed"
                     )
@@ -3064,6 +3102,13 @@ class PreviewFederationViewport(bpy.types.Operator):
 
     def execute(self, context):
         props = context.scene.BIMFederationProperties
+
+        # S189: Auto-populate DB path from baked .blend scene property
+        if not props.federation_database_path:
+            _saved_db = context.scene.get("fed_db_path", "")
+            if _saved_db and Path(_saved_db).exists():
+                props.federation_database_path = _saved_db
+                print(f"[S189] {_ts()} §DB_RESTORE path={_saved_db}")
 
         if not props.federation_database_path:
             self.report({'ERROR'}, "No federation database selected")
