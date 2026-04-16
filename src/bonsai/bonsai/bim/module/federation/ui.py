@@ -1843,7 +1843,7 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
                 done_row = done_box.row(align=True)
                 done_row.scale_y = 2.0
                 op_reopen = done_row.operator("bim.fed_rtree_reopen_baked",
-                                              text="BACKEND DONE. Don't Save. Reopen.",
+                                              text="BACKEND DONE. Save & Reopen.",
                                               icon='FILE_BLEND')
                 op_reopen.building = bv._active_building
             # S186-s2: building being baked offline — show live countdown

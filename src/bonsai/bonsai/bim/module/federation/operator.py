@@ -2436,19 +2436,21 @@ class FedRTreeSwitchOffline(bpy.types.Operator):
 
 
 class FedRTreeReopenBaked(bpy.types.Operator):
-    """S189: Open the baked .blend file. Don't save current session — baked file is the new work."""
+    """S189: Save current work, merge baked building into session, reopen."""
     bl_idname = "bim.fed_rtree_reopen_baked"
     bl_label = "Reopen Baked"
     bl_description = (
-        "Open the baked .blend file.\n"
-        "Don't save current session — the baked file has all meshes"
+        "Saves your current work, merges the baked building\n"
+        "into your session file, then reopens with everything"
     )
     bl_options = {'REGISTER'}
 
     building: StringProperty(default="")
 
     def execute(self, context):
+        import subprocess as _sp
         from . import bbox_visualization as bv
+
         bld = self.building or bv._active_building
         baked_path = bv._bake_done.get(bld)
         if not baked_path:
@@ -2458,21 +2460,90 @@ class FedRTreeReopenBaked(bpy.types.Operator):
         if not Path(baked_path).exists():
             self.report({'ERROR'}, f"File not found: {baked_path}")
             return {'CANCELLED'}
-        print(f"[S189] {_ts()} §REOPEN bld={bld} path={baked_path}")
-        # Schedule open on next tick — deferred so operator returns cleanly.
-        # open_mainfile will show "Save?" only if current file was modified.
-        # The user clicked "Don't Save" so we mark the file as clean.
+
+        # Step 1: Save current work
+        context.window.cursor_set('WAIT')
+        session_path = bpy.data.filepath
+        if session_path:
+            try:
+                bpy.ops.wm.save_mainfile()
+                print(f"[S189] {_ts()} §REOPEN_SAVE saved session: {session_path}")
+            except Exception as e:
+                print(f"[S189] §REOPEN_SAVE_WARN {e}")
+        else:
+            # No file saved yet — save to baked/ folder
+            session_path = str(Path(baked_path).parent / "session.blend")
+            try:
+                bpy.ops.wm.save_as_mainfile(filepath=session_path)
+                print(f"[S189] {_ts()} §REOPEN_SAVE new session: {session_path}")
+            except Exception as e:
+                print(f"[S189] §REOPEN_SAVE_WARN {e}")
+                context.window.cursor_set('DEFAULT')
+                self.report({'ERROR'}, f"Could not save: {e}")
+                return {'CANCELLED'}
+
+        # Step 2: Spawn merge subprocess (session + baked → merged)
+        blob_script = None
+        db_path = bv._db_path_cache or ""
+        for anc in Path(baked_path).resolve().parents:
+            c = anc / "scripts" / "blob_tessellate_worker.py"
+            if c.exists():
+                blob_script = str(c)
+                break
+        if not blob_script:
+            # No merge script — just open baked file directly
+            print(f"[S189] {_ts()} §REOPEN_DIRECT no merge script, opening baked file")
+            context.window.cursor_set('DEFAULT')
+            def _open():
+                bpy.ops.wm.open_mainfile(filepath=baked_path)
+                return None
+            bpy.app.timers.register(_open, first_interval=0.1)
+            return {'FINISHED'}
+
+        merged_path = session_path  # overwrite session file with merged version
+        merge_cmd = [
+            bpy.app.binary_path, "--background", "--factory-startup",
+            "--python", blob_script, "--",
+            "--db", db_path,
+            "--building", bld,
+            "--output", merged_path,
+            "--merge", baked_path,
+            "--base", session_path,
+        ]
+
+        print(f"[S189] {_ts()} §REOPEN_MERGE bld={bld} merging into {Path(merged_path).name}")
+        self.report({'INFO'}, f"Merging {bld} into session... please wait")
+
+        try:
+            # Synchronous — user chose to wait (they clicked the button)
+            result = _sp.run(merge_cmd, stdout=_sp.PIPE, stderr=_sp.STDOUT, timeout=120)
+            out = result.stdout.decode('utf-8', errors='replace')
+            for line in out.strip().split('\n')[-5:]:
+                print(f"  [MERGE] {line}")
+            if result.returncode != 0:
+                print(f"[S189] §REOPEN_MERGE_ERROR exit={result.returncode}")
+                context.window.cursor_set('DEFAULT')
+                self.report({'ERROR'}, "Merge failed — opening baked file instead")
+                merged_path = baked_path
+        except Exception as e:
+            print(f"[S189] §REOPEN_MERGE_ERROR {e}")
+            context.window.cursor_set('DEFAULT')
+            merged_path = baked_path  # fallback
+
+        # Step 3: Reopen merged file
+        print(f"[S189] {_ts()} §REOPEN path={merged_path}")
+        context.window.cursor_set('DEFAULT')
         try:
             bpy.data.is_saved = True
             bpy.data.is_dirty = False
         except (AttributeError, TypeError):
-            pass  # Some Blender builds have read-only flags — dialog will appear
+            pass
         def _deferred_open():
             try:
-                bpy.ops.wm.open_mainfile(filepath=baked_path)
+                bpy.ops.wm.open_mainfile(filepath=merged_path)
             except Exception as e:
                 print(f"[S189] §REOPEN_ERROR {e}")
-            return None  # unregister timer
+            return None
         bpy.app.timers.register(_deferred_open, first_interval=0.1)
         return {'FINISHED'}
 
@@ -2661,6 +2732,8 @@ def _poll_bake_subprocess():
                     break
             if blob_script and chunk_paths:
                 import subprocess as _sp2
+                # S189: Merge chunks into one baked .blend (no session merge here —
+                # session merge happens when user clicks REOPEN)
                 merge_cmd = [
                     "nice", "-n", "10",
                     _bpy.app.binary_path, "--background", "--factory-startup",
@@ -2766,14 +2839,14 @@ def _poll_bake_subprocess():
             print(f"[S189] {_ts()} §BAKE_COMPLETE bld={bld} pid={proc.pid} "
                   f"elapsed={elapsed:.0f}s size={_baked_size_mb:.1f}MB baked={baked_path}")
 
-            # S189: No merge-back — store path for "Reopen" button
+            # S189: Store baked path — merge happens when user clicks REOPEN
             _shred_building_partial(bld)
 
             from pathlib import Path as _P
             if _P(baked_path).exists():
                 bv._bake_done[bld] = baked_path
                 print(f"[S189] {_ts()} §BAKE_DONE bld={bld} size={_baked_size_mb:.1f}MB "
-                      f"elapsed={elapsed:.0f}s path={baked_path} — ready to reopen")
+                      f"elapsed={elapsed:.0f}s path={baked_path}")
                 if bld == bv._active_building:
                     bv._overnight_progress = (
                         f"\u2713 BACKEND DONE \u2014 {_baked_size_mb:.0f}MB, "
