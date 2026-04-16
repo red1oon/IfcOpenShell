@@ -3371,15 +3371,22 @@ class PreviewFederationViewport(bpy.types.Operator):
             if _baked_dir.exists():
                 _disc_suffixes = {'ARC','STR','MEP','ELEC','FP','OTHER',
                                   'PLB','HEAT','HVAC','VENT','SAN','ACMV'}
-                _baked_files = sorted(_baked_dir.glob("*.blend"))
+                _baked_files = [f for f in sorted(_baked_dir.glob("*.blend"))
+                                if not f.name.startswith('session') and not f.name.startswith('City')]
                 if _baked_files:
                     import time as _lt
+                    _n = len(_baked_files)
+                    context.workspace.status_text_set(
+                        f"Linking {_n} baked buildings... please wait")
+                    self.report({'INFO'}, f"Linking {_n} baked buildings...")
+                    print(f"\n[S189] {_ts()} §PREVIEW_LINK_START {_n} baked files in {_baked_dir.name}/")
                     _t0 = _lt.time()
                     _linked_count = 0
-                    for _bf in _baked_files:
-                        if _bf.name.startswith('session'):
-                            continue
+                    for _i, _bf in enumerate(_baked_files):
                         _tf = _lt.time()
+                        _bf_mb = _bf.stat().st_size / (1024*1024)
+                        context.workspace.status_text_set(
+                            f"Linking baked buildings ({_i+1}/{_n}): {_bf.name} ({_bf_mb:.0f}MB)")
                         try:
                             with bpy.data.libraries.load(str(_bf), link=True) as (src, dst):
                                 _dcols = [c for c in src.collections
@@ -3392,14 +3399,14 @@ class PreviewFederationViewport(bpy.types.Operator):
                                 if _col is not None:
                                     context.scene.collection.children.link(_col)
                                     _linked_count += 1
-                            print(f"[S189] {_ts()} §PREVIEW_LINK {_bf.name} "
-                                  f"({_bf.stat().st_size/(1024*1024):.1f}MB) "
-                                  f"in {_lt.time()-_tf:.1f}s")
+                            print(f"[S189] {_ts()} §PREVIEW_LINK ({_i+1}/{_n}) {_bf.name} "
+                                  f"({_bf_mb:.1f}MB) in {_lt.time()-_tf:.1f}s")
                         except Exception as _e:
                             print(f"[S189] §PREVIEW_LINK_WARN {_bf.name}: {_e}")
-                    if _linked_count:
-                        print(f"[S189] {_ts()} §PREVIEW_LINKED {_linked_count} collections "
-                              f"from {len(_baked_files)} files in {_lt.time()-_t0:.1f}s")
+                    _total_s = _lt.time() - _t0
+                    context.workspace.status_text_set(None)
+                    print(f"[S189] {_ts()} §PREVIEW_LINKED {_linked_count} collections "
+                          f"from {_n} files in {_total_s:.1f}s")
 
             print(f"\n✓ Preview ready [{_FED_VERSION}] - INSTANT GPU bboxes loaded!")
             print("✓ All 49K elements visible - MEP engineers can work immediately!")
