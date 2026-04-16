@@ -1843,16 +1843,12 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
             layout.separator(factor=0.3)
             act_box = layout.box()
 
-            # S189: BACKEND DONE — reopen baked file (no merge-back)
+            # S189p: If this building was baked, show status instead of mesh buttons
             if bv._active_building in bv._bake_done and not is_baking:
                 done_box = act_box.box()
-                done_box.alert = True
-                done_row = done_box.row(align=True)
-                done_row.scale_y = 2.0
-                op_reopen = done_row.operator("bim.fed_rtree_reopen_baked",
-                                              text="BACKEND DONE. Save & Reopen.",
-                                              icon='FILE_BLEND')
-                op_reopen.building = bv._active_building
+                done_box.label(text=f"\u2713 {bv._active_building} \u2014 baked",
+                               icon='CHECKMARK')
+                done_box.label(text="Re-Preview to link all baked buildings.")
             # S186-s2: building being baked offline — show live countdown
             elif is_baking:
                 import time as _time
