@@ -2625,7 +2625,6 @@ class FedRTreeMergeCountdown(bpy.types.Operator):
             return {'CANCELLED'}
 
         if event.type in {'RET', 'NUMPAD_ENTER'} and event.value == 'PRESS':
-            # User pressed OK — save & quit now
             self._save_and_quit(context)
             return {'FINISHED'}
 
@@ -2636,15 +2635,20 @@ class FedRTreeMergeCountdown(bpy.types.Operator):
             bv._overnight_progress = (
                 f"\u23f3 Finalizing in {self._remaining}s \u2014 Save & Close"
             )
-            # Tag redraw
             for area in context.screen.areas:
                 if area.type == 'VIEW_3D':
                     area.tag_redraw()
+            # Beep at 10s, 5s, 0s
+            if self._remaining in (10, 5, 0):
+                import subprocess
+                subprocess.Popen(['paplay', '/usr/share/sounds/freedesktop/stereo/bell.oga'],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if self._remaining <= 0:
                 self._save_and_quit(context)
                 return {'FINISHED'}
 
-        return {'RUNNING_MODAL'}
+        # Pass through all other events — user can keep working
+        return {'PASS_THROUGH'}
 
     def _save_and_quit(self, context):
         self._cleanup(context)
