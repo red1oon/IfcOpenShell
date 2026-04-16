@@ -2007,10 +2007,18 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
                     _chunk_txt = f" ({_chunks} chunks)" if _chunks > 1 else ""
                     _merge_blds = _info.get('_merge_buildings', [])
                     if _bld == "_MERGE_":
-                        _el_fmt = f"{int(_el)}s" if _el < 120 else f"{int(_el/60)}m"
-                        be_box.label(
-                            text=f"\u23f3 Merging {len(_merge_blds)} buildings... {_el_fmt}",
-                            icon='SORTTIME')
+                        # S189k: Show countdown — 60s wait then merge
+                        _wait_left = max(0, 60 - int(_el))
+                        if _wait_left > 0:
+                            be_box.label(
+                                text=f"\u23f3 Save & Close in {_wait_left}s",
+                                icon='TIME')
+                            be_box.label(text="BACKEND will finalize after close.")
+                        else:
+                            _el_fmt = f"{int(_el - 60)}s" if _el < 180 else f"{int((_el-60)/60)}m"
+                            be_box.label(
+                                text=f"\u23f3 Merging {len(_merge_blds)} buildings... {_el_fmt}",
+                                icon='SORTTIME')
                     elif _info.get('_is_merge'):
                         be_box.label(text=f"\u23f3 {_bld}: merging chunks...", icon='SORTTIME')
                     elif _eta > 0:
@@ -2036,15 +2044,7 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
                 op_merge.action = "merge"
             # Show MERGED — Reopen button
             if _merge_ready:
-                from pathlib import Path as _PPath
-                _mname = _PPath(bv._merge_done_path).name
-                mr_row = be_box.row(align=True)
-                mr_row.alert = True
-                mr_row.scale_y = 2.0
-                op_open = mr_row.operator("bim.fed_rtree_reopen_baked",
-                                          text=f"\u2713 MERGED. Open {_mname}",
-                                          icon='FILE_BLEND')
-                op_open.action = "reopen"
+                be_box.label(text="\u2713 MERGED \u2014 reopen to view all.", icon='CHECKMARK')
 
         # ── PICK ──
         layout.separator(factor=0.3)

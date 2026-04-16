@@ -2531,9 +2531,8 @@ class FedRTreeReopenBaked(bpy.types.Operator):
             self.report({'ERROR'}, "Merge script not found")
             return {'CANCELLED'}
 
-        # Step 3: Spawn merge in BACKGROUND (async — no freeze)
-        # S189k: Output to incremented suffix — never overwrites user's file.
-        # User opens the _01.blend when ready (next day, etc.)
+        # Step 3: Spawn merge with --wait 60 — subprocess waits for user
+        # to save & close Blender, then merges into the SAME file.
         bld_names = list(to_merge.keys())
         all_baked_files = []
         for v in to_merge.values():
@@ -2543,24 +2542,17 @@ class FedRTreeReopenBaked(bpy.types.Operator):
                 all_baked_files.append(v)
         n = len(to_merge)
 
-        # Find next available suffix: session_01.blend, session_02.blend, ...
-        _base = Path(session_path).stem
-        _dir = Path(session_path).parent
-        _suffix = 1
-        while (_dir / f"{_base}_{_suffix:02d}.blend").exists():
-            _suffix += 1
-        merged_path = str(_dir / f"{_base}_{_suffix:02d}.blend")
-
         merge_cmd = [
             "nice", "-n", "10",
             bpy.app.binary_path, "--background", "--factory-startup",
             "--python", blob_script, "--",
             "--db", db_path,
             "--building", "_".join(bld_names[:3]),
-            "--output", merged_path,
+            "--output", session_path,
             "--merge",
         ] + all_baked_files + [
             "--base", session_path,
+            "--wait", "60",
         ]
 
         try:
@@ -2576,7 +2568,7 @@ class FedRTreeReopenBaked(bpy.types.Operator):
             'start_time': time.time(),
             'total': sum(bv._building_disc_counts.values()) if bv._building_disc_counts else 0,
             'offline_eta': 120,  # estimate ~2min
-            'baked_path': merged_path,
+            'baked_path': session_path,
             'db_path': db_path,
             '_is_merge': True,
             '_merge_buildings': bld_names,
@@ -2591,9 +2583,8 @@ class FedRTreeReopenBaked(bpy.types.Operator):
             bpy.app.timers.register(_poll_bake_subprocess, first_interval=5.0)
 
         print(f"[S189] {_ts()} §MERGE_SPAWN pid={merge_proc.pid} "
-              f"buildings={bld_names} base={Path(session_path).name} "
-              f"output={Path(merged_path).name}")
-        self.report({'INFO'}, f"Saved. Merging {n} buildings → {Path(merged_path).name}")
+              f"buildings={bld_names} wait=60s output={Path(session_path).name}")
+        self.report({'INFO'}, f"Merging {n} buildings in 60s. Save & Close Blender.")
         return {'FINISHED'}
 
 
