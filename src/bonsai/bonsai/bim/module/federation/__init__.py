@@ -77,6 +77,7 @@ classes = (
     operator.FedRTreeFlyToResult,           # S178: click building → L2 drill-down
     operator.FedRTreeFlyToElement,          # S178: click element in L2 list
     operator.FedRTreeFlyToStorey,           # S186: click storey → L2 drill-down
+    operator.FedRTreeFilterDisc,             # S187: click discipline bar → filter elements
     operator.FedRTreeBackToBuilding,        # S186: back from storey to building
     operator.FedRTreePick,                  # S178: click-to-identify
     operator.FedRTreeLoadMesh,              # S180: stingy mesh loader
@@ -84,6 +85,11 @@ classes = (
     operator.FedRTreeOvernightPause,        # S186: pause overnight
     operator.FedRTreeOvernightCancel,       # S186: cancel overnight
     operator.FedRTreeOvernightDismiss,      # S186: dismiss DONE box
+    operator.FedRTreeSwitchOffline,         # S186-s2: accept offline bake
+    operator.FedRTreeReopenBaked,           # S189: reopen baked .blend
+    operator.FedRTreeKeepGoing,             # S186-s2: decline offline bake
+    operator.FedRTreeCancelBake,            # S186-s2: cancel bake subprocess
+    operator.FedRTreeBakeAll,               # S188: parallel bake all buildings
     operator.FedRTreeShred,                 # S180: remove last loaded collection
     operator.FedRTreeCountBuilding,         # S183: cockpit discipline counts
     operator.FedRTreeCopyGuid,              # S183: clipboard GUID copy

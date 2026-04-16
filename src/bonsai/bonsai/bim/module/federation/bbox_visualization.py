@@ -19,7 +19,7 @@ from typing import List, Tuple, Optional, Dict
 DISCIPLINE_COLORS = {
     'ACMV': (0.0, 0.75, 1.0, 1.0),      # Cyan/Blue
     'FP': (1.0, 0.0, 0.0, 1.0),          # Red
-    'ELEC': (1.0, 1.0, 0.0, 1.0),        # Yellow
+    'ELEC': (1.0, 0.85, 0.0, 1.0),       # Amber (distinct from yellow highlights)
     'PLUMB': (0.0, 0.4, 1.0, 1.0),       # Dark Blue (water)
     'GAS': (0.8, 0.0, 0.8, 1.0),         # Purple/Magenta
     'ICT': (0.0, 1.0, 0.0, 1.0),         # Green (data/comms)
@@ -60,23 +60,38 @@ _active_building = ""        # currently drilled-into building
 _loaded_collections = {}     # label → [object_names]
 _loaded_guids = set()        # S185: all guids that have been meshed (dedup across presses)
 _library_blend_cache = None  # absolute path to library.blend, resolved at RTree load
+_library_db_cache = None     # S189: absolute path to component_library.db (BLOB source)
 
 # S183: Building storey list — populated by FedRTreeCountBuilding
 _building_storeys = []       # storeys for active building, from last count query
+_building_storey_bboxes = {} # S186-s2: storey → {bbox, count} pre-computed at count time
 
 # S186: Drill-down state
 _active_storey = ""          # currently drilled-into storey (empty = all)
 _search_suggestions = []     # 5 random meaningful search terms, populated at load
 _building_class_groups = []  # [{ifc_class, count}] — fallback breakdown when no storeys
+_active_disc_filter = ""     # S187: currently filtered discipline (empty = none)
+_disc_class_groups = []      # S187: [{ifc_class, count}] — types within active disc filter
 _has_building_column = False # True if elements_meta has 'building' column (multi-building DB)
 _single_building_name = ""   # synthetic building name for single-building DBs
 _building_disc_counts = {}   # discipline → count (dynamic, replaces hardcoded 5 props)
+_building_total_all = 0      # S186-s2: building-level total (not storey-scoped) for pre-warm threshold
 _prewarmed_discs = set()     # S186: disciplines already pre-warmed (per-disc lazy warm)
 _overnight_running = False   # S186: True while overnight loader is active
 _overnight_paused = False    # S186: True while paused (modal stays alive)
 _overnight_progress = ""     # S186: status text for UI display
 _overnight_placed = 0        # S186: total elements placed so far
 _overnight_total = 0         # S186: total elements to place
+_overnight_shortcut_factor = 0  # S186-s2: 0 = not shown, >0 = live ×N multiplier for SHORT-CUT button
+_overnight_shortcut_eta = ""   # S186-s2: offline ETA string for display on SHORT-CUT button
+
+# S186-s2: Offline bake handoff state
+_baking_buildings = {}       # building_name → {process, start_time, total, offline_eta, baked_path, db_path}
+_bake_offer_shown = set()    # buildings that already saw the offer (don't re-show)
+_bake_queue = []             # S188: buildings waiting to bake, sorted smallest-first
+_MAX_BAKE_WORKERS = 4        # S188: max concurrent bake subprocesses
+_CHUNK_THRESHOLD = 50000     # S189: split into chunks above this element count
+_bake_done = {}              # S189: building_name → baked_path (completed, ready to reopen)
 
 # S182: Progressive load state
 LOAD_DISC_ORDER = ['ARC', 'STR', 'MEP', 'ELEC', 'FP']
@@ -440,7 +455,8 @@ def draw_bboxes():
         shader.uniform_float("color", color)
         batch.draw(shader)
 
-    # Draw search-result highlights in yellow (thick)
+    # Draw search-result highlights in yellow
+    # S187: thin line for single-element focus, thicker for multi-element results
     if _highlighted_bboxes:
         hi_verts = []
         for hb in _highlighted_bboxes:
@@ -448,8 +464,9 @@ def draw_bboxes():
         if hi_verts:
             hi_batch = batch_for_shader(shader, 'LINES', {"pos": hi_verts})
             shader.bind()
-            shader.uniform_float("color", (1.0, 1.0, 0.0, 1.0))
-            gpu.state.line_width_set(3.0)
+            gpu.state.blend_set('ALPHA')
+            shader.uniform_float("color", (1.0, 1.0, 0.3, 0.35))
+            gpu.state.line_width_set(1.0)
             hi_batch.draw(shader)
             gpu.state.line_width_set(1.0)
 
@@ -493,7 +510,7 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
     Returns:
         (success: bool, message: str)
     """
-    global _bbox_batches, _draw_handler, _is_enabled, _db_path_cache, _disc_proxy_objects, _model_offset, _library_blend_cache
+    global _bbox_batches, _draw_handler, _is_enabled, _db_path_cache, _disc_proxy_objects, _model_offset, _library_blend_cache, _library_db_cache
 
     # Disable first if already enabled
     if _is_enabled:
@@ -592,7 +609,24 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
     if _library_blend_cache:
         print(f"[RTree] §CACHE library_blend='{Path(_library_blend_cache).name}'")
     else:
-        print("[RTree] §CACHE library_blend=NOT_FOUND (LOAD MESH unavailable)")
+        print("[RTree] §CACHE library_blend=NOT_FOUND (legacy bake unavailable)")
+
+    # S189: resolve component_library.db independently (BLOB tessellation source)
+    _library_db_cache = None
+    _db_candidates = []
+    if _library_blend_cache:
+        _db_candidates.append(Path(_library_blend_cache).parent / "component_library.db")
+    for _anc in Path(db_path).resolve().parents:
+        _db_candidates.append(_anc / "library" / "component_library.db")
+    for _dbc in _db_candidates:
+        if _dbc.exists():
+            _library_db_cache = str(_dbc.resolve())
+            break
+    if _library_db_cache:
+        print(f"[S189] §CACHE library_db='{Path(_library_db_cache).name}' "
+              f"path={_library_db_cache}")
+    else:
+        print("[S189] §CACHE library_db=NOT_FOUND (BLOB path unavailable)")
 
     # S178: Create Outliner discipline collections + proxy objects
     # Each proxy empty: eye icon in Outliner → hide_viewport → GPU skips that batch
@@ -752,54 +786,61 @@ def clear_color_override() -> None:
 # ── S186: Search suggestions ──────────────────────────────────────────────
 
 def _populate_search_suggestions(db_path: str):
-    """Pick 5 random meaningful search hints from the loaded DB.
+    """S187: Build clickable quick-pick buttons for idle panel.
 
-    Strategy: 3 common IFC class short names (Wall, Door, Window…)
-    + 1 discipline + 1 building name. All human-readable, no GUIDs.
-    Cached in _search_suggestions for the session.
+    Strategy: top 3 IFC classes by count (most useful to click),
+    top 2 disciplines, 1 building (if multi-building), and '*' (show all).
+    Deterministic — no random shuffle, most popular first.
     """
     global _search_suggestions
     _search_suggestions.clear()
     try:
         conn = sqlite3.connect(db_path)
-        # Top IFC classes by frequency — pick 3 random from top 15
+        # Top IFC classes by frequency — deterministic, most popular first
         classes = [r[0] for r in conn.execute(
             "SELECT ifc_class FROM elements_meta "
             "WHERE ifc_class IS NOT NULL "
-            "GROUP BY ifc_class ORDER BY COUNT(*) DESC LIMIT 15"
+            "GROUP BY ifc_class ORDER BY COUNT(*) DESC LIMIT 10"
         ).fetchall()]
-        # Strip 'Ifc' prefix + 'StandardCase' suffix for readability
-        import random
-        friendly = []
+        seen = set()
         for c in classes:
             short = c.replace('Ifc', '').replace('StandardCase', '')
-            if short and short not in friendly:
-                friendly.append(short)
-        random.shuffle(friendly)
-        _search_suggestions.extend(friendly[:3])
-        # 1 discipline
+            if short and short not in seen:
+                _search_suggestions.append(short)
+                seen.add(short)
+            if len(_search_suggestions) >= 3:
+                break
+        # Top 2 disciplines by count
         discs = [r[0] for r in conn.execute(
-            "SELECT DISTINCT discipline FROM elements_meta "
-            "WHERE discipline IS NOT NULL"
+            "SELECT discipline, COUNT(*) as cnt FROM elements_meta "
+            "WHERE discipline IS NOT NULL "
+            "GROUP BY discipline ORDER BY cnt DESC LIMIT 2"
         ).fetchall()]
-        if discs:
-            _search_suggestions.append(random.choice(discs))
-        # 1 building (if multi-building DB)
+        for d in discs:
+            if d not in seen:
+                _search_suggestions.append(d)
+                seen.add(d)
+        # All unique building types (if multi-building DB), deduped by base name
         if _has_building_column:
             buildings = [r[0] for r in conn.execute(
-                "SELECT DISTINCT building FROM elements_meta "
-                "WHERE building IS NOT NULL AND building != ''"
+                "SELECT building FROM elements_meta "
+                "WHERE building IS NOT NULL AND building != '' "
+                "GROUP BY building ORDER BY COUNT(*) DESC"
             ).fetchall()]
-            if buildings:
-                bases = list({_re.sub(r'^[TS]\d+_(\d+_)?', '', b) for b in buildings})
-                if bases:
-                    _search_suggestions.append(random.choice(bases))
-        # S186: always add '*' hint so users discover wildcard search
+            bases_ordered = []
+            bases_seen = set()
+            for b in buildings:
+                base = _re.sub(r'^[TS]\d+_(\d+_)?', '', b)
+                if base and base not in bases_seen and base not in seen:
+                    bases_ordered.append(base)
+                    bases_seen.add(base)
+            _search_suggestions.extend(bases_ordered)
+        # Always add '*' — show all buildings
         _search_suggestions.append("*")
         conn.close()
-        print(f"[S186] §SUGGESTIONS {_search_suggestions}")
+        print(f"[S187] §SUGGESTIONS {_search_suggestions}")
     except Exception as e:
-        print(f"[S186] §SUGGESTIONS ERROR {e}")
+        print(f"[S187] §SUGGESTIONS ERROR {e}")
 
 
 # ── S178: Search + Navigate ────────────────────────────────────────────────────
@@ -1091,7 +1132,7 @@ def fetch_building_elements(building: str, search_term: str) -> list:
                 FROM elements_meta m
                 JOIN elements_rtree r ON m.id = r.id
                 {"WHERE m.building = ?" if _has_building_column else ""}
-                LIMIT 10
+                LIMIT 50
             """, bld_params)
         else:
             cur.execute(f"""
@@ -1103,7 +1144,7 @@ def fetch_building_elements(building: str, search_term: str) -> list:
                       (m.element_name LIKE ?
                     OR m.ifc_class   LIKE ?
                     OR m.discipline  =    ?)
-                LIMIT 10
+                LIMIT 50
             """, bld_params + (like, like, term.upper()))
         rows = cur.fetchall()
         conn.close()
@@ -1123,11 +1164,19 @@ def fetch_building_elements(building: str, search_term: str) -> list:
 
 
 def fly_to_storey(storey: str, context) -> bool:
-    """S186: Drill into a storey — fly to its bbox centroid, set _active_storey."""
+    """S186-s2: Drill into a storey — fly to its bbox centroid, set _active_storey.
+    Bbox comes from _building_storey_bboxes cache (pre-computed at count_building time).
+    Only the top-10 element list hits the DB (no rtree JOIN — instant)."""
     global _active_storey, _highlighted_bboxes, _building_elements, _selected_element
 
     building = _active_building
     if not building or not _db_path_cache:
+        return False
+
+    # S186-s2: read bbox from cache — no rtree JOIN
+    cached = _building_storey_bboxes.get(storey)
+    if not cached:
+        print(f"[S186] §FLY_STOREY no cached bbox for storey='{storey}'")
         return False
 
     _active_storey = storey
@@ -1135,50 +1184,39 @@ def fly_to_storey(storey: str, context) -> bool:
     _building_elements.clear()
     _selected_element.clear()
 
+    bbox = cached['bbox']
+    cnt = cached['count']
+    # S187: don't highlight the storey envelope — individual element bboxes
+    # below are sufficient and the envelope overlaps them, looking heavy
+
+    # Top 10 elements — rtree JOIN for bbox (needed by fly_to_element)
     try:
         conn = sqlite3.connect(_db_path_cache)
-        # S186: building clause conditional on column existence
         if _has_building_column:
             bld_where = "m.building = ? AND"
             bld_p = (building,)
         else:
             bld_where = ""
             bld_p = ()
-        # Envelope bbox for this storey
-        row = conn.execute(f"""
-            SELECT MIN(r.minX), MIN(r.minY), MIN(r.minZ),
-                   MAX(r.maxX), MAX(r.maxY), MAX(r.maxZ), COUNT(*)
-            FROM elements_meta m
-            JOIN elements_rtree r ON m.id = r.id
-            WHERE {bld_where} m.storey = ?
-        """, bld_p + (storey,)).fetchone()
-        # Top 10 elements in this storey
         elems = conn.execute(f"""
             SELECT m.guid, m.element_name, m.discipline, m.ifc_class, m.storey,
                    r.minX, r.minY, r.minZ, r.maxX, r.maxY, r.maxZ
             FROM elements_meta m
             JOIN elements_rtree r ON m.id = r.id
             WHERE {bld_where} m.storey = ?
-            LIMIT 10
+            LIMIT 50
         """, bld_p + (storey,)).fetchall()
         conn.close()
     except Exception as e:
         print(f"[S186] §FLY_STOREY ERROR {e}")
-        return False
+        elems = []
 
-    if not row or row[6] == 0:
-        return False
-
-    mnX, mnY, mnZ, mxX, mxY, mxZ, cnt = row
-    bbox = (mnX, mnY, mnZ, mxX, mxY, mxZ)
-    _highlighted_bboxes.append(bbox)
-
-    for guid, name, disc, ifc_class, st, mnX2, mnY2, mnZ2, mxX2, mxY2, mxZ2 in elems:
-        eb = (mnX2, mnY2, mnZ2, mxX2, mxY2, mxZ2)
-        _highlighted_bboxes.append(eb)
+    for guid, name, disc, ifc_class, st, mnX, mnY, mnZ, mxX, mxY, mxZ in elems:
+        elem_bbox = (mnX, mnY, mnZ, mxX, mxY, mxZ)
         _building_elements.append({'guid': guid, 'name': name, 'disc': disc,
                                    'ifc_class': ifc_class, 'storey': st or '',
-                                   'bbox': eb})
+                                   'bbox': elem_bbox})
+        _highlighted_bboxes.append(elem_bbox)  # S188b: show yellow bbox per element
 
     # Fly to storey centroid
     off = _model_offset
@@ -1199,7 +1237,7 @@ def fly_to_storey(storey: str, context) -> bool:
             break
 
     print(f"[S186] §PROOF FLY_STOREY bld={building} storey='{storey}' "
-          f"elements={cnt} blender=({cx:.1f},{cy:.1f},{cz:.1f})")
+          f"elements={cnt} blender=({cx:.1f},{cy:.1f},{cz:.1f}) [cached]")
     return True
 
 
@@ -1210,14 +1248,19 @@ def clear_storey():
 
 
 def fly_to_element(elem_index: int, context) -> bool:
-    """Fly viewport to a specific element from L2 list. Highlights it white."""
-    global _selected_element
+    """Fly viewport to a specific element from L2 list. Highlights only this element."""
+    global _selected_element, _highlighted_bboxes
 
     if elem_index < 0 or elem_index >= len(_building_elements):
         return False
 
     e = _building_elements[elem_index]
     bbox = e['bbox']
+
+    # S187: Focus — show only this element's bbox, clear the crowd
+    _highlighted_bboxes.clear()
+    _highlighted_bboxes.append(bbox)
+
     cx_ifc = (bbox[0] + bbox[3]) / 2
     cy_ifc = (bbox[1] + bbox[4]) / 2
     cz_ifc = (bbox[2] + bbox[5]) / 2

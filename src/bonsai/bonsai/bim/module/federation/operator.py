@@ -23,7 +23,134 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+# S187: Version stamp — printed on Preview to confirm running code matches source.
+# Bump this on every code change. Check console for mismatch.
+_FED_VERSION = "S189a"
+
 import bpy
+
+
+# ── S188: surface_styles cache for material resolution ──────────────────
+# Loaded once per DB, shared across LOAD MESH and Overnight.
+# Dict: style_name → dict with transparency, specular, surface RGB.
+_surface_styles_cache = {}   # style_name → {transparency, surface_r/g/b, specular_*}
+_surface_styles_db = None    # which DB the cache was loaded from
+
+
+def _load_surface_styles(db_path):
+    """Load surface_styles table from DB. Cached per DB path."""
+    global _surface_styles_cache, _surface_styles_db
+    if _surface_styles_db == db_path and _surface_styles_cache is not None:
+        return _surface_styles_cache
+    import sqlite3
+    _surface_styles_cache = {}
+    _surface_styles_db = db_path
+    try:
+        conn = sqlite3.connect(db_path)
+        tables = [r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='surface_styles'"
+        ).fetchall()]
+        if 'surface_styles' in tables:
+            for r in conn.execute(
+                    "SELECT style_name, surface_r, surface_g, surface_b, "
+                    "COALESCE(transparency, 0), specular_r, specular_g, specular_b, "
+                    "specular_ratio, specular_exponent, reflectance_method "
+                    "FROM surface_styles"):
+                _surface_styles_cache[r[0]] = {
+                    'surface_r': r[1], 'surface_g': r[2], 'surface_b': r[3],
+                    'transparency': r[4],
+                    'specular_r': r[5], 'specular_g': r[6], 'specular_b': r[7],
+                    'specular_ratio': r[8], 'specular_exponent': r[9],
+                    'reflectance_method': r[10],
+                }
+            print(f"[S188] surface_styles: {len(_surface_styles_cache)} entries cached")
+        conn.close()
+    except Exception as e:
+        print(f"[S188] surface_styles load skipped: {e}")
+    return _surface_styles_cache
+
+
+def _resolve_material(material_name, rgba_str, discipline, styles_cache):
+    """Resolve material RGBA + style_data from surface_styles.
+    Returns (rgba_str, style_data) — same interface as blend_cache/Full Load.
+    Falls back: material_rgba → surface_styles by material_name → None."""
+    style_data = None
+    # Try to find style_data by material_name
+    if material_name and styles_cache:
+        sd = styles_cache.get(material_name)
+        if not sd:
+            # Revit composite: 'Basic Wall:Material Name' → try after colon
+            for part in material_name.split(':'):
+                part = part.strip()
+                sd = styles_cache.get(part)
+                if sd:
+                    break
+        if sd:
+            style_data = sd
+            # If no direct rgba, synthesize from surface_styles RGB + transparency
+            if not rgba_str:
+                alpha = max(0.0, 1.0 - (sd.get('transparency') or 0.0))
+                rgba_str = f"{sd['surface_r']:.3f},{sd['surface_g']:.3f},{sd['surface_b']:.3f},{alpha:.3f}"
+    return rgba_str, style_data
+
+
+# ── S189: BLOB tessellation — replaces libraries.load(library.blend) ──────
+
+import struct as _struct
+from datetime import datetime as _dt
+
+def _ts():
+    """Wall-clock timestamp for cross-process log correlation."""
+    return _dt.now().strftime('%H:%M:%S.%f')[:-3]
+
+def _unpack_vertices(blob):
+    """Unpack binary BLOB into list of (x,y,z) vertex tuples."""
+    if not blob:
+        return []
+    floats = _struct.unpack(f'<{len(blob)//4}f', blob)
+    return [(floats[i], floats[i+1], floats[i+2]) for i in range(0, len(floats), 3)]
+
+def _unpack_faces(blob):
+    """Unpack binary BLOB into list of (i1,i2,i3) face tuples."""
+    if not blob:
+        return []
+    ints = _struct.unpack(f'<{len(blob)//4}I', blob)
+    return [(ints[i], ints[i+1], ints[i+2]) for i in range(0, len(ints), 3)]
+
+def _tessellate_from_blobs(hashes_to_create, lib_db_path):
+    """S189: Create meshes from component_library.db BLOBs.
+    Returns dict: geometry_hash -> bpy.types.Mesh for successfully created meshes.
+    Falls back to empty dict on error (caller should fall back to library.blend)."""
+    import sqlite3
+    created = {}
+    if not hashes_to_create or not lib_db_path:
+        return created
+    try:
+        conn = sqlite3.connect(lib_db_path)
+        for ci in range(0, len(hashes_to_create), 999):
+            chunk = hashes_to_create[ci:ci+999]
+            ph = ','.join('?' * len(chunk))
+            rows = conn.execute(f"""
+                SELECT geometry_hash, vertices, faces
+                FROM component_geometries
+                WHERE geometry_hash IN ({ph})
+            """, chunk).fetchall()
+            for ghash, verts_blob, faces_blob in rows:
+                verts = _unpack_vertices(verts_blob)
+                faces = _unpack_faces(faces_blob)
+                if not verts:
+                    continue
+                mesh = bpy.data.meshes.new(ghash)
+                mesh.from_pydata(verts, [], faces)
+                mesh.update()
+                mesh.materials.append(None)  # S189: material slot for per-object color
+                created[ghash] = mesh
+        conn.close()
+    except Exception as e:
+        print(f"[S189] §BLOB_ERROR tessellation failed: {e}")
+    return created
+
+
 from bpy.types import Operator
 from bpy.props import StringProperty, IntProperty
 from bpy_extras.io_utils import ImportHelper
@@ -1213,8 +1340,20 @@ class FedRTreeLoadMesh(bpy.types.Operator):
                 continue
             if row_guid in bv._loaded_guids:
                 skipped_dup += 1
-                if skipped_dup <= 3:
-                    print(f"[S186] §DEDUP_SKIP guid={row_guid[:16]} (in _loaded_guids)")
+                if skipped_dup <= 5:
+                    # S186-s2: diagnostic — check which disc this guid was loaded under
+                    dup_disc = "?"
+                    try:
+                        import sqlite3 as _sq
+                        _dc = _sq.connect(db_path)
+                        _dr = _dc.execute("SELECT discipline FROM elements_meta WHERE guid=?",
+                                          (row_guid,)).fetchone()
+                        _dc.close()
+                        dup_disc = _dr[0] if _dr else "?"
+                    except Exception:
+                        pass
+                    print(f"[S186] §DEDUP_SKIP guid={row_guid[:16]} "
+                          f"db_disc={dup_disc} query_disc={self.target_disc}")
                 continue
             ename = (row[3] or '')[:50] if len(row) > 3 else ''
             rgba = row[2] if len(row) > 2 else None
@@ -1227,8 +1366,13 @@ class FedRTreeLoadMesh(bpy.types.Operator):
             disc_total = bv._building_disc_counts.get(disc, 0)
             if skipped_dup > 0 and skipped_dup >= disc_total and disc_total > 0:
                 # Every element in this discipline is already meshed
-                print(f"[S186] §DEDUP_FULL disc={disc} skipped={skipped_dup} total={disc_total}")
-                self.report({'INFO'}, f"{disc} fully loaded — choose another discipline")
+                # S186-s2: show loaded count so user sees what happened
+                loaded_cnt = len([g for lbl, objs in bv._loaded_collections.items()
+                                  if bv._active_building in lbl and f'_{disc}' in lbl
+                                  for g in objs])
+                print(f"[S186] §DEDUP_FULL disc={disc} skipped={skipped_dup} "
+                      f"total={disc_total} loaded_objs={loaded_cnt}")
+                self.report({'INFO'}, f"{disc} fully loaded ({loaded_cnt} meshes) — choose another")
             elif skipped_dup > 0:
                 print(f"[S186] §DEDUP_BLOCK disc={disc} skipped={skipped_dup} total={disc_total}")
                 self.report({'INFO'}, f"{disc}: view area done — pan camera for more")
@@ -1240,18 +1384,27 @@ class FedRTreeLoadMesh(bpy.types.Operator):
         # The disc_label logic below will create/reuse a parent collection.
         # No need to remove anything here — old offset labels are never created.
 
-        # ── Link meshes from library.blend — skip already-linked ──
+        # ── S189: BLOB tessellation — create meshes from component_library.db ──
+        # Falls back to library.blend if component_library.db unavailable.
         already_in_scene = {m.name for m in _bpy.data.meshes}
         to_link = [h for h in wanted_hashes if h not in already_in_scene]
         reused  = [h for h in wanted_hashes if h in already_in_scene]
         t_link = time.time()
+        newly_linked = []
         if to_link:
-            with _bpy.data.libraries.load(lib_path, link=True) as (data_from, data_to):
-                available = set(data_from.meshes)
-                data_to.meshes = [h for h in to_link if h in available]
-            newly_linked = [m for m in data_to.meshes if m is not None]
-        else:
-            newly_linked = []
+            lib_db = bv._library_db_cache
+            if lib_db:
+                blob_meshes = _tessellate_from_blobs(to_link, lib_db)
+                newly_linked = list(blob_meshes.values())
+                print(f"[S189] {_ts()} §BLOB_MESH hashes={len(to_link)} "
+                      f"created={len(newly_linked)}")
+            else:
+                # Fallback: library.blend (legacy path)
+                print(f"[S189] {_ts()} §BLOB_FALLBACK lib_db=None, using library.blend")
+                with _bpy.data.libraries.load(lib_path, link=False) as (data_from, data_to):
+                    available = set(data_from.meshes)
+                    data_to.meshes = [h for h in to_link if h in available]
+                newly_linked = [m for m in data_to.meshes if m is not None]
         t_link_ms = (time.time() - t_link) * 1000
 
         # ── Collect all meshes (newly linked + reused) ──
@@ -1280,6 +1433,13 @@ class FedRTreeLoadMesh(bpy.types.Operator):
         t_sql = time.time()
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
+        # S187: reject pre-S185 DBs that lack rotation columns (stale extraction)
+        col_names = {r[1] for r in cur.execute("PRAGMA table_info(element_transforms)").fetchall()}
+        if 'rotation_x' not in col_names:
+            conn.close()
+            self.report({'ERROR'}, "DB too old — missing rotation columns. Re-extract with current pipeline.")
+            print(f"[S187] §LOAD_MESH REJECTED db={db_path} reason=pre-S185_schema")
+            return {'CANCELLED'}
         # Batch in chunks of 999 to avoid SQLite variable limit
         transform_by_guid = {}
         for ci in range(0, len(all_guids), 999):
@@ -1367,7 +1527,7 @@ class FedRTreeLoadMesh(bpy.types.Operator):
             obj.hide_select = False
             col.objects.link(obj)
 
-            # S184: material color
+            # S184: material color — S188: node-based transparency
             if rgba_str:
                 try:
                     r, g, b, a = map(float, rgba_str.split(','))
@@ -1378,6 +1538,23 @@ class FedRTreeLoadMesh(bpy.types.Operator):
                         if mat is None:
                             mat = _bpy.data.materials.new(name=mat_key)
                             mat.diffuse_color = (r, g, b, a)
+                            # S188: node-based material for transparency
+                            # Blender 5.0 EEVEE Next needs Principled BSDF Alpha
+                            if a < 0.99:
+                                mat.use_nodes = True
+                                nodes = mat.node_tree.nodes
+                                nodes.clear()
+                                out_n = nodes.new('ShaderNodeOutputMaterial')
+                                bsdf = nodes.new('ShaderNodeBsdfPrincipled')
+                                if 'Base Color' in bsdf.inputs:
+                                    bsdf.inputs['Base Color'].default_value = (r, g, b, 1.0)
+                                if 'Alpha' in bsdf.inputs:
+                                    bsdf.inputs['Alpha'].default_value = a
+                                mat.node_tree.links.new(bsdf.outputs['BSDF'], out_n.inputs['Surface'])
+                                try:
+                                    mat.blend_method = 'BLEND'
+                                except (AttributeError, TypeError):
+                                    pass  # Blender 5.0+ handles via Alpha node
                         obj.material_slots[0].link = 'OBJECT'
                         obj.material_slots[0].material = mat
                     mat_applied += 1
@@ -1516,7 +1693,8 @@ class FedRTreeLoadMesh(bpy.types.Operator):
 
         clauses = ["r.minX <= ?", "r.maxX >= ?",
                    "r.minY <= ?", "r.maxY >= ?",
-                   "m.discipline = ?"]
+                   "m.discipline = ?",
+                   "m.ifc_class != 'IfcOpeningElement'"]
         params = [cx + radius, cx - radius,
                   cy + radius, cy - radius,
                   discipline]
@@ -1626,11 +1804,11 @@ def _remove_stingy_collection(label, registry):
 
 
 class FedRTreeOvernight(bpy.types.Operator):
-    """S186: Load ALL meshes for the active building in background batches.
+    """S186-s2: Load ALL meshes for the active building in background batches.
 
-    Iterates every discipline, loads 200 elements per tick (0.1s interval),
+    Iterates every discipline, loads 50 elements per tick (0.05s interval),
     updates progress bar in N-panel. Cancel with ESC or the cancel button.
-    Auto-saves .blend when complete.
+    No bulk pre-warm — meshes linked per-batch (cache builds naturally).
     """
     bl_idname = "bim.fed_rtree_overnight"
     bl_label = "Overnight Load"
@@ -1645,7 +1823,9 @@ class FedRTreeOvernight(bpy.types.Operator):
     _disc_queue = []     # disciplines left to process
     _current_disc = ""
     _offset = 0
-    _batch_size = 200
+    _batch_size = 50     # S186-s2: smaller batches = responsive cancel + smooth progress bar
+    _batch_times = []    # S186-s2: last N batch durations for ETA calculation
+    _last_log_placed = 0 # S186-s2: placed count at last log line
 
     def invoke(self, context, event):
         from . import bbox_visualization as bv
@@ -1669,15 +1849,17 @@ class FedRTreeOvernight(bpy.types.Operator):
         bv._overnight_running = True
         bv._overnight_placed = 0
         bv._overnight_total = sum(bv._building_disc_counts.values())
-        self._ticks = 0  # S186: count ticks, pre-warm after a few smooth batches
-        self._warmed = False
+        self._batch_times = []
+        self._last_log_placed = 0
         bv._overnight_progress = f"Starting {self._current_disc}..."
         context.workspace.status_text_set("Overnight Load \u2014 Space to pause, ESC to cancel")
-        self._timer = context.window_manager.event_timer_add(0.1, window=context.window)
+        self._timer = context.window_manager.event_timer_add(0.05, window=context.window)
         context.window_manager.modal_handler_add(self)
 
-        print(f"[S186] §OVERNIGHT START building={bv._active_building} "
-              f"discs={list(bv._building_disc_counts.keys())} total={bv._overnight_total}")
+        _mesh_src = "BLOB" if bv._library_db_cache else "library.blend (FALLBACK)"
+        print(f"[S189] {_ts()} §OVERNIGHT START building={bv._active_building} "
+              f"discs={list(bv._building_disc_counts.keys())} total={bv._overnight_total} "
+              f"mesh_source={_mesh_src} lib_db={bv._library_db_cache}")
         return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
@@ -1687,7 +1869,7 @@ class FedRTreeOvernight(bpy.types.Operator):
         from mathutils import Matrix, Euler
         from pathlib import Path
 
-        # ESC or Cancel button → exit modal, box disappears
+        # S186-s2: cancel check — immediate on ESC, flag, or button
         if event.type == 'ESC' or not bv._overnight_running:
             return self._finish(context, cancelled=True)
 
@@ -1713,15 +1895,9 @@ class FedRTreeOvernight(bpy.types.Operator):
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
 
-        self._ticks += 1
-
-        # S186: after 20 ticks (~4K elements, ~10s of smooth progress), pre-warm
-        # all remaining hashes. User saw solid progress, the pause feels natural.
-        if self._ticks == 20 and not self._warmed:
-            self._warmed = True
-            bv._overnight_progress = "Warming library..."
-            self._tag_redraw(context)
-            bv._prewarm_building_meshes()
+        # S186-s2: re-check cancel flag after timer fires (button may have set it)
+        if not bv._overnight_running:
+            return self._finish(context, cancelled=True)
 
         db_path = bv._db_path_cache
         lib_path = bv._library_blend_cache
@@ -1745,6 +1921,7 @@ class FedRTreeOvernight(bpy.types.Operator):
             JOIN element_instances i ON m.guid = i.guid
             WHERE {bld_clause} m.discipline = ? {storey_clause}
               AND i.geometry_hash IS NOT NULL
+              AND m.ifc_class != 'IfcOpeningElement'
             LIMIT ? OFFSET ?
         """, bld_params + (disc,) + storey_params + (self._batch_size, self._offset)).fetchall()
         conn.close()
@@ -1760,8 +1937,12 @@ class FedRTreeOvernight(bpy.types.Operator):
             else:
                 return self._finish(context, cancelled=False)
 
+        # S186-s2: re-check cancel after SQL (user may have clicked during query)
+        if not bv._overnight_running:
+            return self._finish(context, cancelled=True)
+
         # ── Link meshes + place objects ──
-        t0 = time.time()
+        t_batch = time.time()
         import bpy as _bpy
 
         # Collect unique hashes, skip already-loaded guids
@@ -1775,13 +1956,30 @@ class FedRTreeOvernight(bpy.types.Operator):
             unique_hashes.add(ghash)
 
         if elements:
-            # Link any missing meshes
+            # S189: BLOB tessellation — create meshes from component_library.db
+            # No library.blend I/O — zero hitches per batch.
+            # Fallback to library.blend if component_library.db unavailable.
             already = {m.name for m in _bpy.data.meshes}
             to_link = [h for h in unique_hashes if h not in already]
-            if to_link and lib_path:
-                with _bpy.data.libraries.load(lib_path, link=True) as (df, dt):
-                    available = set(df.meshes)
-                    dt.meshes = [h for h in to_link if h in available]
+            if to_link:
+                lib_db = bv._library_db_cache
+                if lib_db:
+                    t_blob = time.time()
+                    created = _tessellate_from_blobs(to_link, lib_db)
+                    blob_ms = (time.time() - t_blob) * 1000
+                    if bv._overnight_placed < 500 or bv._overnight_placed % 2000 < self._batch_size:
+                        print(f"[S189] {_ts()} §BLOB_BATCH hashes={len(to_link)} "
+                              f"created={len(created)} blob_ms={blob_ms:.0f}ms")
+                elif lib_path:
+                    # Fallback: library.blend (legacy path)
+                    print(f"[S189] {_ts()} §BLOB_FALLBACK lib_db=None, using library.blend "
+                          f"hashes={len(to_link)}")
+                    with _bpy.data.libraries.load(lib_path, link=False) as (df, dt):
+                        available = set(df.meshes)
+                        dt.meshes = [h for h in to_link if h in available]
+                else:
+                    print(f"[S189] {_ts()} §BLOB_NONE no lib_db, no lib_path — "
+                          f"{len(to_link)} meshes unavailable")
 
             mesh_by_hash = {}
             for h in unique_hashes:
@@ -1792,6 +1990,14 @@ class FedRTreeOvernight(bpy.types.Operator):
             # Get transforms
             all_guids = [e[0] for e in elements]
             conn2 = sqlite3.connect(db_path)
+            # S187: reject pre-S185 DBs (checked once at LOAD MESH, but guard overnight too)
+            _cols2 = {r[1] for r in conn2.execute("PRAGMA table_info(element_transforms)").fetchall()}
+            if 'rotation_x' not in _cols2:
+                conn2.close()
+                print(f"[S187] §OVERNIGHT REJECTED db={db_path} reason=pre-S185_schema")
+                bv._overnight_progress = "DB too old — re-extract with current pipeline"
+                bv._overnight_running = False
+                return self._finish(context, cancelled=True)
             xform = {}
             for ci in range(0, len(all_guids), 999):
                 chunk = all_guids[ci:ci+999]
@@ -1805,7 +2011,6 @@ class FedRTreeOvernight(bpy.types.Operator):
             conn2.close()
 
             # Get or create discipline collection
-            import re as _re_ov
             disc_label = f"Loaded_{active_bld}_{disc}"
             col = _bpy.data.collections.get(disc_label)
             if col is None:
@@ -1834,6 +2039,23 @@ class FedRTreeOvernight(bpy.types.Operator):
                             if mat is None:
                                 mat = _bpy.data.materials.new(name=mat_key)
                                 mat.diffuse_color = (r, g, b, a)
+                                # S188: node-based material for transparency
+                                # Blender 5.0 EEVEE Next needs Principled BSDF Alpha
+                                if a < 0.99:
+                                    mat.use_nodes = True
+                                    nodes = mat.node_tree.nodes
+                                    nodes.clear()
+                                    out_n = nodes.new('ShaderNodeOutputMaterial')
+                                    bsdf = nodes.new('ShaderNodeBsdfPrincipled')
+                                    if 'Base Color' in bsdf.inputs:
+                                        bsdf.inputs['Base Color'].default_value = (r, g, b, 1.0)
+                                    if 'Alpha' in bsdf.inputs:
+                                        bsdf.inputs['Alpha'].default_value = a
+                                    mat.node_tree.links.new(bsdf.outputs['BSDF'], out_n.inputs['Surface'])
+                                    try:
+                                        mat.blend_method = 'BLEND'
+                                    except (AttributeError, TypeError):
+                                        pass  # Blender 5.0+ handles via Alpha node
                             obj.material_slots[0].link = 'OBJECT'
                             obj.material_slots[0].material = mat
                     except Exception:
@@ -1858,8 +2080,76 @@ class FedRTreeOvernight(bpy.types.Operator):
             bv._overnight_placed += placed
 
         self._offset += self._batch_size
+
+        # S186-s2: ETA from rolling average of last 20 batch timings
+        batch_elapsed = time.time() - t_batch
+        self._batch_times.append(batch_elapsed)
+        if len(self._batch_times) > 20:
+            self._batch_times = self._batch_times[-20:]
+
         pct = int(100 * bv._overnight_placed / max(bv._overnight_total, 1))
-        bv._overnight_progress = f"{disc}  {bv._overnight_placed:,}/{bv._overnight_total:,}  ({pct}%)"
+        remaining = bv._overnight_total - bv._overnight_placed
+        eta_str = ""
+        if self._batch_times and bv._overnight_placed > 0:
+            avg_time = sum(self._batch_times) / len(self._batch_times)
+            avg_elems = self._batch_size  # elements per batch
+            if avg_elems > 0:
+                eta_secs = (remaining / avg_elems) * avg_time
+                if eta_secs < 60:
+                    eta_str = f"  ~{int(eta_secs)}s"
+                elif eta_secs < 3600:
+                    eta_str = f"  ~{int(eta_secs/60)}m"
+                else:
+                    eta_str = f"  ~{eta_secs/3600:.1f}h"
+
+        bv._overnight_progress = (
+            f"{disc}  {bv._overnight_placed:,}/{bv._overnight_total:,}  ({pct}%){eta_str}"
+        )
+
+        # S186-s2: periodic log every ~2000 elements placed
+        if bv._overnight_placed - self._last_log_placed >= 2000:
+            self._last_log_placed = bv._overnight_placed
+            avg_ms = int(sum(self._batch_times) / len(self._batch_times) * 1000)
+            print(f"[S189] {_ts()} §OVERNIGHT PROGRESS disc={disc} "
+                  f"placed={bv._overnight_placed:,}/{bv._overnight_total:,} "
+                  f"({pct}%) batch_avg={avg_ms}ms{eta_str}")
+
+        # S186-s2: SHORT-CUT button — non-disruptive, updates live while overnight runs
+        # Large buildings (≥20K): show immediately — offline always wins.
+        # Medium buildings (≥5K): show after 500 elements (~10 ticks) once ETA data exists.
+        # Small buildings (<5K): never show — overnight finishes in seconds.
+        _have_eta = len(self._batch_times) >= 3 and bv._overnight_placed >= 500
+        _instant_show = bv._overnight_total >= 20000  # guaranteed faster offline
+        if ((_have_eta or _instant_show)
+                and bv._overnight_total >= 5000
+                and lib_path):
+            if self._batch_times:
+                avg_time = sum(self._batch_times) / len(self._batch_times)
+                online_eta = (remaining / self._batch_size) * avg_time
+            else:
+                # No batch data yet — estimate from total (conservative)
+                online_eta = bv._overnight_total * 0.1  # ~100ms per element observed
+            offline_eta = bv._overnight_total / 40000.0 * 60.0  # ~40K elements/min benchmark
+            factor = online_eta / max(offline_eta, 1)
+            # Verify bake script exists (once, cache result)
+            if not hasattr(self, '_bake_script_verified'):
+                from pathlib import Path as _P
+                self._bake_script_verified = False
+                for _anc in _P(db_path).resolve().parents:
+                    _candidate = _anc / "scripts" / "bake_building_blend.py"
+                    if _candidate.exists():
+                        self._bake_script_verified = True
+                        break
+            if (factor > 3 or _instant_show) and self._bake_script_verified:
+                bv._overnight_shortcut_factor = int(factor)
+                bv._overnight_shortcut_eta = f"{int(offline_eta)}s" if offline_eta < 120 else f"{int(offline_eta/60)}m"
+                # Log on first detection only
+                if active_bld not in bv._bake_offer_shown:
+                    bv._bake_offer_shown.add(active_bld)
+                    print(f"[S186] §BAKE_OFFER bld={active_bld} "
+                          f"online_eta={online_eta:.0f}s offline_eta={offline_eta:.0f}s "
+                          f"factor={factor:.1f}x")
+
         self._tag_redraw(context)
         return {'RUNNING_MODAL'}
 
@@ -1873,6 +2163,8 @@ class FedRTreeOvernight(bpy.types.Operator):
         context.workspace.status_text_set(None)
         bv._overnight_running = False
         bv._overnight_paused = False
+        bv._overnight_shortcut_factor = 0
+        bv._overnight_shortcut_eta = ""
 
         if cancelled:
             bv._overnight_progress = ""
@@ -1880,7 +2172,7 @@ class FedRTreeOvernight(bpy.types.Operator):
             self.report({'INFO'}, f"Overnight cancelled at {bv._overnight_placed:,} elements")
         else:
             bv._overnight_progress = f"DONE \u2014 {bv._overnight_placed:,} elements"
-            print(f"[S186] §PROOF OVERNIGHT_DONE placed={bv._overnight_placed}")
+            print(f"[S189] {_ts()} §PROOF OVERNIGHT_DONE placed={bv._overnight_placed}")
             self.report({'INFO'}, f"Overnight done \u2014 {bv._overnight_placed:,} placed")
 
         self._tag_redraw(context)
@@ -1938,6 +2230,595 @@ class FedRTreeOvernightDismiss(bpy.types.Operator):
         return {'FINISHED'}
 
 
+def _spawn_bake(building, total_elements=0):
+    """S189: Spawn BLOB tessellation worker(s) for a building.
+    For buildings >= _CHUNK_THRESHOLD elements, splits into up to 4 chunks.
+    Falls back to bake_building_blend.py (library.blend path) if no library DB.
+    Returns True on success, False on failure."""
+    import subprocess as _sp
+    import time
+    from pathlib import Path
+    from . import bbox_visualization as bv
+
+    db_path = bv._db_path_cache
+    lib_path = bv._library_blend_cache
+    lib_db_path = bv._library_db_cache
+    if not db_path:
+        print(f"[S189] §BAKE_ERROR bld={building} no db_path")
+        return False
+
+    # Resolve script paths
+    blob_script = None
+    legacy_script = None
+    for anc in Path(db_path).resolve().parents:
+        c1 = anc / "scripts" / "blob_tessellate_worker.py"
+        c2 = anc / "scripts" / "bake_building_blend.py"
+        if c1.exists() and not blob_script:
+            blob_script = str(c1)
+        if c2.exists() and not legacy_script:
+            legacy_script = str(c2)
+        if blob_script and legacy_script:
+            break
+
+    # Decide path: BLOB (preferred) or legacy (fallback)
+    use_blob = bool(blob_script and lib_db_path and Path(lib_db_path).exists())
+
+    if not use_blob:
+        # Legacy fallback — requires library.blend
+        if not legacy_script:
+            print(f"[S189] §BAKE_ERROR bld={building} no bake scripts found")
+            return False
+        if not lib_path or not Path(lib_path).exists():
+            print(f"[S189] §BAKE_ERROR bld={building} library.blend not found")
+            return False
+
+    scripts_root = Path(blob_script or legacy_script).parent.parent
+    out_dir = str(scripts_root / "baked")
+    blender_bin = bpy.app.binary_path
+    total = total_elements
+
+    if use_blob and total >= bv._CHUNK_THRESHOLD:
+        # ── S189: Chunk-parallel — split into up to 4 equal workers ──
+        num_chunks = min(4, max(1, total // (bv._CHUNK_THRESHOLD // 2)))
+        chunk_size = (total + num_chunks - 1) // num_chunks
+        procs = []
+        chunk_paths = []
+        for i in range(num_chunks):
+            offset_i = i * chunk_size
+            limit_i = chunk_size
+            chunk_out = str(Path(out_dir) / f"{building}_chunk{i}.blend")
+            chunk_paths.append(chunk_out)
+            cmd = [
+                "nice", "-n", "10",
+                blender_bin, "--background", "--factory-startup",
+                "--python", blob_script, "--",
+                "--db", db_path,
+                "--library-db", lib_db_path,
+                "--building", building,
+                "--offset", str(offset_i),
+                "--limit", str(limit_i),
+                "--output", chunk_out,
+            ]
+            try:
+                proc = _sp.Popen(cmd, stdout=_sp.PIPE, stderr=_sp.STDOUT)
+                procs.append(proc)
+                print(f"[S189] {_ts()} §BLOB_SPAWN bld={building} chunk={i+1}/{num_chunks} "
+                      f"pid={proc.pid} offset={offset_i} limit={limit_i}")
+            except Exception as e:
+                print(f"[S189] §BAKE_ERROR bld={building} chunk={i} launch_error={e}")
+
+        if not procs:
+            return False
+
+        # S189: BLOB ETA — ~1.5ms per element (tessellation is much faster than library.blend)
+        unique_est = total // 7 if total else 0
+        offline_eta = unique_est * 0.0015 + total * 0.0005
+
+        bv._baking_buildings[building] = {
+            'process': procs[0],  # primary process for poll compat
+            '_chunk_procs': procs,
+            '_chunk_paths': chunk_paths,
+            'start_time': time.time(),
+            'total': total,
+            'offline_eta': offline_eta,
+            'baked_path': str(Path(out_dir) / f"{building}_baked.blend"),
+            'db_path': db_path,
+            '_is_chunked': True,
+        }
+        print(f"[S189] {_ts()} §BLOB_SPAWN bld={building} chunks={num_chunks} total={total}")
+    else:
+        # ── Single worker (BLOB or legacy) ──
+        if use_blob:
+            baked_path = str(Path(out_dir) / f"{building}_baked.blend")
+            cmd = [
+                "nice", "-n", "10",
+                blender_bin, "--background", "--factory-startup",
+                "--python", blob_script, "--",
+                "--db", db_path,
+                "--library-db", lib_db_path,
+                "--building", building,
+                "--output", baked_path,
+            ]
+        else:
+            baked_path = str(Path(out_dir) / f"{building}_baked.blend")
+            cmd = [
+                "nice", "-n", "10",
+                blender_bin, "--background", "--factory-startup",
+                "--python", legacy_script, "--",
+                "--db", db_path,
+                "--library", lib_path,
+                "--building", building,
+                "--output-dir", out_dir,
+            ]
+
+        try:
+            proc = _sp.Popen(cmd, stdout=_sp.PIPE, stderr=_sp.STDOUT)
+        except Exception as e:
+            print(f"[S189] §BAKE_ERROR bld={building} launch_error={e}")
+            return False
+
+        unique_est = total // 7 if total else 0
+        if use_blob:
+            offline_eta = unique_est * 0.0015 + total * 0.0005
+        else:
+            offline_eta = unique_est * 0.005 + total * 0.001
+
+        bv._baking_buildings[building] = {
+            'process': proc,
+            'start_time': time.time(),
+            'total': total,
+            'offline_eta': offline_eta,
+            'baked_path': baked_path,
+            'db_path': db_path,
+        }
+        label = "BLOB" if use_blob else "legacy"
+        print(f"[S189] {_ts()} §BAKE_SPAWN bld={building} pid={proc.pid} mode={label} "
+              f"cmd={' '.join(cmd[-8:])}")
+
+    parallel_count = len(bv._baking_buildings)
+    if parallel_count >= 2:
+        print(f"[S189] §BAKE_PARALLEL {parallel_count} builds running concurrently")
+
+    # Register poll timer
+    if not bpy.app.timers.is_registered(_poll_bake_subprocess):
+        bpy.app.timers.register(_poll_bake_subprocess, first_interval=5.0)
+
+    return True
+
+
+class FedRTreeSwitchOffline(bpy.types.Operator):
+    """S189: Backend multi-chunk bake. Continue work on other buildings."""
+    bl_idname = "bim.fed_rtree_switch_offline"
+    bl_label = "Backend Bake"
+    bl_description = (
+        "Backend, multi-chunk processors.\n"
+        "Continue work on others.\n"
+        "Reopen baked file when done"
+    )
+    bl_options = {'INTERNAL'}
+
+    def execute(self, context):
+        import time
+        from . import bbox_visualization as bv
+
+        building = bv._active_building
+        if not building:
+            self.report({'WARNING'}, "No active building")
+            return {'CANCELLED'}
+
+        # S189: total from overnight if running, else from building counts
+        total = bv._overnight_total
+        if not total:
+            total = sum(bv._building_disc_counts.values()) if bv._building_disc_counts else 0
+        if not _spawn_bake(building, total_elements=total):
+            self.report({'ERROR'}, "Failed to launch bake subprocess")
+            return {'CANCELLED'}
+
+        # Stop overnight modal if it was running
+        if bv._overnight_running:
+            bv._overnight_running = False
+            bv._overnight_paused = False
+        bv._overnight_offer_mode = ""
+
+        info = bv._baking_buildings.get(building, {})
+        offline_eta = info.get('offline_eta', 0)
+
+        def _fmt_eta(s):
+            if s < 60: return f"{int(s)}s"
+            if s < 3600: return f"{int(s/60)}m"
+            return f"{s/3600:.1f}h"
+
+        bv._overnight_progress = f"\u23f3 Baking offline... ~{_fmt_eta(offline_eta)}"
+
+        self.report({'INFO'}, f"Offline bake started for {building} (~{_fmt_eta(offline_eta)})")
+        return {'FINISHED'}
+
+
+class FedRTreeReopenBaked(bpy.types.Operator):
+    """S189: Open the baked .blend file. Don't save current session — baked file is the new work."""
+    bl_idname = "bim.fed_rtree_reopen_baked"
+    bl_label = "Reopen Baked"
+    bl_description = (
+        "Open the baked .blend file.\n"
+        "Don't save current session — the baked file has all meshes"
+    )
+    bl_options = {'REGISTER'}
+
+    building: StringProperty(default="")
+
+    def execute(self, context):
+        from . import bbox_visualization as bv
+        bld = self.building or bv._active_building
+        baked_path = bv._bake_done.get(bld)
+        if not baked_path:
+            self.report({'WARNING'}, f"No baked file for {bld}")
+            return {'CANCELLED'}
+        from pathlib import Path
+        if not Path(baked_path).exists():
+            self.report({'ERROR'}, f"File not found: {baked_path}")
+            return {'CANCELLED'}
+        print(f"[S189] {_ts()} §REOPEN bld={bld} path={baked_path}")
+        # Schedule open on next tick — deferred so operator returns cleanly.
+        # open_mainfile will show "Save?" only if current file was modified.
+        # The user clicked "Don't Save" so we mark the file as clean.
+        try:
+            bpy.data.is_saved = True
+            bpy.data.is_dirty = False
+        except (AttributeError, TypeError):
+            pass  # Some Blender builds have read-only flags — dialog will appear
+        def _deferred_open():
+            try:
+                bpy.ops.wm.open_mainfile(filepath=baked_path)
+            except Exception as e:
+                print(f"[S189] §REOPEN_ERROR {e}")
+            return None  # unregister timer
+        bpy.app.timers.register(_deferred_open, first_interval=0.1)
+        return {'FINISHED'}
+
+
+class FedRTreeKeepGoing(bpy.types.Operator):
+    """S186-s2: Legacy — kept for backward compat. No-op (SHORT-CUT button replaced offer)."""
+    bl_idname = "bim.fed_rtree_keep_going"
+    bl_label = "Keep Going"
+    bl_options = {'INTERNAL'}
+
+    def execute(self, context):
+        return {'FINISHED'}
+
+
+class FedRTreeCancelBake(bpy.types.Operator):
+    """S186-s2: Cancel a running offline bake subprocess."""
+    bl_idname = "bim.fed_rtree_cancel_bake"
+    bl_label = "Cancel Bake"
+    bl_options = {'INTERNAL'}
+
+    building: bpy.props.StringProperty(default="")
+
+    def execute(self, context):
+        from . import bbox_visualization as bv
+        bld = self.building or bv._active_building
+        info = bv._baking_buildings.get(bld)
+        if not info:
+            self.report({'WARNING'}, f"No bake running for {bld}")
+            return {'CANCELLED'}
+        proc = info['process']
+        if proc.poll() is None:
+            proc.terminate()
+        del bv._baking_buildings[bld]
+        bv._overnight_progress = ""
+        print(f"[S186] §BAKE_CANCEL bld={bld} pid={proc.pid}")
+        self.report({'INFO'}, f"Bake cancelled for {bld}")
+        return {'FINISHED'}
+
+
+class FedRTreeBakeAll(bpy.types.Operator):
+    """S188: Bake all buildings in parallel (up to 4 concurrent)."""
+    bl_idname = "bim.fed_rtree_bake_all"
+    bl_label = "Bake All"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        import sqlite3
+        from . import bbox_visualization as bv
+
+        db_path = bv._db_path_cache
+        if not db_path:
+            self.report({'WARNING'}, "No DB loaded")
+            return {'CANCELLED'}
+
+        # Query all distinct buildings with element counts, sorted smallest-first
+        conn = sqlite3.connect(db_path)
+        try:
+            buildings = conn.execute(
+                "SELECT building, COUNT(*) as cnt FROM elements_meta "
+                "GROUP BY building ORDER BY cnt ASC"
+            ).fetchall()
+        except Exception as e:
+            self.report({'ERROR'}, f"DB query failed: {e}")
+            conn.close()
+            return {'CANCELLED'}
+        conn.close()
+
+        if not buildings:
+            self.report({'WARNING'}, "No buildings found in DB")
+            return {'CANCELLED'}
+
+        # Skip buildings already baking or already baked
+        import bpy as _bpy
+        to_bake = []
+        for bld_name, cnt in buildings:
+            if bld_name in bv._baking_buildings:
+                continue
+            if _bpy.data.collections.get(f"Baked_{bld_name}"):
+                continue
+            to_bake.append((bld_name, cnt))
+
+        if not to_bake:
+            self.report({'INFO'}, "All buildings already baked or baking")
+            return {'FINISHED'}
+
+        # Spawn up to _MAX_BAKE_WORKERS immediately, queue the rest
+        bv._bake_queue = []
+        spawned = 0
+        for bld_name, cnt in to_bake:
+            if len(bv._baking_buildings) < bv._MAX_BAKE_WORKERS:
+                if _spawn_bake(bld_name, total_elements=cnt):
+                    spawned += 1
+            else:
+                bv._bake_queue.append((bld_name, cnt))
+
+        print(f"[S188] §BAKE_SPAWN bake_all: spawned={spawned} queued={len(bv._bake_queue)} "
+              f"total={len(to_bake)}")
+        if spawned >= 2:
+            print(f"[S188] §BAKE_PARALLEL {spawned} builds launched simultaneously")
+
+        bv._overnight_progress = (
+            f"\u23f3 Baking {spawned} buildings, {len(bv._bake_queue)} queued..."
+        )
+
+        self.report({'INFO'}, f"Bake All: {spawned} started, {len(bv._bake_queue)} queued")
+        return {'FINISHED'}
+
+
+def _poll_bake_subprocess():
+    """S186-s2: Timer callback — polls all running bake subprocesses every 2s.
+    Links baked .blend on success, reports error on failure.
+    S188: Also drains _bake_queue when a slot frees.
+    Unregisters itself when no more builds running."""
+    import time
+    import bpy as _bpy
+    from pathlib import Path as _P
+    from . import bbox_visualization as bv
+
+    done_buildings = []
+
+    def _fmt(s):
+        if s < 120: return f"{int(s)}s"
+        if s < 3600: return f"{int(s/60)}m"
+        return f"{s/3600:.1f}h"
+
+    for bld, info in list(bv._baking_buildings.items()):
+        # S189: chunked builds — check ALL chunk procs
+        if info.get('_is_chunked'):
+            chunk_procs = info['_chunk_procs']
+            all_done = all(p.poll() is not None for p in chunk_procs)
+            if not all_done:
+                # Still running — update progress
+                done_count = sum(1 for p in chunk_procs if p.poll() is not None)
+                elapsed = time.time() - info['start_time']
+                remaining_est = max(info['offline_eta'] - elapsed, 0)
+                if bld == bv._active_building:
+                    bv._overnight_progress = (
+                        f"\u23f3 Baking {bld}... {done_count}/{len(chunk_procs)} chunks done, "
+                        f"{_fmt(elapsed)} elapsed"
+                    )
+                last_log = info.get('_last_poll_log', 0)
+                if elapsed - last_log >= 30:
+                    info['_last_poll_log'] = elapsed
+                    print(f"[S189] {_ts()} §BAKE_POLL bld={bld} chunks={done_count}/{len(chunk_procs)} "
+                          f"{_fmt(elapsed)} elapsed")
+                continue
+            # All chunks done — check for errors
+            failed = [i for i, p in enumerate(chunk_procs) if p.poll() != 0]
+            if failed:
+                elapsed = time.time() - info['start_time']
+                print(f"[S189] §BAKE_ERROR bld={bld} failed_chunks={failed}")
+                if bld == bv._active_building:
+                    bv._overnight_progress = f"Bake FAILED ({len(failed)} chunks) — partial kept"
+                done_buildings.append(bld)
+                continue
+            # All succeeded — fall through to link-back
+            elapsed = time.time() - info['start_time']
+            # Log subprocess output from each chunk
+            for i, p in enumerate(chunk_procs):
+                try:
+                    out = p.stdout.read().decode('utf-8', errors='replace')
+                    if out:
+                        for line in out.strip().split('\n')[-5:]:
+                            print(f"  [BLOB-C{i}] {line}")
+                except Exception:
+                    pass
+            # Total size across chunks
+            _baked_size_mb = 0
+            chunk_paths = info['_chunk_paths']
+            for cp in chunk_paths:
+                try:
+                    if _P(cp).exists():
+                        _baked_size_mb += _P(cp).stat().st_size / (1024 * 1024)
+                except Exception:
+                    pass
+            print(f"[S189] {_ts()} §BLOB_ALL_DONE bld={bld} chunks={len(chunk_procs)} "
+                  f"total_size={_baked_size_mb:.1f}MB elapsed={elapsed:.0f}s")
+            # S189: No merge-back for chunks either — store first chunk for reopen
+            _shred_building_partial(bld)
+            # For chunked builds, the baked_path is the "combined" name.
+            # Store the first existing chunk as the reopen target.
+            reopen_path = info.get('baked_path', '')
+            for cp in chunk_paths:
+                if _P(cp).exists():
+                    reopen_path = cp
+                    break
+            bv._bake_done[bld] = reopen_path
+            if bld == bv._active_building:
+                bv._overnight_progress = (
+                    f"\u2713 BACKEND DONE \u2014 {_baked_size_mb:.0f}MB, "
+                    f"{info['total']:,} elements ({elapsed:.0f}s, "
+                    f"{len(chunk_procs)} chunks)"
+                )
+            print(f"[S189] {_ts()} §BAKE_DONE bld={bld} chunks={len(chunk_procs)} "
+                  f"size={_baked_size_mb:.1f}MB path={reopen_path} — ready to reopen")
+            done_buildings.append(bld)
+            continue
+
+        proc = info['process']
+        rc = proc.poll()
+
+        if rc is None:
+            # Still running — update elapsed in progress
+            elapsed = time.time() - info['start_time']
+            remaining_est = max(info['offline_eta'] - elapsed, 0)
+            if bld == bv._active_building:
+                if remaining_est > 0:
+                    bv._overnight_progress = (
+                        f"\u23f3 Baking {bld}... {_fmt(elapsed)} elapsed, ~{_fmt(remaining_est)} left"
+                    )
+                else:
+                    # S187: ETA exceeded — subprocess still working (save/link phase)
+                    bv._overnight_progress = (
+                        f"\u23f3 Still baking {bld}... {_fmt(elapsed)} elapsed"
+                    )
+            # S188b: log every 30s (not every 5s) — reduce spam
+            last_log = info.get('_last_poll_log', 0)
+            if elapsed - last_log >= 30:
+                info['_last_poll_log'] = elapsed
+                pct = min(int(100 * elapsed / max(info['offline_eta'], 1)), 99)
+                if remaining_est > 0:
+                    est_placed = int(info['total'] * pct / 100)
+                    print(f"[S189] {_ts()} §BAKE_POLL bld={bld} ~{est_placed:,}/{info['total']:,} "
+                          f"({pct}%) {_fmt(elapsed)} elapsed ~{_fmt(remaining_est)} left")
+                elif not info.get('_eta_exceeded_logged'):
+                    info['_eta_exceeded_logged'] = True
+                    print(f"[S189] {_ts()} §BAKE_POLL bld={bld} ETA exceeded, finishing save... "
+                          f"{_fmt(elapsed)} elapsed")
+            continue
+
+        # Process finished
+        done_buildings.append(bld)
+        elapsed = time.time() - info['start_time']
+        baked_path = info['baked_path']
+
+        if rc == 0:
+            # Read subprocess output for log
+            stdout_text = ""
+            try:
+                stdout_text = proc.stdout.read().decode('utf-8', errors='replace')
+                if stdout_text:
+                    lines = stdout_text.strip().split('\n')
+                    for line in lines[-10:]:
+                        print(f"  [BAKE-SUB] {line}")
+            except Exception:
+                pass
+
+            # S188: file size for §BAKE_COMPLETE proof
+            _baked_size_mb = 0
+            try:
+                _baked_size_mb = _P(baked_path).stat().st_size / (1024 * 1024) if _P(baked_path).exists() else 0
+            except Exception:
+                pass
+            print(f"[S189] {_ts()} §BAKE_COMPLETE bld={bld} pid={proc.pid} "
+                  f"elapsed={elapsed:.0f}s size={_baked_size_mb:.1f}MB baked={baked_path}")
+
+            # S189: No merge-back — store path for "Reopen" button
+            _shred_building_partial(bld)
+
+            from pathlib import Path as _P
+            if _P(baked_path).exists():
+                bv._bake_done[bld] = baked_path
+                print(f"[S189] {_ts()} §BAKE_DONE bld={bld} size={_baked_size_mb:.1f}MB "
+                      f"elapsed={elapsed:.0f}s path={baked_path} — ready to reopen")
+                if bld == bv._active_building:
+                    bv._overnight_progress = (
+                        f"\u2713 BACKEND DONE \u2014 {_baked_size_mb:.0f}MB, "
+                        f"{info['total']:,} elements ({elapsed:.0f}s)"
+                    )
+            else:
+                print(f"[S189] §BAKE_ERROR bld={bld} file_missing={baked_path}")
+                if bld == bv._active_building:
+                    bv._overnight_progress = f"ERROR: baked file not found"
+        else:
+            # Subprocess failed
+            stdout_text = ""
+            try:
+                stdout_text = proc.stdout.read().decode('utf-8', errors='replace')
+                for line in stdout_text.strip().split('\n')[-5:]:
+                    print(f"  [BAKE-ERR] {line}")
+            except Exception:
+                pass
+            print(f"[S186] §BAKE_ERROR bld={bld} pid={proc.pid} exitcode={rc}")
+            if bld == bv._active_building:
+                bv._overnight_progress = f"Bake FAILED (exit {rc}) \u2014 partial kept"
+
+    # Clean up finished builds
+    for bld in done_buildings:
+        if bld in bv._baking_buildings:
+            del bv._baking_buildings[bld]
+
+    # S188: Drain _bake_queue — spawn next building(s) if slots freed
+    while bv._bake_queue and len(bv._baking_buildings) < bv._MAX_BAKE_WORKERS:
+        next_bld, next_cnt = bv._bake_queue.pop(0)
+        # Skip if already baked while queued
+        if _bpy.data.collections.get(f"Baked_{next_bld}"):
+            continue
+        if _spawn_bake(next_bld, total_elements=next_cnt):
+            print(f"[S188] §BAKE_PARALLEL popped {next_bld} from queue, "
+                  f"{len(bv._baking_buildings)} running, {len(bv._bake_queue)} queued")
+
+    # S188: Update progress text when bake_all is active
+    if bv._bake_queue or len(bv._baking_buildings) > 1:
+        bv._overnight_progress = (
+            f"\u23f3 Baking {len(bv._baking_buildings)}/{bv._MAX_BAKE_WORKERS}, "
+            f"queued {len(bv._bake_queue)}"
+        )
+
+    # Tag redraw
+    for area in _bpy.context.screen.areas:
+        if area.type == 'VIEW_3D':
+            area.tag_redraw()
+
+    # Keep polling if builds remain or queue not empty, else unregister
+    if bv._baking_buildings or bv._bake_queue:
+        return 5.0  # poll again in 5s
+    return None  # unregister
+
+
+def _shred_building_partial(building):
+    """S186-s2: Remove partial overnight objects for a building before linking baked .blend."""
+    import bpy as _bpy
+    from . import bbox_visualization as bv
+
+    prefix = f"Loaded_{building}_"
+    removed_cols = 0
+    removed_objs = 0
+
+    for col_name in list(bv._loaded_collections.keys()):
+        if col_name.startswith(prefix) or (building in col_name and col_name.startswith("Loaded_")):
+            col = _bpy.data.collections.get(col_name)
+            if col:
+                for obj in list(col.objects):
+                    _bpy.data.objects.remove(obj, do_unlink=True)
+                    removed_objs += 1
+                _bpy.data.collections.remove(col)
+                removed_cols += 1
+            del bv._loaded_collections[col_name]
+
+    # Clear loaded guids for this building (they'll be re-tracked if needed)
+    # We can't easily filter by building, so clear all — safe since baked .blend replaces everything
+    bv._loaded_guids.clear()
+    bv._load_progress.pop(building, None)
+
+    print(f"[S186] §BAKE_SHRED bld={building} collections={removed_cols} objects={removed_objs}")
+
+
 class FedRTreeShred(bpy.types.Operator):
     """Remove selected loaded mesh objects (or last-loaded collection if nothing selected).
 
@@ -1948,8 +2829,8 @@ class FedRTreeShred(bpy.types.Operator):
     bl_idname = "bim.fed_rtree_shred"
     bl_label = "Shred"
     bl_description = (
-        "Select loaded mesh objects → SHRED removes those only.\n"
-        "Nothing selected: removes last LOAD MESH collection."
+        "Select loaded mesh objects or baked instance empties → SHRED removes those.\n"
+        "Nothing selected: removes last LOAD MESH collection or last Baked building."
     )
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -1979,60 +2860,119 @@ class FedRTreeShred(bpy.types.Operator):
             for name in obj_names:
                 obj_to_label[name] = lbl
 
-        # ── Selection-based path: remove selected objects that belong to stingy loads ──
-        # Also accept objects in any "Loaded_*" collection even if not in registry.
-        selected_loaded = [
+        # ── S187: Detect selected Baked_* instance empties ──
+        selected_baked_insts = [
             obj for obj in context.selected_objects
-            if obj.name in obj_to_label
-            or any(c.name.startswith("Loaded_") for c in obj.users_collection)
+            if obj.instance_type == 'COLLECTION'
+            and any(c.name.startswith("Baked_") for c in obj.users_collection)
         ]
 
-        if selected_loaded:
+        if selected_baked_insts:
+            # ── S187: Shred baked discipline instances ──
             removed = 0
-            affected_labels = set()
-            for obj in selected_loaded:
-                lbl = obj_to_label[obj.name]
-                affected_labels.add(lbl)
-                # Unlink from all collections — viewport removal only.
-                # Do NOT delete mesh datablocks (they live in library.blend).
-                for col in list(obj.users_collection):
-                    col.objects.unlink(obj)
+            affected_parents = set()
+            for obj in selected_baked_insts:
+                parent_col = next(
+                    (c for c in obj.users_collection if c.name.startswith("Baked_")),
+                    None,
+                )
+                if parent_col:
+                    affected_parents.add(parent_col.name)
+                bpy.data.objects.remove(obj, do_unlink=True)
                 removed += 1
 
-            # Clean up empty collections from registry
-            for lbl in affected_labels:
-                col = bpy.data.collections.get(lbl)
-                remaining = [o for o in (col.objects if col else [])]
-                if not remaining:
-                    if col:
-                        scene_col = bpy.context.scene.collection
-                        if col.name in {c.name for c in scene_col.children}:
-                            scene_col.children.unlink(col)
-                        bpy.data.collections.remove(col)
-                    bv._loaded_collections.pop(lbl, None)
-                    if props.rtree_last_loaded == lbl:
-                        props.rtree_last_loaded = ""
-                else:
-                    bv._loaded_collections[lbl] = [o.name for o in remaining]
+            # Clean up empty Baked_* parent collections
+            for pname in affected_parents:
+                pcol = bpy.data.collections.get(pname)
+                if pcol and len(pcol.objects) == 0:
+                    scene_col = bpy.context.scene.collection
+                    if pcol.name in {c.name for c in scene_col.children}:
+                        scene_col.children.unlink(pcol)
+                    bpy.data.collections.remove(pcol)
+                    print(f"[S187] §SHRED_BAKED parent_removed={pname}")
 
-            print(f"[S180] §PROOF SHRED selected objects_removed={removed} labels={sorted(affected_labels)}")
-            self.report({'INFO'}, f"§PROOF SHRED objects_removed={removed}")
+            print(f"[S187] §SHRED_BAKED instances_removed={removed} "
+                  f"parents={sorted(affected_parents)}")
+            self.report({'INFO'}, f"§SHRED_BAKED instances={removed}")
 
         else:
-            # ── Fallback: remove last-loaded collection ──
-            label = props.rtree_last_loaded
-            if not label:
-                self.report({'WARNING'}, "Nothing to shred — select loaded mesh objects or run LOAD MESH first")
-                return {'CANCELLED'}
-            if label not in bv._loaded_collections:
-                props.rtree_last_loaded = ""
-                self.report({'WARNING'}, f"Collection '{label}' not in registry (already removed?)")
-                return {'CANCELLED'}
+            # ── Selection-based path: remove selected objects that belong to stingy loads ──
+            # Also accept objects in any "Loaded_*" collection even if not in registry.
+            selected_loaded = [
+                obj for obj in context.selected_objects
+                if obj.name in obj_to_label
+                or any(c.name.startswith("Loaded_") for c in obj.users_collection)
+            ]
 
-            _remove_stingy_collection(label, bv._loaded_collections)
-            props.rtree_last_loaded = ""
-            print(f"[S180] §PROOF SHRED label={label}")
-            self.report({'INFO'}, f"§PROOF SHRED label={label}")
+            if selected_loaded:
+                removed = 0
+                affected_labels = set()
+                for obj in selected_loaded:
+                    lbl = obj_to_label.get(obj.name)
+                    if not lbl:
+                        # Object in Loaded_* collection but not in registry
+                        lbl = next(
+                            (c.name for c in obj.users_collection
+                             if c.name.startswith("Loaded_")),
+                            "unknown",
+                        )
+                    affected_labels.add(lbl)
+                    # Unlink from all collections — viewport removal only.
+                    # Do NOT delete mesh datablocks (they live in library.blend).
+                    for col in list(obj.users_collection):
+                        col.objects.unlink(obj)
+                    removed += 1
+
+                # Clean up empty collections from registry
+                for lbl in affected_labels:
+                    col = bpy.data.collections.get(lbl)
+                    remaining = [o for o in (col.objects if col else [])]
+                    if not remaining:
+                        if col:
+                            scene_col = bpy.context.scene.collection
+                            if col.name in {c.name for c in scene_col.children}:
+                                scene_col.children.unlink(col)
+                            bpy.data.collections.remove(col)
+                        bv._loaded_collections.pop(lbl, None)
+                        if props.rtree_last_loaded == lbl:
+                            props.rtree_last_loaded = ""
+                    else:
+                        bv._loaded_collections[lbl] = [o.name for o in remaining]
+
+                print(f"[S180] §PROOF SHRED selected objects_removed={removed} labels={sorted(affected_labels)}")
+                self.report({'INFO'}, f"§PROOF SHRED objects_removed={removed}")
+
+            else:
+                # ── Fallback: remove last-loaded collection or last Baked_* ──
+                label = props.rtree_last_loaded
+                if label and label in bv._loaded_collections:
+                    _remove_stingy_collection(label, bv._loaded_collections)
+                    props.rtree_last_loaded = ""
+                    print(f"[S180] §PROOF SHRED label={label}")
+                    self.report({'INFO'}, f"§PROOF SHRED label={label}")
+                else:
+                    # S187: Fallback to shredding last Baked_* collection
+                    baked_cols = [
+                        col for col in context.scene.collection.children
+                        if col.name.startswith("Baked_")
+                    ]
+                    if baked_cols:
+                        target = baked_cols[-1]  # most recently added
+                        inst_count = len(target.objects)
+                        for obj in list(target.objects):
+                            bpy.data.objects.remove(obj, do_unlink=True)
+                        context.scene.collection.children.unlink(target)
+                        bpy.data.collections.remove(target)
+                        print(f"[S187] §SHRED_BAKED fallback label={target.name} "
+                              f"instances={inst_count}")
+                        self.report({'INFO'},
+                                    f"§SHRED_BAKED {target.name} ({inst_count} instances)")
+                    else:
+                        props.rtree_last_loaded = ""
+                        self.report({'WARNING'},
+                                    "Nothing to shred — select loaded mesh objects "
+                                    "or run LOAD MESH first")
+                        return {'CANCELLED'}
 
         for area in context.screen.areas:
             if area.type == 'VIEW_3D':
@@ -2175,7 +3115,7 @@ class PreviewFederationViewport(bpy.types.Operator):
             # Enable discipline legend overlay (visual reference only, not clickable)
             discipline_legend.enable_legend()
 
-            print("\n✓ Preview ready - INSTANT GPU bboxes loaded!")
+            print(f"\n✓ Preview ready [{_FED_VERSION}] - INSTANT GPU bboxes loaded!")
             print("✓ All 49K elements visible - MEP engineers can work immediately!")
             print("✓ Legend shows discipline colors (use Outliner to toggle)")
             print("✓ Use 'Solid' for colored boxes or 'Full Load' for exact geometry\n")
@@ -7394,7 +8334,34 @@ class FedRTreeCountBuilding(bpy.types.Operator):
             storeys = conn.execute(
                 "SELECT DISTINCT storey FROM elements_meta WHERE storey IS NOT NULL ORDER BY storey"
             ).fetchall()
+        # S186-s2: pre-compute storey bboxes + counts (avoids rtree JOIN at click time)
+        if has_bld:
+            storey_bbox_rows = conn.execute(
+                "SELECT m.storey, MIN(r.minX), MIN(r.minY), MIN(r.minZ), "
+                "MAX(r.maxX), MAX(r.maxY), MAX(r.maxZ), COUNT(*) "
+                "FROM elements_meta m JOIN elements_rtree r ON m.id = r.id "
+                "WHERE m.building = ? AND m.storey IS NOT NULL "
+                "GROUP BY m.storey ORDER BY m.storey",
+                (building,)
+            ).fetchall()
+        else:
+            storey_bbox_rows = conn.execute(
+                "SELECT m.storey, MIN(r.minX), MIN(r.minY), MIN(r.minZ), "
+                "MAX(r.maxX), MAX(r.maxY), MAX(r.maxZ), COUNT(*) "
+                "FROM elements_meta m JOIN elements_rtree r ON m.id = r.id "
+                "WHERE m.storey IS NOT NULL "
+                "GROUP BY m.storey ORDER BY m.storey"
+            ).fetchall()
         conn.close()
+
+        # Cache storey bboxes for instant fly_to_storey
+        bv._building_storey_bboxes = {}
+        for sb in storey_bbox_rows:
+            if sb[0]:
+                bv._building_storey_bboxes[sb[0]] = {
+                    'bbox': (sb[1], sb[2], sb[3], sb[4], sb[5], sb[6]),
+                    'count': sb[7]
+                }
 
         counts = {r[0]: r[1] for r in rows if r[0]}
         # S186: dynamic discipline counts — no hardcoded 5
@@ -7406,6 +8373,10 @@ class FedRTreeCountBuilding(bpy.types.Operator):
         props.rtree_bld_elec  = counts.get('ELEC', 0)
         props.rtree_bld_fp    = counts.get('FP',   0)
         props.rtree_bld_total = sum(counts.values())
+        # S186-s2: track building-level total separately (not storey-scoped)
+        # Used for pre-warm threshold — storey-scoped total is too small.
+        if not storey:
+            bv._building_total_all = props.rtree_bld_total
         bv._building_storeys = [r[0] for r in storeys if r[0]]
         # S186: fallback class groups when no storeys
         bv._building_class_groups.clear()
@@ -7427,13 +8398,14 @@ class FedRTreeCountBuilding(bpy.types.Operator):
         elapsed_ms = (time.time() - t0) * 1000
         scope = f"storey='{storey}'" if storey else "all"
         print(f"[S186] §PROOF COUNT_BLD bld={building} scope={scope} "
-              f"total={props.rtree_bld_total} storeys={len(bv._building_storeys)} {elapsed_ms:.0f}ms")
+              f"total={props.rtree_bld_total} storeys={len(bv._building_storeys)} "
+              f"storey_bboxes={len(bv._building_storey_bboxes)} {elapsed_ms:.0f}ms")
 
         # S184: pre-warm library meshes in background while user reads cockpit
-        # S186: only pre-warm small buildings (< 5K elements). Larger buildings
-        # load on-demand via MESH buttons — avoids multi-second freeze on LTU/Hospital.
+        # S186-s2: use building-level total (not storey-scoped) for threshold.
+        # Storey-scoped total can be small (1340) while building is huge (125K).
         import bpy as _bpy
-        if bv._library_blend_cache and props.rtree_bld_total < 5000:
+        if bv._library_blend_cache and bv._building_total_all < 5000:
             if _bpy.app.timers.is_registered(bv._prewarm_building_meshes):
                 _bpy.app.timers.unregister(bv._prewarm_building_meshes)
             _bpy.app.timers.register(bv._prewarm_building_meshes, first_interval=0.5)
@@ -7468,13 +8440,54 @@ class FedRTreeSearch(bpy.types.Operator):
     bl_description = "Search R-Tree DB and fly viewport to matching element"
     bl_options = {'REGISTER'}
 
+    # S187: optional preset term — used by quick-pick buttons
+    term: bpy.props.StringProperty(default="")
+
     def execute(self, context):
         from . import bbox_visualization as bv
         props = context.scene.BIMFederationProperties
+        # S187: preset term from button overrides search field
+        # term="_HOME_" is the back button (can't pass empty string via operator prop)
+        if self.term == "_HOME_":
+            props.rtree_search = ""
+        elif self.term:
+            props.rtree_search = self.term
         term = props.rtree_search.strip()
         if not term:
-            self.report({'WARNING'}, "Enter a search term first")
-            return {'CANCELLED'}
+            # S187: empty search = HOME — clear drill-down, return to idle
+            bv._active_building = ""
+            bv._active_storey = ""
+            bv._building_elements.clear()
+            bv._highlighted_bboxes.clear()
+            bv._selected_element.clear()
+            bv._search_results.clear()
+            bv._building_storeys.clear()
+            bv._building_storey_bboxes.clear()
+            bv._building_disc_counts.clear()
+            bv._building_class_groups.clear()
+            props.rtree_result_count = 0
+            props.rtree_bld_total = 0
+            props.rtree_storey = ""
+            # Highlighted bboxes cleared above — GPU draw handler
+            # auto-restores full discipline colors when no highlights active
+            for area in context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    area.tag_redraw()
+            self.report({'INFO'}, "Home")
+            return {'FINISHED'}
+
+        # S187: if inside a building, search stays within it (type drill-down)
+        if bv._active_building:
+            bv.fetch_building_elements(bv._active_building, term)
+            # Clear disc filter since we've drilled into a specific type
+            bv._active_disc_filter = ""
+            bv._disc_class_groups.clear()
+            for area in context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    area.tag_redraw()
+            cnt = len(bv._building_elements)
+            self.report({'INFO'}, f"{term} | {cnt} elements")
+            return {'FINISHED'} if cnt > 0 else {'CANCELLED'}
 
         result = bv.navigate_to_element(term, context)
 
@@ -7531,8 +8544,15 @@ class FedRTreeFlyToResult(bpy.types.Operator):
         props = context.scene.BIMFederationProperties
         props.rtree_storey = ""
 
-        # Drill into L2: fetch individual elements in this building
-        bv.fetch_building_elements(r['building'], props.rtree_search)
+        # S188b: Don't fetch elements at building level — wait for type drill-down.
+        # Element listing is expensive on large buildings and premature here.
+        # User flow: Building → Discipline bar → IFC Type → Elements populate.
+        bv._building_elements.clear()
+        # S188b: Remove building-level envelope bbox — user already knows it's the whole building.
+        # Storey/element bboxes will be added when user drills deeper.
+        bv._highlighted_bboxes.clear()
+        # Set active building (fly_to_result sets it for multi-tile, but not single-tile)
+        bv._active_building = r['building']
 
         # S183: populate cockpit counts + storey list
         bpy.ops.bim.fed_rtree_count_building()
@@ -7541,7 +8561,7 @@ class FedRTreeFlyToResult(bpy.types.Operator):
             if area.type == 'VIEW_3D':
                 area.tag_redraw()
 
-        self.report({'INFO'}, f"→ {r['building']} | {len(bv._building_elements)} elements shown")
+        self.report({'INFO'}, f"→ {r['building']}")
         return {'FINISHED'}
 
 
@@ -7593,6 +8613,62 @@ class FedRTreeFlyToStorey(bpy.types.Operator):
             if area.type == 'VIEW_3D':
                 area.tag_redraw()
         self.report({'INFO'}, f"Storey: {self.storey} | {len(bv._building_elements)} elements")
+        return {'FINISHED'}
+
+
+class FedRTreeFilterDisc(bpy.types.Operator):
+    """S187: Click a discipline bar → show IFC types within that discipline."""
+    bl_idname = "bim.fed_rtree_filter_disc"
+    bl_label = "Filter by Discipline"
+    bl_options = {'REGISTER'}
+
+    disc: bpy.props.StringProperty(default="")
+
+    def execute(self, context):
+        import sqlite3
+        from . import bbox_visualization as bv
+        building = bv._active_building
+        db_path = bv._db_path_cache
+        if not building or not db_path:
+            return {'CANCELLED'}
+
+        # Empty disc = clear filter (back button)
+        if not self.disc:
+            bv._active_disc_filter = ""
+            bv._disc_class_groups.clear()
+            for area in context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    area.tag_redraw()
+            return {'FINISHED'}
+
+        # Query IFC class breakdown within this discipline
+        conn = sqlite3.connect(db_path)
+        if bv._has_building_column:
+            rows = conn.execute(
+                "SELECT ifc_class, COUNT(*) FROM elements_meta "
+                "WHERE building=? AND discipline=? "
+                "GROUP BY ifc_class ORDER BY COUNT(*) DESC",
+                (building, self.disc)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT ifc_class, COUNT(*) FROM elements_meta "
+                "WHERE discipline=? "
+                "GROUP BY ifc_class ORDER BY COUNT(*) DESC",
+                (self.disc,)
+            ).fetchall()
+        conn.close()
+
+        bv._active_disc_filter = self.disc
+        bv._disc_class_groups = [{'ifc_class': r[0], 'count': r[1]} for r in rows]
+        # Clear element list — user picks a type first
+        bv._building_elements.clear()
+
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                area.tag_redraw()
+        total = sum(r[1] for r in rows)
+        self.report({'INFO'}, f"{self.disc} | {len(rows)} types, {total:,} elements")
         return {'FINISHED'}
 
 
