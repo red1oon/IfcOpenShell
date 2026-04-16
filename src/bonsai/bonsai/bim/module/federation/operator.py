@@ -3367,7 +3367,9 @@ class PreviewFederationViewport(bpy.types.Operator):
             discipline_legend.enable_legend()
 
             # S189p: Link any pending baked files from previous BACKEND sessions
-            _baked_dir = Path(bpy.path.abspath(db_path)).resolve().parent.parent / "baked"
+            from . import bbox_visualization as _bv2
+            _db = _bv2._db_path_cache or props.federation_database_path or ""
+            _baked_dir = Path(_db).resolve().parent.parent / "baked" if _db else Path(".")
             if _baked_dir.exists():
                 _disc_suffixes = {'ARC','STR','MEP','ELEC','FP','OTHER',
                                   'PLB','HEAT','HVAC','VENT','SAN','ACMV'}
