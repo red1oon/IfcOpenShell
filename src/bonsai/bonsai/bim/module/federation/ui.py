@@ -2029,18 +2029,20 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
                 done_row.alert = True
                 done_row.scale_y = 2.0
                 _n = len(_done_list)
-                _label = f"Save & Merge ({_n} buildings)" if _n > 1 else "Save & Merge"
+                _label = f"Save & Merge ({_n} buildings) \u2192" if _n > 1 else "Save & Merge \u2192"
                 op_merge = done_row.operator("bim.fed_rtree_reopen_baked",
                                              text=_label, icon='FILE_BLEND')
                 op_merge.building = ""
                 op_merge.action = "merge"
             # Show MERGED — Reopen button
             if _merge_ready:
+                from pathlib import Path as _PPath
+                _mname = _PPath(bv._merge_done_path).name
                 mr_row = be_box.row(align=True)
                 mr_row.alert = True
                 mr_row.scale_y = 2.0
                 op_open = mr_row.operator("bim.fed_rtree_reopen_baked",
-                                          text="\u2713 MERGED. Reopen.",
+                                          text=f"\u2713 MERGED. Open {_mname}",
                                           icon='FILE_BLEND')
                 op_open.action = "reopen"
 
