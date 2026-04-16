@@ -1950,12 +1950,13 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
                     ov_row = act_box.row(align=True)
                     ov_row.operator("bim.fed_rtree_overnight",
                                     text="OVERNIGHT", icon='TIME')
-                    # S189: BACKEND button — disabled if one already in progress/done
-                    _backend_busy = bool(bv._baking_buildings or bv._bake_done)
+                    # S189: BACKEND button — disabled only if THIS building already baking/done
+                    _this_busy = (bv._active_building in bv._baking_buildings
+                                  or bv._active_building in bv._bake_done)
                     be_row = act_box.row(align=True)
                     be_row.alert = True
                     be_row.scale_y = 1.5
-                    be_row.enabled = not _backend_busy
+                    be_row.enabled = not _this_busy
                     be_row.operator("bim.fed_rtree_switch_offline",
                                     text="\u26a1 BACKEND",
                                     icon='NONE')
@@ -2005,14 +2006,18 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
                         be_box.label(text=f"\u23f3 {_bld}: finishing{_chunk_txt}...",
                                      icon='SORTTIME')
             if _any_done:
-                for _bld in list(bv._bake_done.keys()):
-                    done_row = be_box.row(align=True)
-                    done_row.alert = True
-                    done_row.scale_y = 1.8
-                    op_reopen = done_row.operator("bim.fed_rtree_reopen_baked",
-                                                  text=f"\u2713 {_bld} DONE. Save & Reopen.",
-                                                  icon='FILE_BLEND')
-                    op_reopen.building = _bld
+                _done_list = list(bv._bake_done.keys())
+                for _bld in _done_list:
+                    be_box.label(text=f"\u2713 {_bld} — baked", icon='CHECKMARK')
+                done_row = be_box.row(align=True)
+                done_row.alert = True
+                done_row.scale_y = 2.0
+                _n = len(_done_list)
+                _label = f"Save & Reopen ({_n} buildings)" if _n > 1 else f"Save & Reopen"
+                op_reopen = done_row.operator("bim.fed_rtree_reopen_baked",
+                                              text=_label,
+                                              icon='FILE_BLEND')
+                op_reopen.building = ""  # empty = merge all
 
         # ── PICK ──
         layout.separator(factor=0.3)

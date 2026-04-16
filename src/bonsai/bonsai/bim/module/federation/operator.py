@@ -2450,22 +2450,25 @@ class FedRTreeReopenBaked(bpy.types.Operator):
     def execute(self, context):
         import subprocess as _sp
         from . import bbox_visualization as bv
-
-        bld = self.building or bv._active_building
-        baked_path = bv._bake_done.get(bld)
-        if not baked_path:
-            self.report({'WARNING'}, f"No baked file for {bld}")
-            return {'CANCELLED'}
         from pathlib import Path
-        if not Path(baked_path).exists():
-            self.report({'ERROR'}, f"File not found: {baked_path}")
 
-        # S189: Cancel overnight if running — clean state before save
+        # S189: Collect ALL done buildings to merge
+        if self.building:
+            to_merge = {self.building: bv._bake_done.get(self.building)}
+        else:
+            to_merge = dict(bv._bake_done)  # all done buildings
+
+        # Validate
+        to_merge = {b: p for b, p in to_merge.items() if p and Path(p).exists()}
+        if not to_merge:
+            self.report({'WARNING'}, "No baked files ready")
+            return {'CANCELLED'}
+
+        # Cancel overnight if running
         if bv._overnight_running:
             bv._overnight_running = False
             bv._overnight_paused = False
-            print(f"[S189] {_ts()} §REOPEN_CANCEL_OVERNIGHT cancelled before save")
-            return {'CANCELLED'}
+            print(f"[S189] {_ts()} §REOPEN_CANCEL_OVERNIGHT")
 
         # Step 1: Save current work
         context.window.cursor_set('WAIT')
@@ -2473,71 +2476,73 @@ class FedRTreeReopenBaked(bpy.types.Operator):
         if session_path:
             try:
                 bpy.ops.wm.save_mainfile()
-                print(f"[S189] {_ts()} §REOPEN_SAVE saved session: {session_path}")
+                print(f"[S189] {_ts()} §REOPEN_SAVE saved: {session_path}")
             except Exception as e:
                 print(f"[S189] §REOPEN_SAVE_WARN {e}")
         else:
-            # No file saved yet — save to baked/ folder
-            session_path = str(Path(baked_path).parent / "session.blend")
+            first_path = next(iter(to_merge.values()))
+            session_path = str(Path(first_path).parent / "session.blend")
             try:
                 bpy.ops.wm.save_as_mainfile(filepath=session_path)
-                print(f"[S189] {_ts()} §REOPEN_SAVE new session: {session_path}")
+                print(f"[S189] {_ts()} §REOPEN_SAVE new: {session_path}")
             except Exception as e:
-                print(f"[S189] §REOPEN_SAVE_WARN {e}")
                 context.window.cursor_set('DEFAULT')
                 self.report({'ERROR'}, f"Could not save: {e}")
                 return {'CANCELLED'}
 
-        # Step 2: Spawn merge subprocess (session + baked → merged)
+        # Step 2: Find merge script
         blob_script = None
         db_path = bv._db_path_cache or ""
-        for anc in Path(baked_path).resolve().parents:
+        first_baked = next(iter(to_merge.values()))
+        for anc in Path(first_baked).resolve().parents:
             c = anc / "scripts" / "blob_tessellate_worker.py"
             if c.exists():
                 blob_script = str(c)
                 break
         if not blob_script:
-            # No merge script — just open baked file directly
-            print(f"[S189] {_ts()} §REOPEN_DIRECT no merge script, opening baked file")
             context.window.cursor_set('DEFAULT')
-            def _open():
-                bpy.ops.wm.open_mainfile(filepath=baked_path)
-                return None
-            bpy.app.timers.register(_open, first_interval=0.1)
-            return {'FINISHED'}
+            self.report({'ERROR'}, "Merge script not found")
+            return {'CANCELLED'}
 
-        merged_path = session_path  # overwrite session file with merged version
+        # Step 3: Merge each baked building into session sequentially
+        merged_path = session_path
+        bld_names = list(to_merge.keys())
+        all_baked_files = list(to_merge.values())
+
+        n = len(to_merge)
+        self.report({'INFO'}, f"Merging {n} building{'s' if n > 1 else ''} into session...")
+        print(f"[S189] {_ts()} §REOPEN_MERGE buildings={bld_names}")
+
+        # Single merge call with all baked files
         merge_cmd = [
             bpy.app.binary_path, "--background", "--factory-startup",
             "--python", blob_script, "--",
             "--db", db_path,
-            "--building", bld,
+            "--building", "_".join(bld_names[:3]),  # label for logs
             "--output", merged_path,
-            "--merge", baked_path,
+            "--merge",
+        ] + all_baked_files + [
             "--base", session_path,
         ]
 
-        print(f"[S189] {_ts()} §REOPEN_MERGE bld={bld} merging into {Path(merged_path).name}")
-        self.report({'INFO'}, f"Merging {bld} into session... please wait")
-
         try:
-            # Synchronous — user chose to wait (they clicked the button)
-            result = _sp.run(merge_cmd, stdout=_sp.PIPE, stderr=_sp.STDOUT, timeout=120)
+            result = _sp.run(merge_cmd, stdout=_sp.PIPE, stderr=_sp.STDOUT, timeout=300)
             out = result.stdout.decode('utf-8', errors='replace')
-            for line in out.strip().split('\n')[-5:]:
+            for line in out.strip().split('\n')[-8:]:
                 print(f"  [MERGE] {line}")
             if result.returncode != 0:
                 print(f"[S189] §REOPEN_MERGE_ERROR exit={result.returncode}")
                 context.window.cursor_set('DEFAULT')
-                self.report({'ERROR'}, "Merge failed — opening baked file instead")
-                merged_path = baked_path
+                self.report({'ERROR'}, "Merge failed")
+                return {'CANCELLED'}
         except Exception as e:
             print(f"[S189] §REOPEN_MERGE_ERROR {e}")
             context.window.cursor_set('DEFAULT')
-            merged_path = baked_path  # fallback
+            self.report({'ERROR'}, f"Merge error: {e}")
+            return {'CANCELLED'}
 
-        # Step 3: Reopen merged file
-        print(f"[S189] {_ts()} §REOPEN path={merged_path}")
+        # Step 4: Reopen merged file
+        print(f"[S189] {_ts()} §REOPEN path={merged_path} buildings={n}")
         context.window.cursor_set('DEFAULT')
         try:
             bpy.data.is_saved = True
