@@ -2507,7 +2507,8 @@ class FedRTreeReopenBaked(bpy.types.Operator):
             except Exception as e:
                 print(f"[S189] §MERGE_SAVE_WARN {e}")
         else:
-            first_path = next(iter(to_merge.values()))
+            first_val = next(iter(to_merge.values()))
+            first_path = first_val[0] if isinstance(first_val, list) else first_val
             session_path = str(Path(first_path).parent / "session.blend")
             try:
                 bpy.ops.wm.save_as_mainfile(filepath=session_path)
@@ -2519,7 +2520,8 @@ class FedRTreeReopenBaked(bpy.types.Operator):
         # Step 2: Find merge script
         blob_script = None
         db_path = bv._db_path_cache or ""
-        first_baked = next(iter(to_merge.values()))
+        _fb = next(iter(to_merge.values()))
+        first_baked = _fb[0] if isinstance(_fb, list) else _fb
         for anc in Path(first_baked).resolve().parents:
             c = anc / "scripts" / "blob_tessellate_worker.py"
             if c.exists():
