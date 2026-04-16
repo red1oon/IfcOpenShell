@@ -1950,10 +1950,12 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
                     ov_row = act_box.row(align=True)
                     ov_row.operator("bim.fed_rtree_overnight",
                                     text="OVERNIGHT", icon='TIME')
-                    # S189: BACKEND button — always visible alongside OVERNIGHT
+                    # S189: BACKEND button — disabled if one already in progress/done
+                    _backend_busy = bool(bv._baking_buildings or bv._bake_done)
                     be_row = act_box.row(align=True)
                     be_row.alert = True
                     be_row.scale_y = 1.5
+                    be_row.enabled = not _backend_busy
                     be_row.operator("bim.fed_rtree_switch_offline",
                                     text="\u26a1 BACKEND",
                                     icon='NONE')
@@ -1978,6 +1980,39 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
             queued = len(bv._bake_queue)
             ba_box.label(text=f"Baking {running}/{bv._MAX_BAKE_WORKERS}, queued {queued}",
                          icon='RENDER_ANIMATION')
+
+        # ── S189: Sticky BACKEND status — always visible at bottom ──
+        _any_baking = bool(bv._baking_buildings)
+        _any_done = bool(bv._bake_done)
+        if _any_baking or _any_done:
+            layout.separator(factor=0.3)
+            be_box = layout.box()
+            be_box.alert = True
+            if _any_baking:
+                import time as _btime
+                for _bld, _info in bv._baking_buildings.items():
+                    _el = _btime.time() - _info.get('start_time', _btime.time())
+                    _eta = max(_info.get('offline_eta', 0) - _el, 0)
+                    _chunks = len(_info.get('_chunk_procs', [None]))
+                    _chunk_txt = f" ({_chunks} chunks)" if _chunks > 1 else ""
+                    if _info.get('_is_merge'):
+                        be_box.label(text=f"\u23f3 {_bld}: merging...", icon='SORTTIME')
+                    elif _eta > 0:
+                        _e = f"{int(_eta)}s" if _eta < 120 else f"{int(_eta/60)}m"
+                        be_box.label(text=f"\u23f3 {_bld}: baking{_chunk_txt} ~{_e}",
+                                     icon='SORTTIME')
+                    else:
+                        be_box.label(text=f"\u23f3 {_bld}: finishing{_chunk_txt}...",
+                                     icon='SORTTIME')
+            if _any_done:
+                for _bld in list(bv._bake_done.keys()):
+                    done_row = be_box.row(align=True)
+                    done_row.alert = True
+                    done_row.scale_y = 1.8
+                    op_reopen = done_row.operator("bim.fed_rtree_reopen_baked",
+                                                  text=f"\u2713 {_bld} DONE. Save & Reopen.",
+                                                  icon='FILE_BLEND')
+                    op_reopen.building = _bld
 
         # ── PICK ──
         layout.separator(factor=0.3)

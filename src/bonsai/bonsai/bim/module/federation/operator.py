@@ -2459,6 +2459,12 @@ class FedRTreeReopenBaked(bpy.types.Operator):
         from pathlib import Path
         if not Path(baked_path).exists():
             self.report({'ERROR'}, f"File not found: {baked_path}")
+
+        # S189: Cancel overnight if running — clean state before save
+        if bv._overnight_running:
+            bv._overnight_running = False
+            bv._overnight_paused = False
+            print(f"[S189] {_ts()} §REOPEN_CANCEL_OVERNIGHT cancelled before save")
             return {'CANCELLED'}
 
         # Step 1: Save current work
