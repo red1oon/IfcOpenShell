@@ -2407,10 +2407,25 @@ class FedRTreeSwitchOffline(bpy.types.Operator):
             self.report({'WARNING'}, "No active building")
             return {'CANCELLED'}
 
-        # S189: total from overnight if running, else from building counts
+        # S189p: total from multiple sources — must be accurate for chunk threshold
         total = bv._overnight_total
         if not total:
             total = sum(bv._building_disc_counts.values()) if bv._building_disc_counts else 0
+        if not total and bv._db_path_cache:
+            # Query DB directly — user clicked BACKEND without overnight
+            import sqlite3
+            try:
+                _conn = sqlite3.connect(bv._db_path_cache)
+                if bv._has_building_column:
+                    total = _conn.execute(
+                        "SELECT COUNT(*) FROM elements_meta WHERE building = ?",
+                        (building,)).fetchone()[0]
+                else:
+                    total = _conn.execute("SELECT COUNT(*) FROM elements_meta").fetchone()[0]
+                _conn.close()
+                print(f"[S189] {_ts()} §BACKEND_COUNT bld={building} total={total} (from DB)")
+            except Exception:
+                pass
         if not _spawn_bake(building, total_elements=total):
             self.report({'ERROR'}, "Failed to launch bake subprocess")
             return {'CANCELLED'}
@@ -2556,7 +2571,9 @@ class FedRTreeReopenBaked(bpy.types.Operator):
         ]
 
         try:
-            merge_proc = _sp.Popen(merge_cmd, stdout=_sp.PIPE, stderr=_sp.STDOUT)
+            # S189p: start_new_session=True — subprocess survives Blender quit
+            merge_proc = _sp.Popen(merge_cmd, stdout=_sp.PIPE, stderr=_sp.STDOUT,
+                                   start_new_session=True)
         except Exception as e:
             print(f"[S189] §MERGE_LAUNCH_ERROR {e}")
             self.report({'ERROR'}, f"Could not start merge: {e}")
