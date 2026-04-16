@@ -210,6 +210,13 @@ class BIM_PT_federation(Panel):
         box.separator()
 
         # Database path - Positioned just above Preview/Solid buttons
+        # S189: Auto-restore DB path from baked .blend scene property
+        if not props.federation_database_path:
+            _saved = context.scene.get("fed_db_path", "")
+            if _saved:
+                from pathlib import Path as _PUI
+                if _PUI(_saved).exists():
+                    props.federation_database_path = _saved
         inner_box = box.box()
         inner_box.label(text="Federation Database", icon="FILE")
         inner_box.prop(props, "federation_database_path", text="")
