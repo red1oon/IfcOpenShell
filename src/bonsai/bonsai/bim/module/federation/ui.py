@@ -1989,62 +1989,24 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
             ba_box.label(text=f"Baking {running}/{bv._MAX_BAKE_WORKERS}, queued {queued}",
                          icon='RENDER_ANIMATION')
 
-        # ── S189: Sticky BACKEND status — always visible at bottom ──
-        _any_baking = bool(bv._baking_buildings)
-        _any_done = bool(bv._bake_done)
-        _merge_ready = bool(bv._merge_done_path)
-        if _any_baking or _any_done or _merge_ready:
+        # ── S189o: Sticky BACKEND status — baking progress + linked status ──
+        if bv._baking_buildings:
             layout.separator(factor=0.3)
             be_box = layout.box()
             be_box.alert = True
-            # Show baking/merging progress
-            if _any_baking:
-                import time as _btime
-                for _bld, _info in list(bv._baking_buildings.items()):
-                    _el = _btime.time() - _info.get('start_time', _btime.time())
-                    _eta = max(_info.get('offline_eta', 0) - _el, 0)
-                    _chunks = len(_info.get('_chunk_procs', [None]))
-                    _chunk_txt = f" ({_chunks} chunks)" if _chunks > 1 else ""
-                    _merge_blds = _info.get('_merge_buildings', [])
-                    if _bld == "_MERGE_":
-                        # S189k: Show countdown — 60s wait then merge
-                        _wait_left = max(0, 60 - int(_el))
-                        if _wait_left > 0:
-                            be_box.label(
-                                text=f"\u23f3 Save & Close in {_wait_left}s",
-                                icon='TIME')
-                            be_box.label(text="BACKEND will finalize after close.")
-                        else:
-                            _el_fmt = f"{int(_el - 60)}s" if _el < 180 else f"{int((_el-60)/60)}m"
-                            be_box.label(
-                                text=f"\u23f3 Merging {len(_merge_blds)} buildings... {_el_fmt}",
-                                icon='SORTTIME')
-                    elif _info.get('_is_merge'):
-                        be_box.label(text=f"\u23f3 {_bld}: merging chunks...", icon='SORTTIME')
-                    elif _eta > 0:
-                        _e = f"{int(_eta)}s" if _eta < 120 else f"{int(_eta/60)}m"
-                        be_box.label(text=f"\u23f3 {_bld}: baking{_chunk_txt} ~{_e}",
-                                     icon='SORTTIME')
-                    else:
-                        be_box.label(text=f"\u23f3 {_bld}: finishing{_chunk_txt}...",
-                                     icon='SORTTIME')
-            # Show baked buildings + Save & Merge button
-            if _any_done:
-                _done_list = list(bv._bake_done.keys())
-                for _bld in _done_list:
-                    be_box.label(text=f"\u2713 {_bld} \u2014 baked", icon='CHECKMARK')
-                done_row = be_box.row(align=True)
-                done_row.alert = True
-                done_row.scale_y = 2.0
-                _n = len(_done_list)
-                _label = f"Save & Merge ({_n} buildings) \u2192" if _n > 1 else "Save & Merge \u2192"
-                op_merge = done_row.operator("bim.fed_rtree_reopen_baked",
-                                             text=_label, icon='FILE_BLEND')
-                op_merge.building = ""
-                op_merge.action = "merge"
-            # Show MERGED — Reopen button
-            if _merge_ready:
-                be_box.label(text="\u2713 MERGED \u2014 reopen to view all.", icon='CHECKMARK')
+            import time as _btime
+            for _bld, _info in list(bv._baking_buildings.items()):
+                _el = _btime.time() - _info.get('start_time', _btime.time())
+                _eta = max(_info.get('offline_eta', 0) - _el, 0)
+                _chunks = len(_info.get('_chunk_procs', [None]))
+                _chunk_txt = f" ({_chunks} chunks)" if _chunks > 1 else ""
+                if _eta > 0:
+                    _e = f"{int(_eta)}s" if _eta < 120 else f"{int(_eta/60)}m"
+                    be_box.label(text=f"\u23f3 {_bld}: baking{_chunk_txt} ~{_e}",
+                                 icon='SORTTIME')
+                else:
+                    be_box.label(text=f"\u23f3 {_bld}: finishing{_chunk_txt}...",
+                                 icon='SORTTIME')
 
         # ── PICK ──
         layout.separator(factor=0.3)

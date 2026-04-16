@@ -2831,18 +2831,9 @@ def _poll_bake_subprocess():
             print(f"[S189] {_ts()} §BLOB_ALL_DONE bld={bld} chunks={len(chunk_procs)} "
                   f"total_size={_baked_size_mb:.1f}MB elapsed={elapsed:.0f}s")
             _shred_building_partial(bld)
-            # S189j: No chunk merge — keep chunk files, session merge links them all.
-            # Small files link fast (~10s each). Avoids 6+ min merge for large buildings.
+            # S189o: Live-link chunk files into current session
             existing_chunks = [cp for cp in chunk_paths if _P(cp).exists()]
-            bv._bake_done[bld] = existing_chunks  # list of chunk paths
-            print(f"[S189] {_ts()} §BAKE_DONE bld={bld} chunks={len(existing_chunks)} "
-                  f"size={_baked_size_mb:.1f}MB elapsed={elapsed:.0f}s — ready for session merge")
-            if bld == bv._active_building:
-                bv._overnight_progress = (
-                    f"\u2713 BACKEND DONE \u2014 {_baked_size_mb:.0f}MB, "
-                    f"{info['total']:,} elements ({elapsed:.0f}s, "
-                    f"{len(existing_chunks)} chunks)"
-                )
+            _live_link_baked(bld, existing_chunks, info['total'], elapsed)
             done_buildings.append(bld)
             continue
 
@@ -2915,48 +2906,15 @@ def _poll_bake_subprocess():
 
             from pathlib import Path as _P
 
-            if bld == "_MERGE_":
-                # S189: Session merge complete — store path for Reopen button
-                if _P(baked_path).exists():
-                    bv._merge_done_path = baked_path
-                    _merge_blds = info.get('_merge_buildings', [])
-                    print(f"[S189] {_ts()} §MERGE_DONE buildings={_merge_blds} "
-                          f"size={_baked_size_mb:.1f}MB elapsed={elapsed:.0f}s")
-                    bv._overnight_progress = (
-                        f"\u2713 MERGED {len(_merge_blds)} buildings \u2014 "
-                        f"{_baked_size_mb:.0f}MB ({elapsed:.0f}s)"
-                    )
-                else:
-                    print(f"[S189] §MERGE_ERROR file_missing={baked_path}")
-                    bv._overnight_progress = "MERGE ERROR: file not found"
-            elif info.get('_is_merge'):
-                # Chunk merge complete — store as bake_done
-                _shred_building_partial(bld)
-                if _P(baked_path).exists():
-                    bv._bake_done[bld] = baked_path
-                    print(f"[S189] {_ts()} §BAKE_DONE bld={bld} size={_baked_size_mb:.1f}MB "
-                          f"elapsed={elapsed:.0f}s (chunk merge)")
-                    if bld == bv._active_building:
-                        bv._overnight_progress = (
-                            f"\u2713 BACKEND DONE \u2014 {_baked_size_mb:.0f}MB, "
-                            f"{info['total']:,} elements ({elapsed:.0f}s)"
-                        )
+            # S189o: Live-link baked file into current session
+            _shred_building_partial(bld)
+            from pathlib import Path as _P
+            if _P(baked_path).exists():
+                _live_link_baked(bld, baked_path, info.get('total', 0), elapsed)
             else:
-                # Single worker complete — store as bake_done
-                _shred_building_partial(bld)
-                if _P(baked_path).exists():
-                    bv._bake_done[bld] = baked_path
-                    print(f"[S189] {_ts()} §BAKE_DONE bld={bld} size={_baked_size_mb:.1f}MB "
-                          f"elapsed={elapsed:.0f}s path={baked_path}")
-                    if bld == bv._active_building:
-                        bv._overnight_progress = (
-                            f"\u2713 BACKEND DONE \u2014 {_baked_size_mb:.0f}MB, "
-                            f"{info['total']:,} elements ({elapsed:.0f}s)"
-                        )
-                else:
-                    print(f"[S189] §BAKE_ERROR bld={bld} file_missing={baked_path}")
-                    if bld == bv._active_building:
-                        bv._overnight_progress = f"ERROR: baked file not found"
+                print(f"[S189] §BAKE_ERROR bld={bld} file_missing={baked_path}")
+                if bld == bv._active_building:
+                    bv._overnight_progress = f"ERROR: baked file not found"
         else:
             # Subprocess failed
             stdout_text = ""
@@ -3001,6 +2959,51 @@ def _poll_bake_subprocess():
     if bv._baking_buildings or bv._bake_queue:
         return 5.0  # poll again in 5s
     return None  # unregister
+
+
+def _live_link_baked(bld, baked_files, total_elements=0, elapsed=0):
+    """S189o: Live-link baked .blend file(s) into the current session.
+    link=True — references only, no mesh copy. Buildings appear in viewport."""
+    import bpy as _bpy
+    import time
+    from pathlib import Path as _P
+    from . import bbox_visualization as bv
+
+    _disc_suffixes = {'ARC','STR','MEP','ELEC','FP','OTHER',
+                      'PLB','HEAT','HVAC','VENT','SAN','ACMV'}
+
+    if isinstance(baked_files, str):
+        baked_files = [baked_files]
+
+    _bpy.context.window.cursor_set('WAIT')
+    t_link = time.time()
+    total_objs = 0
+    for bf in baked_files:
+        if not _P(bf).exists():
+            continue
+        t_f = time.time()
+        with _bpy.data.libraries.load(bf, link=True) as (src, dst):
+            disc_cols = [c for c in src.collections
+                         if any(c.endswith(f'_{d}') for d in _disc_suffixes)]
+            if disc_cols:
+                dst.collections = disc_cols
+            elif src.collections:
+                dst.collections = [src.collections[0]]
+        for col in dst.collections:
+            if col is not None:
+                _bpy.context.scene.collection.children.link(col)
+                total_objs += len(col.all_objects)
+        bf_mb = _P(bf).stat().st_size / (1024*1024)
+        link_s = time.time() - t_f
+        print(f"[S189] {_ts()} §LIVE_LINK {_P(bf).name} ({bf_mb:.1f}MB) "
+              f"in {link_s:.1f}s — {total_objs} objects")
+    total_link = time.time() - t_link
+    _bpy.context.window.cursor_set('DEFAULT')
+    print(f"[S189] {_ts()} §LINKED bld={bld} objects={total_objs} "
+          f"link={total_link:.1f}s bake={elapsed:.0f}s")
+    bv._overnight_progress = (
+        f"\u2713 {bld} LINKED \u2014 {total_objs:,} objects ({total_link:.0f}s)"
+    )
 
 
 def _shred_building_partial(building):
