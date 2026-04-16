@@ -90,7 +90,7 @@ _baking_buildings = {}       # building_name → {process, start_time, total, of
 _bake_offer_shown = set()    # buildings that already saw the offer (don't re-show)
 _bake_queue = []             # S188: buildings waiting to bake, sorted smallest-first
 _MAX_BAKE_WORKERS = 4        # S188: max concurrent bake subprocesses
-_CHUNK_THRESHOLD = 50000     # S189: split into chunks above this element count
+_CHUNK_THRESHOLD = 100000    # S189: split into chunks above this element count
 _bake_done = {}              # S189: building_name → baked_path (completed, ready to reopen)
 
 # S182: Progressive load state
