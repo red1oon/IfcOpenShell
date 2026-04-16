@@ -2831,9 +2831,15 @@ def _poll_bake_subprocess():
             print(f"[S189] {_ts()} §BLOB_ALL_DONE bld={bld} chunks={len(chunk_procs)} "
                   f"total_size={_baked_size_mb:.1f}MB elapsed={elapsed:.0f}s")
             _shred_building_partial(bld)
-            # S189o: Live-link chunk files into current session
+            # S189p: Store baked paths — link on next Preview, not now (avoids freeze)
             existing_chunks = [cp for cp in chunk_paths if _P(cp).exists()]
-            _live_link_baked(bld, existing_chunks, info['total'], elapsed)
+            bv._bake_done[bld] = existing_chunks
+            print(f"[S189] {_ts()} §BAKE_DONE bld={bld} chunks={len(existing_chunks)} "
+                  f"size={_baked_size_mb:.1f}MB elapsed={elapsed:.0f}s")
+            if bld == bv._active_building:
+                bv._overnight_progress = (
+                    f"\u2713 {bld} BAKED \u2014 {_baked_size_mb:.0f}MB ({elapsed:.0f}s)"
+                )
             done_buildings.append(bld)
             continue
 
@@ -2906,11 +2912,17 @@ def _poll_bake_subprocess():
 
             from pathlib import Path as _P
 
-            # S189o: Live-link baked file into current session
+            # S189p: Store baked path — link on next Preview
             _shred_building_partial(bld)
             from pathlib import Path as _P
             if _P(baked_path).exists():
-                _live_link_baked(bld, baked_path, info.get('total', 0), elapsed)
+                bv._bake_done[bld] = baked_path
+                print(f"[S189] {_ts()} §BAKE_DONE bld={bld} size={_baked_size_mb:.1f}MB "
+                      f"elapsed={elapsed:.0f}s")
+                if bld == bv._active_building:
+                    bv._overnight_progress = (
+                        f"\u2713 {bld} BAKED \u2014 {_baked_size_mb:.0f}MB ({elapsed:.0f}s)"
+                    )
             else:
                 print(f"[S189] §BAKE_ERROR bld={bld} file_missing={baked_path}")
                 if bld == bv._active_building:
@@ -3336,6 +3348,41 @@ class PreviewFederationViewport(bpy.types.Operator):
 
             # Enable discipline legend overlay (visual reference only, not clickable)
             discipline_legend.enable_legend()
+
+            # S189p: Link any pending baked files from previous BACKEND sessions
+            _baked_dir = Path(db_path_resolved).parent.parent / "baked"
+            if _baked_dir.exists():
+                _disc_suffixes = {'ARC','STR','MEP','ELEC','FP','OTHER',
+                                  'PLB','HEAT','HVAC','VENT','SAN','ACMV'}
+                _baked_files = sorted(_baked_dir.glob("*.blend"))
+                if _baked_files:
+                    import time as _lt
+                    _t0 = _lt.time()
+                    _linked_count = 0
+                    for _bf in _baked_files:
+                        if _bf.name.startswith('session'):
+                            continue
+                        _tf = _lt.time()
+                        try:
+                            with bpy.data.libraries.load(str(_bf), link=True) as (src, dst):
+                                _dcols = [c for c in src.collections
+                                          if any(c.endswith(f'_{d}') for d in _disc_suffixes)]
+                                if _dcols:
+                                    dst.collections = _dcols
+                                elif src.collections:
+                                    dst.collections = [src.collections[0]]
+                            for _col in dst.collections:
+                                if _col is not None:
+                                    context.scene.collection.children.link(_col)
+                                    _linked_count += 1
+                            print(f"[S189] {_ts()} §PREVIEW_LINK {_bf.name} "
+                                  f"({_bf.stat().st_size/(1024*1024):.1f}MB) "
+                                  f"in {_lt.time()-_tf:.1f}s")
+                        except Exception as _e:
+                            print(f"[S189] §PREVIEW_LINK_WARN {_bf.name}: {_e}")
+                    if _linked_count:
+                        print(f"[S189] {_ts()} §PREVIEW_LINKED {_linked_count} collections "
+                              f"from {len(_baked_files)} files in {_lt.time()-_t0:.1f}s")
 
             print(f"\n✓ Preview ready [{_FED_VERSION}] - INSTANT GPU bboxes loaded!")
             print("✓ All 49K elements visible - MEP engineers can work immediately!")

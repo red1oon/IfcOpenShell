@@ -1989,24 +1989,31 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
             ba_box.label(text=f"Baking {running}/{bv._MAX_BAKE_WORKERS}, queued {queued}",
                          icon='RENDER_ANIMATION')
 
-        # ── S189o: Sticky BACKEND status — baking progress + linked status ──
-        if bv._baking_buildings:
+        # ── S189p: Sticky BACKEND status — baking progress + baked status ──
+        _any_baking = bool(bv._baking_buildings)
+        _any_done = bool(bv._bake_done)
+        if _any_baking or _any_done:
             layout.separator(factor=0.3)
             be_box = layout.box()
             be_box.alert = True
-            import time as _btime
-            for _bld, _info in list(bv._baking_buildings.items()):
-                _el = _btime.time() - _info.get('start_time', _btime.time())
-                _eta = max(_info.get('offline_eta', 0) - _el, 0)
-                _chunks = len(_info.get('_chunk_procs', [None]))
-                _chunk_txt = f" ({_chunks} chunks)" if _chunks > 1 else ""
-                if _eta > 0:
-                    _e = f"{int(_eta)}s" if _eta < 120 else f"{int(_eta/60)}m"
-                    be_box.label(text=f"\u23f3 {_bld}: baking{_chunk_txt} ~{_e}",
-                                 icon='SORTTIME')
-                else:
-                    be_box.label(text=f"\u23f3 {_bld}: finishing{_chunk_txt}...",
-                                 icon='SORTTIME')
+            if _any_baking:
+                import time as _btime
+                for _bld, _info in list(bv._baking_buildings.items()):
+                    _el = _btime.time() - _info.get('start_time', _btime.time())
+                    _eta = max(_info.get('offline_eta', 0) - _el, 0)
+                    _chunks = len(_info.get('_chunk_procs', [None]))
+                    _chunk_txt = f" ({_chunks} chunks)" if _chunks > 1 else ""
+                    if _eta > 0:
+                        _e = f"{int(_eta)}s" if _eta < 120 else f"{int(_eta/60)}m"
+                        be_box.label(text=f"\u23f3 {_bld}: baking{_chunk_txt} ~{_e}",
+                                     icon='SORTTIME')
+                    else:
+                        be_box.label(text=f"\u23f3 {_bld}: finishing{_chunk_txt}...",
+                                     icon='SORTTIME')
+            if _any_done:
+                for _bld in bv._bake_done:
+                    be_box.label(text=f"\u2713 {_bld} \u2014 baked", icon='CHECKMARK')
+                be_box.label(text="Save & re-Preview to link.")
 
         # ── PICK ──
         layout.separator(factor=0.3)
