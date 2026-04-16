@@ -2436,29 +2436,50 @@ class FedRTreeSwitchOffline(bpy.types.Operator):
 
 
 class FedRTreeReopenBaked(bpy.types.Operator):
-    """S189: Save current work, merge baked building into session, reopen."""
+    """S189: Save & merge baked buildings into session in background, then reopen."""
     bl_idname = "bim.fed_rtree_reopen_baked"
-    bl_label = "Reopen Baked"
+    bl_label = "Save & Merge"
     bl_description = (
-        "Saves your current work, merges the baked building\n"
-        "into your session file, then reopens with everything"
+        "1. Saves your current work (instant)\n"
+        "2. Merges baked buildings in background\n"
+        "3. Shows 'Reopen' when ready"
     )
     bl_options = {'REGISTER'}
 
     building: StringProperty(default="")
 
+    # S189: Two modes — "merge" (default) and "reopen" (after merge done)
+    action: StringProperty(default="merge")
+
     def execute(self, context):
         import subprocess as _sp
         from . import bbox_visualization as bv
         from pathlib import Path
+        import time
 
-        # S189: Collect ALL done buildings to merge
-        if self.building:
-            to_merge = {self.building: bv._bake_done.get(self.building)}
-        else:
-            to_merge = dict(bv._bake_done)  # all done buildings
+        # ── REOPEN mode: merge is done, just open the file ──
+        if self.action == "reopen":
+            reopen_path = bv._merge_done_path or ""
+            if not reopen_path or not Path(reopen_path).exists():
+                self.report({'WARNING'}, "Merged file not found")
+                return {'CANCELLED'}
+            print(f"[S189] {_ts()} §REOPEN path={reopen_path}")
+            try:
+                bpy.data.is_saved = True
+                bpy.data.is_dirty = False
+            except (AttributeError, TypeError):
+                pass
+            def _deferred_open():
+                try:
+                    bpy.ops.wm.open_mainfile(filepath=reopen_path)
+                except Exception as e:
+                    print(f"[S189] §REOPEN_ERROR {e}")
+                return None
+            bpy.app.timers.register(_deferred_open, first_interval=0.1)
+            return {'FINISHED'}
 
-        # Validate
+        # ── MERGE mode: save + spawn background merge ──
+        to_merge = dict(bv._bake_done)
         to_merge = {b: p for b, p in to_merge.items() if p and Path(p).exists()}
         if not to_merge:
             self.report({'WARNING'}, "No baked files ready")
@@ -2468,25 +2489,23 @@ class FedRTreeReopenBaked(bpy.types.Operator):
         if bv._overnight_running:
             bv._overnight_running = False
             bv._overnight_paused = False
-            print(f"[S189] {_ts()} §REOPEN_CANCEL_OVERNIGHT")
+            print(f"[S189] {_ts()} §MERGE_CANCEL_OVERNIGHT")
 
-        # Step 1: Save current work
-        context.window.cursor_set('WAIT')
+        # Step 1: Save current work (instant)
         session_path = bpy.data.filepath
         if session_path:
             try:
                 bpy.ops.wm.save_mainfile()
-                print(f"[S189] {_ts()} §REOPEN_SAVE saved: {session_path}")
+                print(f"[S189] {_ts()} §MERGE_SAVE saved: {session_path}")
             except Exception as e:
-                print(f"[S189] §REOPEN_SAVE_WARN {e}")
+                print(f"[S189] §MERGE_SAVE_WARN {e}")
         else:
             first_path = next(iter(to_merge.values()))
             session_path = str(Path(first_path).parent / "session.blend")
             try:
                 bpy.ops.wm.save_as_mainfile(filepath=session_path)
-                print(f"[S189] {_ts()} §REOPEN_SAVE new: {session_path}")
+                print(f"[S189] {_ts()} §MERGE_SAVE new: {session_path}")
             except Exception as e:
-                context.window.cursor_set('DEFAULT')
                 self.report({'ERROR'}, f"Could not save: {e}")
                 return {'CANCELLED'}
 
@@ -2500,62 +2519,56 @@ class FedRTreeReopenBaked(bpy.types.Operator):
                 blob_script = str(c)
                 break
         if not blob_script:
-            context.window.cursor_set('DEFAULT')
             self.report({'ERROR'}, "Merge script not found")
             return {'CANCELLED'}
 
-        # Step 3: Merge each baked building into session sequentially
-        merged_path = session_path
+        # Step 3: Spawn merge in BACKGROUND (async — no freeze)
         bld_names = list(to_merge.keys())
         all_baked_files = list(to_merge.values())
-
         n = len(to_merge)
-        self.report({'INFO'}, f"Merging {n} building{'s' if n > 1 else ''} into session...")
-        print(f"[S189] {_ts()} §REOPEN_MERGE buildings={bld_names}")
 
-        # Single merge call with all baked files
         merge_cmd = [
+            "nice", "-n", "10",
             bpy.app.binary_path, "--background", "--factory-startup",
             "--python", blob_script, "--",
             "--db", db_path,
-            "--building", "_".join(bld_names[:3]),  # label for logs
-            "--output", merged_path,
+            "--building", "_".join(bld_names[:3]),
+            "--output", session_path,
             "--merge",
         ] + all_baked_files + [
             "--base", session_path,
         ]
 
         try:
-            result = _sp.run(merge_cmd, stdout=_sp.PIPE, stderr=_sp.STDOUT, timeout=300)
-            out = result.stdout.decode('utf-8', errors='replace')
-            for line in out.strip().split('\n')[-8:]:
-                print(f"  [MERGE] {line}")
-            if result.returncode != 0:
-                print(f"[S189] §REOPEN_MERGE_ERROR exit={result.returncode}")
-                context.window.cursor_set('DEFAULT')
-                self.report({'ERROR'}, "Merge failed")
-                return {'CANCELLED'}
+            merge_proc = _sp.Popen(merge_cmd, stdout=_sp.PIPE, stderr=_sp.STDOUT)
         except Exception as e:
-            print(f"[S189] §REOPEN_MERGE_ERROR {e}")
-            context.window.cursor_set('DEFAULT')
-            self.report({'ERROR'}, f"Merge error: {e}")
+            print(f"[S189] §MERGE_LAUNCH_ERROR {e}")
+            self.report({'ERROR'}, f"Could not start merge: {e}")
             return {'CANCELLED'}
 
-        # Step 4: Reopen merged file
-        print(f"[S189] {_ts()} §REOPEN path={merged_path} buildings={n}")
-        context.window.cursor_set('DEFAULT')
-        try:
-            bpy.data.is_saved = True
-            bpy.data.is_dirty = False
-        except (AttributeError, TypeError):
-            pass
-        def _deferred_open():
-            try:
-                bpy.ops.wm.open_mainfile(filepath=merged_path)
-            except Exception as e:
-                print(f"[S189] §REOPEN_ERROR {e}")
-            return None
-        bpy.app.timers.register(_deferred_open, first_interval=0.1)
+        # Track merge in _baking_buildings so poll picks it up
+        bv._baking_buildings["_MERGE_"] = {
+            'process': merge_proc,
+            'start_time': time.time(),
+            'total': sum(bv._building_disc_counts.values()) if bv._building_disc_counts else 0,
+            'offline_eta': 120,  # estimate ~2min
+            'baked_path': session_path,
+            'db_path': db_path,
+            '_is_merge': True,
+            '_merge_buildings': bld_names,
+        }
+
+        # Clear _bake_done — these are being merged now
+        bv._bake_done.clear()
+        bv._merge_done_path = ""
+
+        # Register poll timer if not running
+        if not bpy.app.timers.is_registered(_poll_bake_subprocess):
+            bpy.app.timers.register(_poll_bake_subprocess, first_interval=5.0)
+
+        print(f"[S189] {_ts()} §MERGE_SPAWN pid={merge_proc.pid} "
+              f"buildings={bld_names} base={Path(session_path).name}")
+        self.report({'INFO'}, f"Saved. Merging {n} buildings in background...")
         return {'FINISHED'}
 
 
@@ -2798,9 +2811,15 @@ def _poll_bake_subprocess():
             remaining_est = max(info['offline_eta'] - elapsed, 0)
             if bld == bv._active_building:
                 if info.get('_is_merge'):
-                    bv._overnight_progress = (
-                        f"\u23f3 Merging chunks... {_fmt(elapsed)} total"
-                    )
+                    _merge_blds = info.get('_merge_buildings', [])
+                    if _merge_blds:
+                        bv._overnight_progress = (
+                            f"\u23f3 Merging {len(_merge_blds)} buildings... {_fmt(elapsed)}"
+                        )
+                    else:
+                        bv._overnight_progress = (
+                            f"\u23f3 Merging chunks... {_fmt(elapsed)}"
+                        )
                 elif remaining_est > 0:
                     bv._overnight_progress = (
                         f"\u23f3 Baking {bld}... {_fmt(elapsed)} elapsed, ~{_fmt(remaining_est)} left"
@@ -2850,23 +2869,50 @@ def _poll_bake_subprocess():
             print(f"[S189] {_ts()} §BAKE_COMPLETE bld={bld} pid={proc.pid} "
                   f"elapsed={elapsed:.0f}s size={_baked_size_mb:.1f}MB baked={baked_path}")
 
-            # S189: Store baked path — merge happens when user clicks REOPEN
-            _shred_building_partial(bld)
-
             from pathlib import Path as _P
-            if _P(baked_path).exists():
-                bv._bake_done[bld] = baked_path
-                print(f"[S189] {_ts()} §BAKE_DONE bld={bld} size={_baked_size_mb:.1f}MB "
-                      f"elapsed={elapsed:.0f}s path={baked_path}")
-                if bld == bv._active_building:
+
+            if bld == "_MERGE_":
+                # S189: Session merge complete — store path for Reopen button
+                if _P(baked_path).exists():
+                    bv._merge_done_path = baked_path
+                    _merge_blds = info.get('_merge_buildings', [])
+                    print(f"[S189] {_ts()} §MERGE_DONE buildings={_merge_blds} "
+                          f"size={_baked_size_mb:.1f}MB elapsed={elapsed:.0f}s")
                     bv._overnight_progress = (
-                        f"\u2713 BACKEND DONE \u2014 {_baked_size_mb:.0f}MB, "
-                        f"{info['total']:,} elements ({elapsed:.0f}s)"
+                        f"\u2713 MERGED {len(_merge_blds)} buildings \u2014 "
+                        f"{_baked_size_mb:.0f}MB ({elapsed:.0f}s)"
                     )
+                else:
+                    print(f"[S189] §MERGE_ERROR file_missing={baked_path}")
+                    bv._overnight_progress = "MERGE ERROR: file not found"
+            elif info.get('_is_merge'):
+                # Chunk merge complete — store as bake_done
+                _shred_building_partial(bld)
+                if _P(baked_path).exists():
+                    bv._bake_done[bld] = baked_path
+                    print(f"[S189] {_ts()} §BAKE_DONE bld={bld} size={_baked_size_mb:.1f}MB "
+                          f"elapsed={elapsed:.0f}s (chunk merge)")
+                    if bld == bv._active_building:
+                        bv._overnight_progress = (
+                            f"\u2713 BACKEND DONE \u2014 {_baked_size_mb:.0f}MB, "
+                            f"{info['total']:,} elements ({elapsed:.0f}s)"
+                        )
             else:
-                print(f"[S189] §BAKE_ERROR bld={bld} file_missing={baked_path}")
-                if bld == bv._active_building:
-                    bv._overnight_progress = f"ERROR: baked file not found"
+                # Single worker complete — store as bake_done
+                _shred_building_partial(bld)
+                if _P(baked_path).exists():
+                    bv._bake_done[bld] = baked_path
+                    print(f"[S189] {_ts()} §BAKE_DONE bld={bld} size={_baked_size_mb:.1f}MB "
+                          f"elapsed={elapsed:.0f}s path={baked_path}")
+                    if bld == bv._active_building:
+                        bv._overnight_progress = (
+                            f"\u2713 BACKEND DONE \u2014 {_baked_size_mb:.0f}MB, "
+                            f"{info['total']:,} elements ({elapsed:.0f}s)"
+                        )
+                else:
+                    print(f"[S189] §BAKE_ERROR bld={bld} file_missing={baked_path}")
+                    if bld == bv._active_building:
+                        bv._overnight_progress = f"ERROR: baked file not found"
         else:
             # Subprocess failed
             stdout_text = ""

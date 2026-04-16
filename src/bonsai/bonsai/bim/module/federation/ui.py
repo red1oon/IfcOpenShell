@@ -1992,19 +1992,27 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
         # ── S189: Sticky BACKEND status — always visible at bottom ──
         _any_baking = bool(bv._baking_buildings)
         _any_done = bool(bv._bake_done)
-        if _any_baking or _any_done:
+        _merge_ready = bool(bv._merge_done_path)
+        if _any_baking or _any_done or _merge_ready:
             layout.separator(factor=0.3)
             be_box = layout.box()
             be_box.alert = True
+            # Show baking/merging progress
             if _any_baking:
                 import time as _btime
-                for _bld, _info in bv._baking_buildings.items():
+                for _bld, _info in list(bv._baking_buildings.items()):
                     _el = _btime.time() - _info.get('start_time', _btime.time())
                     _eta = max(_info.get('offline_eta', 0) - _el, 0)
                     _chunks = len(_info.get('_chunk_procs', [None]))
                     _chunk_txt = f" ({_chunks} chunks)" if _chunks > 1 else ""
-                    if _info.get('_is_merge'):
-                        be_box.label(text=f"\u23f3 {_bld}: merging...", icon='SORTTIME')
+                    _merge_blds = _info.get('_merge_buildings', [])
+                    if _bld == "_MERGE_":
+                        _el_fmt = f"{int(_el)}s" if _el < 120 else f"{int(_el/60)}m"
+                        be_box.label(
+                            text=f"\u23f3 Merging {len(_merge_blds)} buildings... {_el_fmt}",
+                            icon='SORTTIME')
+                    elif _info.get('_is_merge'):
+                        be_box.label(text=f"\u23f3 {_bld}: merging chunks...", icon='SORTTIME')
                     elif _eta > 0:
                         _e = f"{int(_eta)}s" if _eta < 120 else f"{int(_eta/60)}m"
                         be_box.label(text=f"\u23f3 {_bld}: baking{_chunk_txt} ~{_e}",
@@ -2012,19 +2020,29 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
                     else:
                         be_box.label(text=f"\u23f3 {_bld}: finishing{_chunk_txt}...",
                                      icon='SORTTIME')
+            # Show baked buildings + Save & Merge button
             if _any_done:
                 _done_list = list(bv._bake_done.keys())
                 for _bld in _done_list:
-                    be_box.label(text=f"\u2713 {_bld} — baked", icon='CHECKMARK')
+                    be_box.label(text=f"\u2713 {_bld} \u2014 baked", icon='CHECKMARK')
                 done_row = be_box.row(align=True)
                 done_row.alert = True
                 done_row.scale_y = 2.0
                 _n = len(_done_list)
-                _label = f"Save & Reopen ({_n} buildings)" if _n > 1 else f"Save & Reopen"
-                op_reopen = done_row.operator("bim.fed_rtree_reopen_baked",
-                                              text=_label,
-                                              icon='FILE_BLEND')
-                op_reopen.building = ""  # empty = merge all
+                _label = f"Save & Merge ({_n} buildings)" if _n > 1 else "Save & Merge"
+                op_merge = done_row.operator("bim.fed_rtree_reopen_baked",
+                                             text=_label, icon='FILE_BLEND')
+                op_merge.building = ""
+                op_merge.action = "merge"
+            # Show MERGED — Reopen button
+            if _merge_ready:
+                mr_row = be_box.row(align=True)
+                mr_row.alert = True
+                mr_row.scale_y = 2.0
+                op_open = mr_row.operator("bim.fed_rtree_reopen_baked",
+                                          text="\u2713 MERGED. Reopen.",
+                                          icon='FILE_BLEND')
+                op_open.action = "reopen"
 
         # ── PICK ──
         layout.separator(factor=0.3)

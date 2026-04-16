@@ -92,6 +92,7 @@ _bake_queue = []             # S188: buildings waiting to bake, sorted smallest-
 _MAX_BAKE_WORKERS = 4        # S188: max concurrent bake subprocesses
 _CHUNK_THRESHOLD = 100000    # S189: split into chunks above this element count
 _bake_done = {}              # S189: building_name → baked_path (completed, ready to reopen)
+_merge_done_path = ""        # S189: path to merged session .blend (ready to reopen)
 
 # S182: Progressive load state
 LOAD_DISC_ORDER = ['ARC', 'STR', 'MEP', 'ELEC', 'FP']
