@@ -39,7 +39,7 @@ merging, solving spatial hierarchy mismatch problems through coordinate-based qu
 import bpy
 from bpy.app.handlers import persistent
 from pathlib import Path
-from . import ui, prop, operator, discipline_legend, cache_monitor, color_palette, crud_operators, webui_sync
+from . import ui, prop, operator, discipline_legend, progress_hud, cache_monitor, color_palette, crud_operators, webui_sync
 # from . import ui_federation_tab  # Old experimental sandbox - replaced by ui_federation_project
 from . import ui_federation_project  # Clean enterprise layout under Project Overview
 from . import river  # River Equipment Monitoring - Item 11
@@ -91,6 +91,10 @@ classes = (
     operator.FedRTreeKeepGoing,             # S186-s2: decline offline bake
     operator.FedRTreeCancelBake,            # S186-s2: cancel bake subprocess
     operator.FedRTreeBakeAll,               # S188: parallel bake all buildings
+    operator.FedRTreeRelinkBaked,           # S193: crash recovery — relink from baked/
+    operator.FedRTreeDirectStream,         # S195: direct DB streaming (no .blend files)
+    operator.FedRTreeDirectStreamClear,    # S195: clear direct-streamed objects
+    operator.FedRTreeAutoShredToggle,      # S195: auto-shred furthest when lagging
     operator.FedRTreeShred,                 # S180: remove last loaded collection
     operator.FedRTreeCountBuilding,         # S183: cockpit discipline counts
     operator.FedRTreeCopyGuid,              # S183: clipboard GUID copy
@@ -446,23 +450,206 @@ def federation_save_pre(dummy):
 
 @persistent
 def federation_save_post(dummy):
-    """S174: Restore meshes after save → viewport stays full-fidelity (no flicker).
-    Only runs if thin_save=ON (otherwise meshes were never stripped)."""
+    """S174: Restore meshes after save.
+    S191: Link baked files from temp/ → move to {project}/ on save."""
     _TAG = "[S174][SAVE_POST]"
+
+    # ── S174: thin_save restore ──
     thin_save = False
     try:
         props = bpy.context.scene.BIMFederationProperties
         thin_save = getattr(props, 'thin_save', False)
     except Exception:
         pass
+    if thin_save:
+        print(f"{_TAG} §FINE thin_save=ON — restoring meshes after save (no flicker)")
+        from . import blend_cache
+        blend_cache.restore_template_meshes()
 
-    if not thin_save:
-        print(f"{_TAG} §FINE thin_save=OFF — no restore needed")
+    # ── S191: link baked from temp/, move to project folder ──
+    from . import bbox_visualization as _bv
+    from pathlib import Path as _P
+    import re as _re_sv
+    import shutil as _sh_sv
+    import time as _t_sv
+
+    _db = _bv._db_path_cache or ""
+    if not _db:
+        try:
+            _db = bpy.context.scene.BIMFederationProperties.federation_database_path or ""
+        except Exception:
+            pass
+    if _db:
+        _db = bpy.path.abspath(_db)
+
+    # Find DAGCompiler/baked/ root
+    _baked_root = None
+    if _db:
+        for _anc in _P(_db).resolve().parents:
+            _cand = _anc / "DAGCompiler" / "baked"
+            if _cand.exists():
+                _baked_root = _cand
+                break
+    if not _baked_root:
         return
 
-    print(f"{_TAG} §FINE thin_save=ON — restoring meshes after save (no flicker)")
-    from . import blend_cache
-    blend_cache.restore_template_meshes()
+    _temp_dir = _baked_root / "temp"
+    if not _temp_dir.exists():
+        return
+
+    _temp_files = sorted(_temp_dir.glob("*.blend"))
+    if not _temp_files:
+        return
+
+    # Already linked — skip
+    _already_linked = set()
+    for _lib in bpy.data.libraries:
+        if _lib.filepath:
+            _already_linked.add(_P(bpy.path.abspath(_lib.filepath)).name)
+
+    _to_link = [f for f in _temp_files if f.name not in _already_linked]
+    # Clean up skipped files (already linked from a previous save)
+    _skipped = [f for f in _temp_files if f.name in _already_linked]
+    for _sf in _skipped:
+        try:
+            _sf.unlink()
+        except Exception:
+            pass
+    if _skipped:
+        print(f"[S191] §SAVE_POST cleaned {len(_skipped)} already-linked files from temp/")
+    if not _to_link:
+        # Remove empty temp dir
+        try:
+            _temp_dir.rmdir()
+        except Exception:
+            pass
+        print(f"[S191] §SAVE_POST all {len(_temp_files)} baked files already linked")
+        return
+
+    # Project folder = stem of saved .blend
+    _proj_name = _P(bpy.data.filepath).stem if bpy.data.filepath else "unsaved"
+    _proj_dir = _baked_root / _proj_name
+    _proj_dir.mkdir(exist_ok=True)
+
+    # S193: If too many files, just move to City/ — don't link all at once.
+    # Auto-Stream or Relink handles progressive linking.
+    _SAFE_LINK_LIMIT = 50
+    if len(_to_link) > _SAFE_LINK_LIMIT:
+        _moved = 0
+        for _bf in _to_link:
+            _dst = _proj_dir / _bf.name
+            try:
+                if _dst.exists():
+                    _dst.unlink()
+                _sh_sv.move(str(_bf), str(_dst))
+                _moved += 1
+            except Exception as _me:
+                print(f"[S191] §MOVE_WARN {_bf.name}: {_me}")
+        # Clean up temp/ if empty
+        remaining = list(_temp_dir.glob("*.blend"))
+        if not remaining:
+            try:
+                _temp_dir.rmdir()
+            except Exception:
+                pass
+        # Refresh baked file registry for Auto-Stream
+        _bv._baked_files.clear()
+        import re as _re_refresh
+        for _sub in _baked_root.iterdir():
+            if _sub.is_dir() and _sub.name != "temp":
+                for _rbf in _sub.glob("*.blend"):
+                    _bn = _re_refresh.sub(r'(_baked|_chunk\d+)$', '', _rbf.stem)
+                    _bv._baked_files.setdefault(_bn, []).append(_rbf)
+        print(f"[S191] §SAVE_MOVE_ONLY moved={_moved} to {_proj_dir.name}/ "
+              f"(>{_SAFE_LINK_LIMIT} files — use Auto-Stream or Relink)")
+        _bv._bake_done.clear()
+        return
+
+    _bv._linking_active = True
+    from . import progress_hud as _ph
+    _ph._link_start_time = _t_sv.time()
+    _ph._link_file_count = len(_to_link)
+    _ph._link_total_mb = sum(f.stat().st_size for f in _to_link) / (1024 * 1024)
+    # Force viewport redraw so HUD shows "LINKING" before freeze
+    for _area in bpy.context.screen.areas:
+        if _area.type == 'VIEW_3D':
+            _area.tag_redraw()
+    try:
+        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+    except Exception:
+        pass
+    print(f"[S191] {_t_sv.strftime('%H:%M:%S', _t_sv.localtime())} "
+          f"§SAVE_LINK_START {len(_to_link)} baked files → {_proj_dir.name}/")
+
+    _linked = 0
+    _bld_parents = {}
+    for _bf in _to_link:
+        _bld_name = _re_sv.sub(r'(_baked|_chunk\d+)$', '', _bf.stem)
+        _bf_mb = _bf.stat().st_size / (1024 * 1024)
+
+        # Move to project folder first (so library path is permanent)
+        _dst = _proj_dir / _bf.name
+        try:
+            if _dst.exists():
+                _dst.unlink()
+            _sh_sv.move(str(_bf), str(_dst))
+        except Exception as _me:
+            print(f"[S191] §MOVE_WARN {_bf.name}: {_me}")
+            _dst = _bf  # fallback: link from temp/
+
+        # Link into scene
+        try:
+            with bpy.data.libraries.load(str(_dst), link=True) as (src, dst):
+                _dcols = [c for c in src.collections
+                          if _re_sv.search(r'_[A-Z]{2,5}$', c)]
+                if _dcols:
+                    dst.collections = _dcols
+                elif src.collections:
+                    dst.collections = [src.collections[0]]
+
+            # Nest under building parent collection
+            if _bld_name not in _bld_parents:
+                # Shred old Loaded_* overnight meshes
+                _loaded_prefix = f"Loaded_{_bld_name}_"
+                for _old_col in list(bpy.data.collections):
+                    if _old_col.name.startswith(_loaded_prefix):
+                        for _obj in list(_old_col.objects):
+                            bpy.data.objects.remove(_obj, do_unlink=True)
+                        bpy.data.collections.remove(_old_col)
+                _old_parent = bpy.data.collections.get(f"Loaded_{_bld_name}")
+                if _old_parent:
+                    bpy.data.collections.remove(_old_parent)
+                _pc = bpy.data.collections.get(_bld_name)
+                if _pc is None:
+                    _pc = bpy.data.collections.new(_bld_name)
+                    bpy.context.scene.collection.children.link(_pc)
+                _bld_parents[_bld_name] = _pc
+
+            _parent_col = _bld_parents[_bld_name]
+            for _col in dst.collections:
+                if _col is not None:
+                    _parent_col.children.link(_col)
+                    _linked += 1
+            print(f"[S191] §SAVE_LINK {_bf.name} ({_bf_mb:.1f}MB) → {_proj_dir.name}/{_bld_name}")
+        except Exception as _e:
+            print(f"[S191] §SAVE_LINK_WARN {_bf.name}: {_e}")
+
+    # Clear _bake_done since they're now linked
+    _bv._bake_done.clear()
+
+    # Clean up temp/ if empty
+    remaining = list(_temp_dir.glob("*.blend"))
+    if not remaining:
+        try:
+            _temp_dir.rmdir()
+        except Exception:
+            pass
+
+    _bv._linking_active = False
+    # S191: trigger success message in HUD (visible 5s)
+    from . import progress_hud as _ph
+    _ph._link_success_time = _t_sv.time()
+    print(f"[S191] §SAVE_LINK_DONE linked={_linked} project={_proj_dir.name}")
 
 @persistent
 def federation_load_post_meshes(dummy):
@@ -606,6 +793,13 @@ def federation_depsgraph_update(scene, depsgraph):
 
 def register():
     """Called when addon is enabled"""
+    # S191: Progress HUD — always on, independent of legend/clear
+    progress_hud.register()
+    try:
+        progress_hud.enable_hud()
+    except Exception:
+        pass  # 3D view may not exist yet at registration time
+
     # Attach properties to Blender's Scene
     bpy.types.Scene.BIMFederationProperties = bpy.props.PointerProperty(
         type=prop.BIMFederationProperties
@@ -692,10 +886,26 @@ def register():
     # PDF Terrain module properties
     pdf_terrain.register()
 
+    # S195: Ctrl+Shift+A keymap for Direct Stream toggle
+    wm = bpy.context.window_manager
+    km = wm.keyconfigs.addon.keymaps.new(name='3D View', space_type='VIEW_3D')
+    kmi = km.keymap_items.new('bim.fed_rtree_direct_stream', 'A', 'PRESS', ctrl=True, shift=True)
+    _addon_keymaps.append((km, kmi))
+
     print("✓ federation module registered (consolidated + Digital Twin + River Equipment + 7D Maintenance)")
+
+# S193: keymap storage
+_addon_keymaps = []
 
 def unregister():
     """Called when addon is disabled - cleanup"""
+    # S193: remove keymaps
+    for km, kmi in _addon_keymaps:
+        km.keymap_items.remove(kmi)
+    _addon_keymaps.clear()
+
+    progress_hud.disable_hud()
+    progress_hud.unregister()
     # Remove load handlers
     if restore_federation_index_on_load in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.remove(restore_federation_index_on_load)

@@ -31,6 +31,16 @@ DISCIPLINE_COLORS = {
     'STR': (0.6, 0.4, 0.2, 1.0),         # Brown (concrete)
     'STRUCTURE': (0.6, 0.4, 0.2, 1.0),
     'REB': (0.9, 0.5, 0.2, 1.0),         # Rust/orange (reinforcement)
+    'MEP': (0.0, 0.85, 0.7, 1.0),        # Teal
+    'HVAC': (0.2, 0.6, 0.9, 1.0),        # Sky blue
+    'VENT': (0.4, 0.9, 0.6, 1.0),        # Mint green
+    'HEAT': (0.95, 0.35, 0.15, 1.0),     # Warm orange-red
+    'SANI': (0.3, 0.5, 0.9, 1.0),        # Steel blue
+    'DRAIN': (0.15, 0.35, 0.7, 1.0),     # Deep blue
+    'LIFT': (0.7, 0.3, 0.7, 1.0),        # Violet
+    'CONV': (0.85, 0.65, 0.2, 1.0),      # Gold
+    'SEC': (0.9, 0.2, 0.5, 1.0),         # Pink-red
+    'LIGHT': (1.0, 0.95, 0.4, 1.0),      # Bright yellow
     # Coastal Oasis river restoration disciplines
     'GEO': (0.15, 0.4, 0.65, 0.5),       # Blue water (semi-transparent)
     'BOOM': (0.95, 0.55, 0.1, 1.0),      # High-viz orange (boom barriers)
@@ -38,6 +48,26 @@ DISCIPLINE_COLORS = {
     'IOT': (0.2, 0.8, 0.3, 1.0),         # Monitoring green (IoT sensors)
     'DEFAULT': (0.7, 0.7, 0.7, 0.5),     # Light gray
 }
+
+# S191: auto-generate diverse colors for unknown disciplines
+# Uses golden-angle hue spacing for maximum visual separation
+_auto_color_cache = {}
+
+def get_discipline_color(disc):
+    """Get color for a discipline — known or auto-generated."""
+    if disc in DISCIPLINE_COLORS:
+        return DISCIPLINE_COLORS[disc]
+    if disc in _auto_color_cache:
+        return _auto_color_cache[disc]
+    # Generate from name hash — golden angle ensures diverse hues
+    import colorsys
+    h = (hash(disc) * 0.618033988749895) % 1.0  # golden ratio
+    s = 0.7 + (hash(disc + '_s') % 30) / 100  # 0.7-1.0 saturation
+    v = 0.8 + (hash(disc + '_v') % 20) / 100  # 0.8-1.0 value (bright)
+    r, g, b = colorsys.hsv_to_rgb(h, s, v)
+    color = (r, g, b, 1.0)
+    _auto_color_cache[disc] = color
+    return color
 
 # Global state for visualization
 _bbox_batches = {}
@@ -92,7 +122,42 @@ _bake_queue = []             # S188: buildings waiting to bake, sorted smallest-
 _MAX_BAKE_WORKERS = 4        # S188: max concurrent bake subprocesses
 _CHUNK_THRESHOLD = 100000    # S189: split into chunks above this element count
 _bake_done = {}              # S189: building_name → baked_path (completed, ready to reopen)
+_linking_active = False      # S191: True during save_post linking (HUD shows DO NOT CLOSE)
 _merge_done_path = ""        # S189: path to merged session .blend (ready to reopen)
+
+# S193: DLOD auto-linker state
+_building_centres = {}       # building_name → (cx, cy, cz) in Blender coords
+_baked_files = {}            # building_name → [Path, ...] (baked .blend files on disk)
+_dlod_linked = {}            # building_name → True (currently auto-linked by DLOD)
+_dlod_blacklist = set()      # buildings user manually shredded — don't auto-relink
+_dlod_eye_pos = None         # (x,y,z) updated every frame by draw handler
+_dlod_draw_handler = None    # draw handler for eye position tracking
+_dlod_enabled = False        # True when auto-stream is active
+_DLOD_RADIUS = 300           # metres — link within this distance
+_DLOD_HYSTERESIS = 50        # unlink at radius + hysteresis to prevent thrashing
+_DLOD_ELEMENT_BUDGET = 250000  # max total elements across all linked buildings
+_DLOD_MAX_BUILDING = 10000     # skip auto-link for buildings above this (use manual MESH)
+_building_element_counts = {}  # building_name → element count
+_dlod_linked_elements = 0      # current total elements in linked buildings
+
+# S195: Direct DB streaming state
+_direct_stream_enabled = False   # True when direct-stream timer is active
+_direct_stream_guids = set()     # guids currently in viewport (for dedup + removal)
+_direct_stream_objects = {}      # guid → bpy.types.Object (for distance-based removal)
+_direct_stream_buildings = {}    # building_name → set(guid) (track per-building)
+_DIRECT_STREAM_RADIUS = 100      # metres — stream elements within this distance
+_DIRECT_STREAM_HYSTERESIS = 50   # unlink at radius + hysteresis
+_DIRECT_STREAM_BUDGET = 200000   # max total elements — user shreds manually when needed
+_DIRECT_STREAM_BATCH = 500       # elements per tick
+_DIRECT_STREAM_SHELL_DISCS = {'ARC', 'STR'}  # shell disciplines — streamed first
+_DIRECT_STREAM_NEAR = 50         # metres — within this, stream all disciplines
+_direct_stream_disc_phase = {}   # building_name → 'shell' | 'detail' (tracks phase)
+_direct_stream_active_bld = None # building currently being streamed — finish before switching
+_direct_stream_disc_totals = {}  # building_name → {disc: count} — total per discipline from DB
+_direct_stream_disc_loaded = {}  # building_name → {disc: count} — loaded so far per discipline
+_direct_stream_auto_shred = False  # True = auto-shred furthest building when lagging
+_direct_stream_lag_history = []    # last N tick_ms values for budget tuning
+_DIRECT_STREAM_LAG_TARGET = 1500   # ms — target max tick time (user feels lag above this)
 
 # S182: Progressive load state
 LOAD_DISC_ORDER = ['ARC', 'STR', 'MEP', 'ELEC', 'FP']
@@ -411,6 +476,18 @@ def create_discipline_batches(discipline_bboxes: Dict[str, List[Tuple]], offset:
     return batches
 
 
+def _dlod_track_eye():
+    """POST_VIEW draw callback — runs every frame, updates eye position for DLOD."""
+    global _dlod_eye_pos
+    try:
+        rv3d = bpy.context.region_data
+        if rv3d:
+            eye = rv3d.view_matrix.inverted().translation
+            _dlod_eye_pos = (eye.x, eye.y, eye.z)
+    except Exception:
+        pass
+
+
 def draw_bboxes():
     """Draw callback function for viewport rendering"""
     global _bbox_batches, _is_enabled, _discipline_visibility
@@ -439,18 +516,23 @@ def draw_bboxes():
         color = _color_override if _color_override else DISCIPLINE_COLORS.get(discipline, DISCIPLINE_COLORS['DEFAULT'])
         # Ghost wireframes when building is active and solid meshes block the view.
         # Keep full alpha when x-ray is on (user wants to see through).
-        if _active_building:
+        # S195: extra-light when DirectStream has meshed the building.
+        _has_ds = bool(_direct_stream_buildings)
+        if _active_building or _has_ds:
             xray_on = False
             for area in bpy.context.screen.areas:
                 if area.type == 'VIEW_3D':
                     xray_on = area.spaces[0].shading.show_xray
                     break
-            if _loaded_collections and not xray_on:
+            if xray_on:
+                alpha = color[3]
+            elif _has_ds and not _active_building:
+                # DirectStream mode — near-invisible so meshes dominate
+                alpha = 0.02
+            elif _loaded_collections:
                 alpha = 0.15
-            elif not xray_on:
-                alpha = 0.25
             else:
-                alpha = color[3]  # keep original alpha when x-ray on
+                alpha = 0.25
             color = (color[0], color[1], color[2], alpha)
         shader.bind()
         shader.uniform_float("color", color)
@@ -628,6 +710,47 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
               f"path={_library_db_cache}")
     else:
         print("[S189] §CACHE library_db=NOT_FOUND (BLOB path unavailable)")
+
+    # S193: Cache building centres for DLOD auto-linker
+    _building_centres.clear()
+    _building_element_counts.clear()
+    try:
+        _bc_conn = sqlite3.connect(db_path)
+        _bc_rows = _bc_conn.execute(
+            "SELECT m.building, COUNT(*), "
+            "  (MIN(r.minX)+MAX(r.maxX))/2, (MIN(r.minY)+MAX(r.maxY))/2, "
+            "  (MIN(r.minZ)+MAX(r.maxZ))/2 "
+            "FROM elements_rtree r JOIN elements_meta m ON r.id = m.rowid "
+            "GROUP BY m.building"
+        ).fetchall() if _has_building_column else []
+        _bc_conn.close()
+        for _bld, _cnt, _cx, _cy, _cz in _bc_rows:
+            if _bld:
+                _building_centres[_bld] = (_cx, _cy, _cz)  # raw IFC coords, same as R-tree
+                _building_element_counts[_bld] = _cnt
+        print(f"[S193] §CACHE building_centres={len(_building_centres)} "
+              f"total_elements={sum(_building_element_counts.values()):,}")
+    except Exception as _bce:
+        print(f"[S193] §CACHE building_centres WARN: {_bce}")
+
+    # S193: Scan baked/ for existing files
+    _baked_files.clear()
+    _dlod_linked.clear()
+    _dlod_blacklist.clear()
+    try:
+        for _anc in Path(db_path).resolve().parents:
+            _br = _anc / "DAGCompiler" / "baked"
+            if _br.exists():
+                import re as _re_bk
+                for _sub in _br.iterdir():
+                    if _sub.is_dir() and _sub.name != "temp":
+                        for _bf in _sub.glob("*.blend"):
+                            _bn = _re_bk.sub(r'(_baked|_chunk\d+)$', '', _bf.stem)
+                            _baked_files.setdefault(_bn, []).append(_bf)
+                break
+        print(f"[S193] §CACHE baked_files={len(_baked_files)} buildings")
+    except Exception as _bfe:
+        print(f"[S193] §CACHE baked_files WARN: {_bfe}")
 
     # S178: Create Outliner discipline collections + proxy objects
     # Each proxy empty: eye icon in Outliner → hide_viewport → GPU skips that batch
@@ -981,7 +1104,10 @@ def navigate_to_element(search_term: str, context) -> dict:
 
         for (building, guid, name, disc, ifc_class, mnX, mnY, mnZ, mxX, mxY, mxZ, count), n_tiles in deduped_rows:
             bbox = (mnX, mnY, mnZ, mxX, mxY, mxZ)
-            _highlighted_bboxes.append(bbox)
+            # S189z: skip building envelope highlight only for single-building DBs
+            # (no building column = whole scene IS the building, no selection needed)
+            if _has_building_column:
+                _highlighted_bboxes.append(bbox)
             entry = {'guid': guid, 'name': name, 'disc': disc,
                      'ifc_class': ifc_class, 'bbox': bbox,
                      'building': building, 'count': count,
@@ -1084,14 +1210,16 @@ def fly_to_result(result_index: int, context) -> bool:
     cy_ifc = (bbox[1] + bbox[4]) / 2
     cz_ifc = (bbox[2] + bbox[5]) / 2
     cx, cy, cz = cx_ifc - ox, cy_ifc - oy, cz_ifc - oz
-    size = max(bbox[3]-bbox[0], bbox[4]-bbox[1], bbox[5]-bbox[2], 10.0)
+    diag = ((bbox[3]-bbox[0])**2 + (bbox[4]-bbox[1])**2 + (bbox[5]-bbox[2])**2) ** 0.5
+    view_dist = max(diag * 0.8, 10.0)  # S189z: closer (was size*1.5)
     for area in context.screen.areas:
         if area.type == 'VIEW_3D':
             area.spaces[0].region_3d.view_location = Vector((cx, cy, cz))
-            area.spaces[0].region_3d.view_distance = size * 1.5
+            area.spaces[0].region_3d.view_distance = view_dist
             area.tag_redraw()
             break
-    print(f"[RTree] §FLY building='{r['building']}' blender=({cx:.1f},{cy:.1f},{cz:.1f})")
+    print(f"[RTree] §FLY building='{r['building']}' dist={view_dist:.0f}m "
+          f"blender=({cx:.1f},{cy:.1f},{cz:.1f})")
     return True
 
 
@@ -1269,17 +1397,19 @@ def fly_to_element(elem_index: int, context) -> bool:
     oy = _model_offset.y if _model_offset else 0.0
     oz = _model_offset.z if _model_offset else 0.0
     cx, cy, cz = cx_ifc - ox, cy_ifc - oy, cz_ifc - oz
-    size = max(bbox[3]-bbox[0], bbox[4]-bbox[1], bbox[5]-bbox[2], 0.5)
+    diag = ((bbox[3]-bbox[0])**2 + (bbox[4]-bbox[1])**2 + (bbox[5]-bbox[2])**2) ** 0.5
+    view_dist = max(diag * 2.0, 2.0)  # S189z: closer inspection (was size*6)
 
     for area in context.screen.areas:
         if area.type == 'VIEW_3D':
             area.spaces[0].region_3d.view_location = Vector((cx, cy, cz))
-            area.spaces[0].region_3d.view_distance = max(size * 6.0, 5.0)
+            area.spaces[0].region_3d.view_distance = view_dist
             area.tag_redraw()
             break
 
     _selected_element = {**e, 't': 0}
-    print(f"[RTree] §ELEMENT guid={e['guid'][:12]} class={e['ifc_class']} storey='{e['storey']}'")
+    print(f"[RTree] §ELEMENT guid={e['guid'][:12]} class={e['ifc_class']} "
+          f"storey='{e['storey']}' dist={view_dist:.1f}m")
     return True
 
 

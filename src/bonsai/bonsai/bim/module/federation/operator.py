@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 
 # S187: Version stamp — printed on Preview to confirm running code matches source.
 # Bump this on every code change. Check console for mismatch.
-_FED_VERSION = "S189a"
+_FED_VERSION = "S195"
 
 import bpy
 
@@ -1501,11 +1501,17 @@ class FedRTreeLoadMesh(bpy.types.Operator):
         m = _re_op.search(rf'_({_known_discs})(?:_\d+)?$', label)
         if active_bld and m:
             disc_name = m.group(1)
+            # S189w: building parent collection for Outliner hierarchy
+            bld_parent_label = f"Loaded_{active_bld}"
+            bld_parent = _bpy.data.collections.get(bld_parent_label)
+            if bld_parent is None:
+                bld_parent = _bpy.data.collections.new(bld_parent_label)
+                _bpy.context.scene.collection.children.link(bld_parent)
             disc_label = f"Loaded_{active_bld}_{disc_name}"
             col = _bpy.data.collections.get(disc_label)
             if col is None:
                 col = _bpy.data.collections.new(disc_label)
-                _defer_link = True  # link after all objects added
+                _defer_link = True  # link to building parent after all objects added
             label = disc_label
         else:
             col = _bpy.data.collections.new(label)
@@ -1598,9 +1604,12 @@ class FedRTreeLoadMesh(bpy.types.Operator):
         for row_guid, ghash, rgba, ename, obj_name in elements:
             bv._loaded_guids.add(row_guid)
 
-        # S185: link new collection to scene after all objects placed
+        # S189w: link new collection — under building parent if disc match, else scene root
         if _defer_link:
-            _bpy.context.scene.collection.children.link(col)
+            if active_bld and m:
+                bld_parent.children.link(col)
+            else:
+                _bpy.context.scene.collection.children.link(col)
 
         # ── Register + report (summary only, no per-element spam) ──
         # S185: append to existing list for discipline-merged collections
@@ -2010,12 +2019,17 @@ class FedRTreeOvernight(bpy.types.Operator):
                     xform[r[0]] = r[1:]
             conn2.close()
 
-            # Get or create discipline collection
+            # S189w: Get or create building parent + discipline collection
+            bld_parent_label = f"Loaded_{active_bld}"
+            bld_parent = _bpy.data.collections.get(bld_parent_label)
+            if bld_parent is None:
+                bld_parent = _bpy.data.collections.new(bld_parent_label)
+                _bpy.context.scene.collection.children.link(bld_parent)
             disc_label = f"Loaded_{active_bld}_{disc}"
             col = _bpy.data.collections.get(disc_label)
             if col is None:
                 col = _bpy.data.collections.new(disc_label)
-                _bpy.context.scene.collection.children.link(col)
+                bld_parent.children.link(col)
 
             off = bv._model_offset
             ox = off.x if off else 0.0
@@ -2273,20 +2287,48 @@ def _spawn_bake(building, total_elements=0):
             return False
 
     scripts_root = Path(blob_script or legacy_script).parent.parent
-    out_dir = str(scripts_root / "baked")
+    # S192a: baked/ lives under DAGCompiler/ (compile inputs + outputs together)
+    out_dir = str(scripts_root / "DAGCompiler" / "baked" / "temp")
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
     blender_bin = bpy.app.binary_path
     total = total_elements
 
     if use_blob and total >= bv._CHUNK_THRESHOLD:
-        # ── S189: Chunk-parallel — split into up to 4 equal workers + merge ──
-        # Smart sizing: ~25K per chunk. 50K→2, 100K→4, 250K→4, 1M→4
-        num_chunks = min(4, max(2, total // 25000))
-        chunk_size = (total + num_chunks - 1) // num_chunks
+        # ── S189z: Discipline-based chunking — each chunk gets complete disciplines ──
+        # Query discipline counts, partition into balanced chunks (~25-35K each).
+        # Result: disc collections are unique across chunks → clean Outliner.
+        import sqlite3 as _sq
+        _conn = _sq.connect(db_path)
+        if bv._has_building_column:
+            _disc_rows = _conn.execute(
+                "SELECT discipline, COUNT(*) FROM elements_meta "
+                "WHERE building = ? GROUP BY discipline ORDER BY discipline",
+                (building,)).fetchall()
+        else:
+            _disc_rows = _conn.execute(
+                "SELECT discipline, COUNT(*) FROM elements_meta "
+                "GROUP BY discipline ORDER BY discipline").fetchall()
+        _conn.close()
+
+        # Partition disciplines into up to 4 balanced chunks
+        _target = max(25000, total // 4)
+        _chunks = []  # list of (disc_list, element_count)
+        _cur_discs = []
+        _cur_count = 0
+        for _d, _c in _disc_rows:
+            _cur_discs.append(_d or 'OTHER')
+            _cur_count += _c
+            if _cur_count >= _target and len(_chunks) < 3:  # leave room for remainder
+                _chunks.append((_cur_discs[:], _cur_count))
+                _cur_discs = []
+                _cur_count = 0
+        if _cur_discs:
+            _chunks.append((_cur_discs, _cur_count))
+
+        num_chunks = len(_chunks)
         procs = []
         chunk_paths = []
-        for i in range(num_chunks):
-            offset_i = i * chunk_size
-            limit_i = chunk_size
+        for i, (_discs, _cnt) in enumerate(_chunks):
             chunk_out = str(Path(out_dir) / f"{building}_chunk{i}.blend")
             chunk_paths.append(chunk_out)
             cmd = [
@@ -2296,15 +2338,14 @@ def _spawn_bake(building, total_elements=0):
                 "--db", db_path,
                 "--library-db", lib_db_path,
                 "--building", building,
-                "--offset", str(offset_i),
-                "--limit", str(limit_i),
+                "--disciplines", ",".join(_discs),
                 "--output", chunk_out,
             ]
             try:
                 proc = _sp.Popen(cmd, stdout=_sp.PIPE, stderr=_sp.STDOUT)
                 procs.append(proc)
                 print(f"[S189] {_ts()} §BLOB_SPAWN bld={building} chunk={i+1}/{num_chunks} "
-                      f"pid={proc.pid} offset={offset_i} limit={limit_i}")
+                      f"pid={proc.pid} discs={_discs} count={_cnt}")
             except Exception as e:
                 print(f"[S189] §BAKE_ERROR bld={building} chunk={i} launch_error={e}")
 
@@ -2709,6 +2750,987 @@ class FedRTreeCancelBake(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class FedRTreeRelinkBaked(bpy.types.Operator):
+    """S193: Relink baked .blend files from City/ folder after crash recovery."""
+    bl_idname = "bim.fed_rtree_relink_baked"
+    bl_label = "Relink Baked"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        import re as _re
+        from pathlib import Path as _P
+        from . import bbox_visualization as bv
+
+        db_path = bv._db_path_cache
+        if not db_path:
+            self.report({'WARNING'}, "No DB loaded — Preview first")
+            return {'CANCELLED'}
+
+        # Find baked/ root
+        _baked_root = None
+        for _anc in _P(db_path).resolve().parents:
+            _cand = _anc / "DAGCompiler" / "baked"
+            if _cand.exists():
+                _baked_root = _cand
+                break
+        if not _baked_root:
+            self.report({'WARNING'}, "No baked/ folder found")
+            return {'CANCELLED'}
+
+        # Scan all project subdirs + temp/ for .blend files
+        all_blends = []
+        for subdir in _baked_root.iterdir():
+            if subdir.is_dir():
+                all_blends.extend(sorted(subdir.glob("*.blend")))
+
+        if not all_blends:
+            self.report({'INFO'}, "No baked files found")
+            return {'FINISHED'}
+
+        # Skip already linked
+        already = set()
+        for lib in bpy.data.libraries:
+            if lib.filepath:
+                already.add(_P(bpy.path.abspath(lib.filepath)).name)
+
+        to_link = [f for f in all_blends if f.name not in already]
+        if not to_link:
+            self.report({'INFO'}, f"All {len(all_blends)} baked files already linked")
+            return {'FINISHED'}
+
+        bv._linking_active = True
+        linked = 0
+        bld_parents = {}
+        for bf in to_link:
+            bld_name = _re.sub(r'(_baked|_chunk\d+)$', '', bf.stem)
+            try:
+                with bpy.data.libraries.load(str(bf), link=True) as (src, dst):
+                    dcols = [c for c in src.collections if _re.search(r'_[A-Z]{2,5}$', c)]
+                    if dcols:
+                        dst.collections = dcols
+                    elif src.collections:
+                        dst.collections = [src.collections[0]]
+
+                if bld_name not in bld_parents:
+                    pc = bpy.data.collections.get(bld_name)
+                    if pc is None:
+                        pc = bpy.data.collections.new(bld_name)
+                        bpy.context.scene.collection.children.link(pc)
+                    bld_parents[bld_name] = pc
+
+                for col in dst.collections:
+                    if col is not None:
+                        bld_parents[bld_name].children.link(col)
+                        linked += 1
+                print(f"[S193] §RELINK {bf.name} → {bld_name}")
+            except Exception as e:
+                print(f"[S193] §RELINK_WARN {bf.name}: {e}")
+
+        bv._linking_active = False
+        print(f"[S193] §RELINK_DONE linked={linked} total_files={len(to_link)}")
+        self.report({'INFO'}, f"Relinked {linked} collections from {len(to_link)} files")
+        return {'FINISHED'}
+
+
+# ── S193: DLOD auto-linker ──
+
+def _dlod_link_building(bld_name, light=False):
+    """Link a baked building's .blend files into the scene.
+    light=True: only link ARC+STR collections (for large buildings)."""
+    import re as _re
+    from . import bbox_visualization as bv
+    from pathlib import Path as _P
+
+    _LIGHT_DISCS = {'ARC', 'STR'}
+
+    # Skip if already linked (library ref exists)
+    for lib in bpy.data.libraries:
+        if lib.filepath and bld_name in lib.filepath:
+            return 0
+
+    files = bv._baked_files.get(bld_name, [])
+    if not files:
+        return 0
+    linked = 0
+    for bf in files:
+        try:
+            with bpy.data.libraries.load(str(bf), link=True) as (src, dst):
+                dcols = [c for c in src.collections if _re.search(r'_[A-Z]{2,5}$', c)]
+                if light and dcols:
+                    # Only link ARC/STR for large buildings
+                    dcols = [c for c in dcols
+                             if any(c.endswith(f'_{d}') for d in _LIGHT_DISCS)]
+                if dcols:
+                    dst.collections = dcols
+                elif not light and src.collections:
+                    dst.collections = [src.collections[0]]
+
+            pc = bpy.data.collections.get(bld_name)
+            if pc is None:
+                pc = bpy.data.collections.new(bld_name)
+                bpy.context.scene.collection.children.link(pc)
+
+            for col in dst.collections:
+                if col is not None:
+                    pc.children.link(col)
+                    linked += 1
+        except Exception as e:
+            print(f"[S193] §DLOD_LINK_WARN {bf.name}: {e}")
+    if linked:
+        print(f"[S193] §DLOD_LINK {bld_name} cols={linked}")
+    return linked
+
+
+def _dlod_unlink_building(bld_name):
+    """Unlink a building's collections + library refs (reverse of link)."""
+    pc = bpy.data.collections.get(bld_name)
+    if pc:
+        for child in list(pc.children):
+            for obj in list(child.objects):
+                bpy.data.objects.remove(obj, do_unlink=True)
+            pc.children.unlink(child)
+            bpy.data.collections.remove(child)
+        # Remove empty parent
+        if len(pc.objects) == 0 and len(pc.children) == 0:
+            scene_col = bpy.context.scene.collection
+            if pc.name in {c.name for c in scene_col.children}:
+                scene_col.children.unlink(pc)
+            bpy.data.collections.remove(pc)
+    # Remove library refs
+    for lib in list(bpy.data.libraries):
+        if lib.filepath and bld_name in lib.filepath:
+            bpy.data.libraries.remove(lib)
+    print(f"[S193] §DLOD_UNLINK {bld_name}")
+
+
+def _dlod_auto_stream():
+    """Timer: auto-link/unlink baked buildings based on camera distance."""
+    import math
+    from . import bbox_visualization as bv
+
+    if not bv._dlod_enabled or not bv._building_centres:
+        return 3.0
+
+    # Read eye position from draw handler (updated every frame)
+    if not bv._dlod_eye_pos:
+        return 1.0
+    cam = bv._dlod_eye_pos  # (x, y, z) tuple
+
+    _off = bv._model_offset
+    if _off:
+        cx, cy, cz = cam[0] - _off.x, cam[1] - _off.y, cam[2] - _off.z
+    else:
+        cx, cy, cz = cam[0], cam[1], cam[2]
+
+    # Unlink far buildings (farthest first — free budget for nearer ones)
+    _far = []
+    for bld in list(bv._dlod_linked.keys()):
+        centre = bv._building_centres.get(bld)
+        if not centre:
+            continue
+        dist = math.sqrt((cx - centre[0])**2 + (cy - centre[1])**2 + (cz - centre[2])**2)
+        if dist > bv._DLOD_RADIUS + bv._DLOD_HYSTERESIS:
+            _far.append((dist, bld))
+    _far.sort(reverse=True)  # farthest first
+    _unlinked = 0
+    for _, bld in _far:
+        bv._dlod_linked_elements -= bv._building_element_counts.get(bld, 0)
+        _dlod_unlink_building(bld)
+        del bv._dlod_linked[bld]
+        _unlinked += 1
+        if _unlinked >= 2:
+            break  # max 2 unlinks per tick to avoid stutter
+
+    # Link nearest unlinked building (max 1 per tick, respect element budget)
+    # Pre-warm next candidate on background thread (OS page cache)
+    _candidates = []
+    for bld in bv._baked_files:
+        if bld in bv._dlod_linked or bld in bv._dlod_blacklist:
+            continue
+        centre = bv._building_centres.get(bld)
+        if not centre:
+            continue
+        dist = math.sqrt((cx - centre[0])**2 + (cy - centre[1])**2 + (cz - centre[2])**2)
+        if dist < bv._DLOD_RADIUS:
+            _candidates.append((dist, bld))
+
+    if _candidates:
+        import threading
+        _candidates.sort()  # nearest first
+        _, bld = _candidates[0]
+        bld_count = bv._building_element_counts.get(bld, 0)
+
+        if bv._dlod_linked_elements + bld_count > bv._DLOD_ELEMENT_BUDGET:
+            print(f"[S193] §DLOD_BUDGET {bv._dlod_linked_elements:,}+{bld_count:,} "
+                  f"> {bv._DLOD_ELEMENT_BUDGET:,} — skipping {bld}")
+        elif bld == getattr(_dlod_auto_stream, '_prewarmed', None):
+            # Pre-warmed last tick — now link it (fast, file in OS cache)
+            _is_large = bld_count > bv._DLOD_MAX_BUILDING
+            _dlod_link_building(bld, light=_is_large)
+            bv._dlod_linked[bld] = True
+            bv._dlod_linked_elements += bld_count
+            _dlod_auto_stream._prewarmed = None
+            # Pre-warm next candidate
+            if len(_candidates) > 1:
+                _, _next = _candidates[1]
+                _dlod_auto_stream._prewarmed = _next
+                for _nf in bv._baked_files.get(_next, []):
+                    threading.Thread(target=lambda p: open(p, 'rb').read(),
+                                     args=(str(_nf),), daemon=True).start()
+        else:
+            # First time seeing this candidate — pre-warm, link next tick
+            _dlod_auto_stream._prewarmed = bld
+            for _nf in bv._baked_files.get(bld, []):
+                threading.Thread(target=lambda p: open(p, 'rb').read(),
+                                 args=(str(_nf),), daemon=True).start()
+
+    # Unlink is instant, link is slow — run frequently for responsive unlink,
+    # the 1-per-tick link cap prevents stutter
+    return 1.0  # re-check every 1 second
+
+
+class FedRTreeAutoStream(bpy.types.Operator):
+    """S193: Toggle auto-stream — link/unlink baked buildings by camera distance."""
+    bl_idname = "bim.fed_rtree_auto_stream"
+    bl_label = "Auto-Stream"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        from . import bbox_visualization as bv
+        from pathlib import Path as _P
+
+        # Auto-populate centres and baked files if not cached yet
+        if not bv._building_centres or not bv._baked_files:
+            # Find DB path from scene property or cached
+            _db = bv._db_path_cache or ""
+            if not _db:
+                try:
+                    _db = context.scene.BIMFederationProperties.federation_database_path or ""
+                except Exception:
+                    pass
+            if _db:
+                _db = bpy.path.abspath(_db)
+
+            if not _db or not _P(_db).exists():
+                self.report({'WARNING'}, "No DB path — set federation database first")
+                return {'CANCELLED'}
+
+            # Populate building centres from DB
+            if not bv._building_centres:
+                import sqlite3
+                try:
+                    _conn = sqlite3.connect(_db)
+                    _cols = [r[1] for r in _conn.execute("PRAGMA table_info(elements_meta)").fetchall()]
+                    if 'building' in _cols:
+                        _rows = _conn.execute(
+                            "SELECT m.building, COUNT(*), "
+                            "  (MIN(r.minX)+MAX(r.maxX))/2, (MIN(r.minY)+MAX(r.maxY))/2, "
+                            "  (MIN(r.minZ)+MAX(r.maxZ))/2 "
+                            "FROM elements_rtree r JOIN elements_meta m ON r.id = m.rowid "
+                            "GROUP BY m.building"
+                        ).fetchall()
+                        for _bld, _cnt, _cx, _cy, _cz in _rows:
+                            if _bld:
+                                bv._building_centres[_bld] = (_cx, _cy, _cz)
+                                bv._building_element_counts[_bld] = _cnt
+                    _conn.close()
+                    print(f"[S193] §AUTO_CACHE centres={len(bv._building_centres)}")
+                except Exception as _e:
+                    print(f"[S193] §AUTO_CACHE WARN: {_e}")
+
+            # Scan baked files
+            if not bv._baked_files:
+                import re as _re_bk
+                for _anc in _P(_db).resolve().parents:
+                    _br = _anc / "DAGCompiler" / "baked"
+                    if _br.exists():
+                        for _sub in _br.iterdir():
+                            if _sub.is_dir() and _sub.name != "temp":
+                                for _bf in _sub.glob("*.blend"):
+                                    _bn = _re_bk.sub(r'(_baked|_chunk\d+)$', '', _bf.stem)
+                                    bv._baked_files.setdefault(_bn, []).append(_bf)
+                        break
+                print(f"[S193] §AUTO_CACHE baked_files={len(bv._baked_files)}")
+
+        if not bv._building_centres:
+            self.report({'WARNING'}, "No buildings found in DB")
+            return {'CANCELLED'}
+        if not bv._baked_files:
+            self.report({'WARNING'}, "No baked files found")
+            return {'CANCELLED'}
+
+        bv._dlod_enabled = not bv._dlod_enabled
+
+        if bv._dlod_enabled:
+            # Discover already-linked buildings from scene (e.g. after reopen)
+            import re as _re_dl
+            bv._dlod_linked.clear()
+            bv._dlod_linked_elements = 0
+            for lib in bpy.data.libraries:
+                if lib.filepath and "baked" in lib.filepath:
+                    _stem = _P(bpy.path.abspath(lib.filepath)).stem
+                    _bn = _re_dl.sub(r'(_baked|_chunk\d+)$', '', _stem)
+                    if _bn not in bv._dlod_linked:
+                        bv._dlod_linked[_bn] = True
+                        bv._dlod_linked_elements += bv._building_element_counts.get(_bn, 0)
+            # Register eye-tracking draw handler
+            if bv._dlod_draw_handler is None:
+                bv._dlod_draw_handler = bpy.types.SpaceView3D.draw_handler_add(
+                    bv._dlod_track_eye, (), 'WINDOW', 'POST_VIEW')
+            if not bpy.app.timers.is_registered(_dlod_auto_stream):
+                bpy.app.timers.register(_dlod_auto_stream, first_interval=1.0)
+            print(f"[S193] §DLOD_ON radius={bv._DLOD_RADIUS}m "
+                  f"buildings={len(bv._baked_files)} centres={len(bv._building_centres)} "
+                  f"already_linked={len(bv._dlod_linked)} "
+                  f"elements={bv._dlod_linked_elements:,}/{bv._DLOD_ELEMENT_BUDGET:,}")
+            self.report({'INFO'}, f"Auto-Stream ON — {bv._DLOD_RADIUS}m radius")
+        else:
+            if bpy.app.timers.is_registered(_dlod_auto_stream):
+                bpy.app.timers.unregister(_dlod_auto_stream)
+            if bv._dlod_draw_handler:
+                bpy.types.SpaceView3D.draw_handler_remove(bv._dlod_draw_handler, 'WINDOW')
+                bv._dlod_draw_handler = None
+            print(f"[S193] §DLOD_OFF linked={len(bv._dlod_linked)}")
+            self.report({'INFO'}, f"Auto-Stream OFF — {len(bv._dlod_linked)} buildings remain linked")
+
+        return {'FINISHED'}
+
+
+# ── S195: Direct DB Streaming — tessellate from BLOBs, no .blend files ────────
+
+
+def _direct_stream_remove_building(bld_name):
+    """Remove all direct-streamed objects for a building.
+    S195: batch unlink — remove collection (unlinks all children in one shot),
+    then orphan purge. Avoids O(n^2) per-object remove + depsgraph reindex."""
+    import bpy as _bpy
+    from . import bbox_visualization as bv
+    import time
+
+    t0 = time.time()
+    guids = bv._direct_stream_buildings.pop(bld_name, set())
+    bv._direct_stream_disc_phase.pop(bld_name, None)
+    if bv._direct_stream_active_bld == bld_name:
+        bv._direct_stream_active_bld = None
+    count = len(guids)
+
+    # Drop tracking refs (fast — just dict/set ops)
+    for guid in guids:
+        bv._direct_stream_objects.pop(guid, None)
+        bv._direct_stream_guids.discard(guid)
+
+    # Remove collection + disc sub-collections
+    col_label = f"DirectStream_{bld_name}"
+    col = _bpy.data.collections.get(col_label)
+    if col:
+        # Recurse: unlink objects from disc sub-collections first
+        for child in list(col.children):
+            for obj in list(child.objects):
+                child.objects.unlink(obj)
+            col.children.unlink(child)
+            _bpy.data.collections.remove(child)
+        # Direct objects on parent
+        for obj in list(col.objects):
+            col.objects.unlink(obj)
+        scene_col = _bpy.context.scene.collection
+        if col.name in {c.name for c in scene_col.children}:
+            scene_col.children.unlink(col)
+        _bpy.data.collections.remove(col)
+    bv._direct_stream_disc_loaded.pop(bld_name, None)
+
+    # Orphan purge — clean up mesh datablocks with no users
+    # Use do_local_ids only to avoid touching library data
+    # S195: skip orphans_purge — too slow with thousands of datablocks.
+    # Unlinking from collections clears viewport. Orphans cleaned on save.
+
+    elapsed_ms = (time.time() - t0) * 1000
+    if count:
+        print(f"[S195] §DS_UNLINK {bld_name} removed={count:,} unlink_ms={elapsed_ms:.0f}ms")
+    return count
+
+
+def _direct_stream_tick():
+    """Timer: stream elements from DB BLOBs based on camera distance.
+    No .blend files. No libraries.load(). Pure SQL + from_pydata()."""
+    import math
+    import time
+    import sqlite3
+    import bpy as _bpy
+    from mathutils import Matrix, Euler
+    from . import bbox_visualization as bv
+
+    if not bv._direct_stream_enabled:
+        return None  # unregister
+
+    if not bv._building_centres or not bv._db_path_cache:
+        return 2.0
+
+    # Read eye position from draw handler
+    if not bv._dlod_eye_pos:
+        return 1.0
+    cam = bv._dlod_eye_pos
+
+    _off = bv._model_offset
+    if _off:
+        cx, cy, cz = cam[0] - _off.x, cam[1] - _off.y, cam[2] - _off.z
+    else:
+        cx, cy, cz = cam
+
+    # ── Streaming logic ──
+    # Shell (ARC+STR): locked — finish one building before starting the next.
+    # Detail (all discs): unlocked — stream if close (<50m), stop if not.
+    # No unlink — streamed buildings stay in scene. Shred for manual cleanup.
+    current_count = len(bv._direct_stream_guids)
+    if current_count >= bv._DIRECT_STREAM_BUDGET:
+        return 2.0  # at budget — idle
+
+    # Compute distances for all buildings
+    _bld_dists = {}
+    for _b, centre in bv._building_centres.items():
+        _bld_dists[_b] = math.sqrt(
+            (cx - centre[0])**2 + (cy - centre[1])**2 + (cz - centre[2])**2)
+
+    # ── Pause active building if user moved out of range ──
+    _active = bv._direct_stream_active_bld
+    if _active:
+        _active_dist = _bld_dists.get(_active, 999)
+        if _active_dist > bv._DIRECT_STREAM_RADIUS:
+            print(f"[S195] §DS_PAUSE {_active} dist={_active_dist:.0f}m — out of range")
+            bv._direct_stream_active_bld = None
+            # Don't mark done — resume if user returns
+
+    # ── Detail streaming (no lock): any building within 50m gets detail ──
+    bld = None
+    phase = None
+    for _b, _d in _bld_dists.items():
+        if _d < bv._DIRECT_STREAM_NEAR:
+            _ph = bv._direct_stream_disc_phase.get(_b)
+            if _ph == 'done':
+                continue  # fully streamed — skip
+            if _ph in ('shell', 'shell_done'):
+                bv._direct_stream_disc_phase[_b] = 'detail'
+            if bv._direct_stream_disc_phase.get(_b) == 'detail':
+                already = len(bv._direct_stream_buildings.get(_b, set()))
+                total = bv._building_element_counts.get(_b, 0)
+                if already < total:
+                    bld = _b
+                    phase = 'detail'
+                    break  # stream this one this tick
+
+    # ── Shell streaming (locked): finish current before switching ──
+    if not bld:
+        bld = bv._direct_stream_active_bld
+        if not bld:
+            # Pick nearest building within radius that still needs shell
+            _candidates = []
+            for _b, _d in _bld_dists.items():
+                if _d < bv._DIRECT_STREAM_RADIUS:
+                    _ph = bv._direct_stream_disc_phase.get(_b, 'shell')
+                    if _ph == 'shell':
+                        already = len(bv._direct_stream_buildings.get(_b, set()))
+                        total = bv._building_element_counts.get(_b, 0)
+                        if already < total:
+                            _candidates.append((_d, _b))
+            if not _candidates:
+                return 1.0
+            _candidates.sort()
+            _, bld = _candidates[0]
+            bv._direct_stream_active_bld = bld
+            # Query disc totals for HUD bars
+            if bld not in bv._direct_stream_disc_totals:
+                try:
+                    _dc = sqlite3.connect(bv._db_path_cache)
+                    _bc = "m.building = ? AND" if bv._has_building_column else ""
+                    _bp = (bld,) if bv._has_building_column else ()
+                    _dr = _dc.execute(f"""
+                        SELECT m.discipline, COUNT(*)
+                        FROM elements_meta m
+                        JOIN element_instances i ON m.guid = i.guid
+                        WHERE {_bc} i.geometry_hash IS NOT NULL
+                          AND m.ifc_class != 'IfcOpeningElement'
+                        GROUP BY m.discipline
+                    """, _bp).fetchall()
+                    bv._direct_stream_disc_totals[bld] = {d: c for d, c in _dr}
+                    _dc.close()
+                except Exception:
+                    pass
+            _dtot = bv._direct_stream_disc_totals.get(bld, {})
+            _disc_str = ' '.join(f"{d}={c:,}" for d, c in sorted(_dtot.items()))
+            print(f"[S195] §DS_START {bld} "
+                  f"elements={bv._building_element_counts.get(bld, 0):,} [{_disc_str}]")
+            # S195: fly camera to face the building (only for first or large buildings)
+            _el_count = bv._building_element_counts.get(bld, 0)
+            _is_first = len(bv._direct_stream_buildings) == 0
+            _centre = bv._building_centres.get(bld)
+            if _centre and (_is_first or _el_count > 5000):
+                _off2 = bv._model_offset
+                _bx = _centre[0] - (_off2.x if _off2 else 0.0)
+                _by = _centre[1] - (_off2.y if _off2 else 0.0)
+                _bz = _centre[2] - (_off2.z if _off2 else 0.0)
+                _target_dist = max(80, min(300, _el_count ** 0.4))
+                # Smooth fly-to: interpolate over 10 steps
+                for _area in _bpy.context.screen.areas:
+                    if _area.type == 'VIEW_3D':
+                        _r3d = _area.spaces[0].region_3d
+                        _sx = _r3d.view_location.x
+                        _sy = _r3d.view_location.y
+                        _sz = _r3d.view_location.z
+                        _sd = _r3d.view_distance
+                        _steps = 10
+                        _step = [0]
+                        def _fly_step(_sx=_sx, _sy=_sy, _sz=_sz, _sd=_sd,
+                                      _tx=_bx, _ty=_by, _tz=_bz, _td=_target_dist,
+                                      _r3d=_r3d, _area=_area, _step=_step, _n=_steps):
+                            _step[0] += 1
+                            t = _step[0] / _n
+                            # Ease-out cubic
+                            t = 1 - (1 - t) ** 3
+                            _r3d.view_location.x = _sx + (_tx - _sx) * t
+                            _r3d.view_location.y = _sy + (_ty - _sy) * t
+                            _r3d.view_location.z = _sz + (_tz - _sz) * t
+                            _r3d.view_distance = _sd + (_td - _sd) * t
+                            _area.tag_redraw()
+                            if _step[0] >= _n:
+                                return None  # unregister
+                            return 0.03  # ~30fps
+                        _bpy.app.timers.register(_fly_step, first_interval=0.03)
+                        print(f"[S195] §DS_FLY {bld} centre=({_bx:.0f},{_by:.0f},{_bz:.0f}) "
+                              f"dist={_target_dist:.0f}m")
+                        break
+            # S195: Pre-tessellate all unique hashes for this building
+            # One upfront cost → all subsequent ticks are pure placement (fast)
+            if bv._library_db_cache and bv._db_path_cache:
+                _pt0 = time.time()
+                _already = {m.name for m in _bpy.data.meshes}
+                try:
+                    _ptconn = sqlite3.connect(bv._db_path_cache)
+                    _bc2 = "m.building = ? AND" if bv._has_building_column else ""
+                    _bp2 = (bld,) if bv._has_building_column else ()
+                    _all_hashes = [r[0] for r in _ptconn.execute(f"""
+                        SELECT DISTINCT i.geometry_hash
+                        FROM elements_meta m
+                        JOIN element_instances i ON m.guid = i.guid
+                        WHERE {_bc2} i.geometry_hash IS NOT NULL
+                    """, _bp2).fetchall()]
+                    _ptconn.close()
+                    _to_create = [h for h in _all_hashes if h not in _already]
+                    if _to_create:
+                        _created = _tessellate_from_blobs(_to_create, bv._library_db_cache)
+                        _pt_ms = (time.time() - _pt0) * 1000
+                        print(f"[S195] §PRE_TESS {bld} unique={len(_all_hashes):,} "
+                              f"new={len(_created):,} cached={len(_all_hashes)-len(_to_create):,} "
+                              f"ms={_pt_ms:.0f}")
+                    else:
+                        print(f"[S195] §PRE_TESS {bld} all {len(_all_hashes):,} hashes cached")
+                except Exception as _pe:
+                    print(f"[S195] §PRE_TESS WARN: {_pe}")
+        phase = 'shell'
+
+    dist_nearest = _bld_dists.get(bld, 999)
+
+    # Query next batch of elements for this building
+    t0 = time.time()
+    db_path = bv._db_path_cache
+    lib_db = bv._library_db_cache
+    if not lib_db:
+        return 2.0
+
+    # S195: Adaptive batching — 1000 when meshes pre-cached, 500 default
+    _last_new = getattr(_direct_stream_tick, '_last_hashes_new', 0)
+    _last_ms = getattr(_direct_stream_tick, '_last_tick_ms', 0)
+    if _last_new == 0 and _last_ms < 1500:
+        batch = 1000  # all meshes pre-cached — placement only
+    else:
+        batch = bv._DIRECT_STREAM_BATCH  # default 500
+
+    budget_left = bv._DIRECT_STREAM_BUDGET - current_count
+    if budget_left <= 0:
+        return 1.0
+    batch = min(batch, budget_left)
+
+    # Track offset per building+phase (shell and detail have different queries)
+    _offset_key = f"{bld}_{phase}"
+    _phase_offsets = getattr(_direct_stream_tick, '_phase_offsets', {})
+    offset = _phase_offsets.get(_offset_key, 0)
+
+    try:
+        conn = sqlite3.connect(db_path)
+        bld_clause = "m.building = ? AND" if bv._has_building_column else ""
+        bld_params = (bld,) if bv._has_building_column else ()
+
+        # S195: discipline filter per phase
+        _shell = tuple(bv._DIRECT_STREAM_SHELL_DISCS)
+        disc_clause = ""
+        disc_params = ()
+        if phase == 'shell':
+            disc_clause = f"AND m.discipline IN ({','.join('?' * len(_shell))})"
+            disc_params = _shell
+        elif phase == 'detail':
+            disc_clause = f"AND m.discipline NOT IN ({','.join('?' * len(_shell))})"
+            disc_params = _shell
+
+        rows = conn.execute(f"""
+            SELECT m.guid, i.geometry_hash, m.material_rgba, m.element_name,
+                   m.material_name, m.discipline
+            FROM elements_meta m
+            JOIN element_instances i ON m.guid = i.guid
+            WHERE {bld_clause} i.geometry_hash IS NOT NULL
+              AND m.ifc_class != 'IfcOpeningElement'
+              {disc_clause}
+            LIMIT ? OFFSET ?
+        """, bld_params + disc_params + (batch, offset)).fetchall()
+
+        # Filter already-streamed
+        elements = []
+        unique_hashes = set()
+        for row in rows:
+            guid, ghash, rgba, ename = row[0], row[1], row[2], row[3]
+            mat_name, disc = row[4], row[5]
+            if guid in bv._direct_stream_guids:
+                continue
+            obj_name = f"{(ename or '')[:50]}_{guid[:8]}" if ename else guid[:12]
+            elements.append((guid, ghash, rgba, ename, obj_name, mat_name, disc))
+            unique_hashes.add(ghash)
+
+        if not elements:
+            conn.close()
+            if phase == 'shell':
+                # ARC+STR exhausted — mark shell complete, release lock
+                already = len(bv._direct_stream_buildings.get(bld, set()))
+                bv._direct_stream_disc_phase[bld] = 'shell_done'
+                bv._direct_stream_active_bld = None
+                print(f"[S195] §DS_SHELL_DONE {bld} arc_str={already:,} — releasing lock")
+            else:
+                # Detail exhausted — building fully streamed, mark done
+                already = len(bv._direct_stream_buildings.get(bld, set()))
+                bv._direct_stream_disc_phase[bld] = 'done'
+                print(f"[S195] §DS_DETAIL_DONE {bld} elements={already:,}")
+            return 1.0
+
+        # Get transforms
+        all_guids = [e[0] for e in elements]
+        xform = {}
+        for ci in range(0, len(all_guids), 999):
+            chunk = all_guids[ci:ci+999]
+            ph = ','.join('?' * len(chunk))
+            for r in conn.execute(f"""
+                SELECT guid, center_x, center_y, center_z,
+                       rotation_x, rotation_y, rotation_z
+                FROM element_transforms WHERE guid IN ({ph})
+            """, chunk).fetchall():
+                xform[r[0]] = r[1:]
+        conn.close()
+
+        # Tessellate BLOBs — pre-tessellation should have cached most/all hashes
+        already_meshes = {m.name for m in _bpy.data.meshes}
+        to_create = [h for h in unique_hashes if h not in already_meshes]
+        if to_create:
+            _tessellate_from_blobs(to_create, lib_db)
+
+        # Surface styles cache for material resolution
+        styles = _load_surface_styles(db_path)
+
+        # Create or get building parent collection (defer scene link)
+        bld_col_label = f"DirectStream_{bld}"
+        bld_col = _bpy.data.collections.get(bld_col_label)
+        _new_bld_col = False
+        if bld_col is None:
+            bld_col = _bpy.data.collections.new(bld_col_label)
+            _new_bld_col = True
+
+        # Per-batch collection — avoids O(n) reindex on growing collections
+        # Each tick creates a fresh small collection, linked under parent at end
+        _batch_num = len(bld_col.children) if bld_col else 0
+        _batch_col = _bpy.data.collections.new(f"DS_{bld}_{_batch_num}")
+        _disc_cols = {}
+        _new_disc_cols = []
+        _flat_mode = True  # always flat within batch — disc sub-cols add overhead
+
+        ox = _off.x if _off else 0.0
+        oy = _off.y if _off else 0.0
+        oz = _off.z if _off else 0.0
+
+        placed = 0
+        for guid, ghash, rgba, ename, obj_name, mat_name, disc in elements:
+            mesh = _bpy.data.meshes.get(ghash)
+            if not mesh:
+                continue
+            tr = xform.get(guid)
+            if not tr:
+                continue
+
+            disc_key = disc or 'OTHER'
+            col = _batch_col
+
+            obj = _bpy.data.objects.new(obj_name, mesh)
+            obj.hide_select = False
+            col.objects.link(obj)
+
+            # Material — reuse S188 _resolve_material path
+            final_rgba, style_data = _resolve_material(mat_name, rgba, disc, styles)
+            if final_rgba:
+                try:
+                    r, g, b, a = map(float, final_rgba.split(','))
+                    obj.color = (r, g, b, a)
+                    if len(obj.material_slots) > 0:
+                        mat_key = f"DS_{final_rgba}"
+                        mat = _bpy.data.materials.get(mat_key)
+                        if mat is None:
+                            mat = _bpy.data.materials.new(name=mat_key)
+                            mat.diffuse_color = (r, g, b, a)
+                            if a < 0.99:
+                                mat.use_nodes = True
+                                nodes = mat.node_tree.nodes
+                                nodes.clear()
+                                out_n = nodes.new('ShaderNodeOutputMaterial')
+                                bsdf = nodes.new('ShaderNodeBsdfPrincipled')
+                                if 'Base Color' in bsdf.inputs:
+                                    bsdf.inputs['Base Color'].default_value = (r, g, b, 1.0)
+                                if 'Alpha' in bsdf.inputs:
+                                    bsdf.inputs['Alpha'].default_value = a
+                                mat.node_tree.links.new(bsdf.outputs['BSDF'], out_n.inputs['Surface'])
+                        obj.material_slots[0].link = 'OBJECT'
+                        obj.material_slots[0].material = mat
+                except Exception:
+                    pass
+
+            # Transform
+            tcx, tcy, tcz = tr[0], tr[1], tr[2]
+            rx, ry, rz = tr[3] or 0.0, tr[4] or 0.0, tr[5] or 0.0
+            loc_mat = Matrix.Translation((tcx - ox, tcy - oy, tcz - oz))
+            if rx or ry or rz:
+                rot_mat = Euler((rx, ry, rz), 'XYZ').to_matrix().to_4x4()
+                obj.matrix_basis = loc_mat @ rot_mat
+            else:
+                obj.matrix_basis = loc_mat
+
+            # Track
+            bv._direct_stream_guids.add(guid)
+            bv._direct_stream_objects[guid] = obj
+            bv._direct_stream_buildings.setdefault(bld, set()).add(guid)
+            # Track per-disc loaded count for HUD
+            _dl = bv._direct_stream_disc_loaded.setdefault(bld, {})
+            _dl[disc_key] = _dl.get(disc_key, 0) + 1
+            placed += 1
+
+        # Deferred linking — batch col under building, building under scene
+        if placed > 0:
+            bld_col.children.link(_batch_col)
+        else:
+            _bpy.data.collections.remove(_batch_col)  # empty batch — discard
+        if _new_bld_col:
+            _bpy.context.scene.collection.children.link(bld_col)
+
+        # Update phase offset for next tick
+        _phase_offsets[_offset_key] = offset + batch
+        _direct_stream_tick._phase_offsets = _phase_offsets
+
+        elapsed_ms = (time.time() - t0) * 1000
+        _direct_stream_tick._last_hashes_new = len(to_create)
+        _direct_stream_tick._last_tick_ms = elapsed_ms
+        total = len(bv._direct_stream_guids)
+        print(f"[S195] §DS_TICK {bld} phase={phase} batch={batch} placed={placed} "
+              f"total={total:,}/{bv._DIRECT_STREAM_BUDGET:,} "
+              f"hashes_new={len(to_create)} tick_ms={elapsed_ms:.0f}ms")
+
+        # ── Auto-shred: remove furthest building when lagging ──
+        if bv._direct_stream_auto_shred and elapsed_ms > bv._DIRECT_STREAM_LAG_TARGET:
+            _streamed = list(bv._direct_stream_buildings.keys())
+            if len(_streamed) > 1:
+                # Find furthest building (not the one we're currently streaming)
+                _farthest = None
+                _farthest_dist = 0
+                for _sb in _streamed:
+                    if _sb == bld:
+                        continue  # don't shred what we're actively loading
+                    _sc = bv._building_centres.get(_sb)
+                    if _sc:
+                        _sd = math.sqrt((cx-_sc[0])**2 + (cy-_sc[1])**2 + (cz-_sc[2])**2)
+                        if _sd > _farthest_dist:
+                            _farthest_dist = _sd
+                            _farthest = _sb
+                if _farthest:
+                    print(f"[S195] §AUTO_SHRED {_farthest} dist={_farthest_dist:.0f}m "
+                          f"tick_ms={elapsed_ms:.0f}ms")
+                    _direct_stream_remove_building(_farthest)
+
+    except Exception as e:
+        print(f"[S195] §DS_ERROR {e}")
+
+    return 1.0  # re-check every 1 second
+
+
+class FedRTreeDirectStream(bpy.types.Operator):
+    """S195 POC: Toggle direct DB streaming — tessellate from BLOBs, no .blend files."""
+    bl_idname = "bim.fed_rtree_direct_stream"
+    bl_label = "Direct Stream"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        from . import bbox_visualization as bv
+        from pathlib import Path as _P
+        import sqlite3
+
+        # ── Bootstrap: resolve DB path (no Preview required) ──
+        _db = bv._db_path_cache or ""
+        if not _db:
+            try:
+                _db = context.scene.BIMFederationProperties.federation_database_path or ""
+            except Exception:
+                pass
+            if _db:
+                _db = bpy.path.abspath(_db)
+
+        if not _db or not _P(_db).exists():
+            self.report({'WARNING'}, "Set federation database path first")
+            return {'CANCELLED'}
+
+        # Cache DB path (same as Preview would)
+        if not bv._db_path_cache:
+            bv._db_path_cache = _db
+            print(f"[S195] §BOOTSTRAP db_path={_db}")
+
+        # ── Bootstrap: model offset from DB ──
+        if bv._model_offset is None:
+            bv._model_offset = bv.get_model_offset(_db)
+            print(f"[S195] §BOOTSTRAP model_offset="
+                  f"({bv._model_offset.x:.1f}, {bv._model_offset.y:.1f}, {bv._model_offset.z:.1f})"
+                  if bv._model_offset else "[S195] §BOOTSTRAP model_offset=None")
+
+        # ── Bootstrap: has_building_column ──
+        if not bv._has_building_column:
+            try:
+                _conn = sqlite3.connect(_db)
+                _cols = [r[1] for r in _conn.execute(
+                    "PRAGMA table_info(elements_meta)").fetchall()]
+                bv._has_building_column = 'building' in _cols
+                _conn.close()
+                print(f"[S195] §BOOTSTRAP has_building_col={bv._has_building_column}")
+            except Exception:
+                pass
+
+        # ── Bootstrap: library DB ──
+        if not bv._library_db_cache:
+            for _anc in _P(_db).resolve().parents:
+                _ldb = _anc / "library" / "component_library.db"
+                if _ldb.exists():
+                    bv._library_db_cache = str(_ldb)
+                    print(f"[S195] §BOOTSTRAP library_db={_ldb.name}")
+                    break
+        if not bv._library_db_cache:
+            self.report({'WARNING'}, "No component_library.db found")
+            return {'CANCELLED'}
+
+        # ── Bootstrap: building centres + element counts ──
+        if not bv._building_centres:
+            try:
+                _conn = sqlite3.connect(_db)
+                if bv._has_building_column:
+                    _rows = _conn.execute(
+                        "SELECT m.building, COUNT(*), "
+                        "  (MIN(r.minX)+MAX(r.maxX))/2, (MIN(r.minY)+MAX(r.maxY))/2, "
+                        "  (MIN(r.minZ)+MAX(r.maxZ))/2 "
+                        "FROM elements_rtree r JOIN elements_meta m ON r.id = m.rowid "
+                        "GROUP BY m.building"
+                    ).fetchall()
+                    for _bld, _cnt, _cx, _cy, _cz in _rows:
+                        if _bld:
+                            bv._building_centres[_bld] = (_cx, _cy, _cz)
+                            bv._building_element_counts[_bld] = _cnt
+                else:
+                    # Single-building DB — use DB filename as building name
+                    _bld_name = _P(_db).stem.replace('_extracted', '')
+                    _row = _conn.execute(
+                        "SELECT COUNT(*), "
+                        "  (MIN(r.minX)+MAX(r.maxX))/2, (MIN(r.minY)+MAX(r.maxY))/2, "
+                        "  (MIN(r.minZ)+MAX(r.maxZ))/2 "
+                        "FROM elements_rtree r"
+                    ).fetchone()
+                    if _row and _row[0]:
+                        bv._building_centres[_bld_name] = (_row[1], _row[2], _row[3])
+                        bv._building_element_counts[_bld_name] = _row[0]
+                _conn.close()
+                print(f"[S195] §BOOTSTRAP centres={len(bv._building_centres)} "
+                      f"total_elements={sum(bv._building_element_counts.values()):,}")
+            except Exception as _e:
+                print(f"[S195] §BOOTSTRAP WARN: {_e}")
+
+        if not bv._building_centres:
+            self.report({'WARNING'}, "No buildings found in DB")
+            return {'CANCELLED'}
+
+        # ── Bootstrap: search suggestions for RTree Inspector building list ──
+        if not bv._search_suggestions:
+            bv._populate_search_suggestions(_db)
+
+        bv._direct_stream_enabled = not bv._direct_stream_enabled
+
+        if bv._direct_stream_enabled:
+            # Register eye-tracking draw handler if not already running
+            if bv._dlod_draw_handler is None:
+                bv._dlod_draw_handler = bpy.types.SpaceView3D.draw_handler_add(
+                    bv._dlod_track_eye, (), 'WINDOW', 'POST_VIEW')
+            if not bpy.app.timers.is_registered(_direct_stream_tick):
+                bpy.app.timers.register(_direct_stream_tick, first_interval=1.0)
+            # Auto-enable HUD for disc bar feedback
+            from . import progress_hud
+            if not progress_hud.is_hud_enabled():
+                progress_hud.enable_hud()
+            _total = sum(bv._building_element_counts.values())
+            print(f"[S195] §DS_ON radius={bv._DIRECT_STREAM_RADIUS}m "
+                  f"buildings={len(bv._building_centres)} "
+                  f"elements_in_db={_total:,} budget={bv._DIRECT_STREAM_BUDGET:,}")
+            self.report({'INFO'}, f"Direct Stream ON — {len(bv._building_centres)} buildings, "
+                        f"{bv._DIRECT_STREAM_RADIUS}m radius")
+        else:
+            if bpy.app.timers.is_registered(_direct_stream_tick):
+                bpy.app.timers.unregister(_direct_stream_tick)
+            count = len(bv._direct_stream_guids)
+            print(f"[S195] §DS_OFF streamed={count:,}")
+            self.report({'INFO'}, f"Direct Stream OFF — {count:,} elements remain in scene")
+
+        return {'FINISHED'}
+
+
+class FedRTreeDirectStreamClear(bpy.types.Operator):
+    """S195: Clear all direct-streamed objects from the scene."""
+    bl_idname = "bim.fed_rtree_direct_stream_clear"
+    bl_label = "Clear Direct Stream"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        from . import bbox_visualization as bv
+
+        for bld in list(bv._direct_stream_buildings.keys()):
+            _direct_stream_remove_building(bld)
+        bv._direct_stream_guids.clear()
+        bv._direct_stream_objects.clear()
+        bv._direct_stream_buildings.clear()
+        bv._direct_stream_disc_phase.clear()
+        bv._direct_stream_active_bld = None
+        self.report({'INFO'}, "Direct Stream cleared")
+        return {'FINISHED'}
+
+
+class FedRTreeAutoShredToggle(bpy.types.Operator):
+    """S195: Toggle auto-shred — automatically remove furthest building when lagging."""
+    bl_idname = "bim.fed_rtree_auto_shred_toggle"
+    bl_label = "Auto-Shred"
+    bl_description = (
+        "Auto-shred: when viewport lags, automatically shred the furthest\n"
+        "streamed building to free up budget. Budget self-tunes to your hardware."
+    )
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        from . import bbox_visualization as bv
+        bv._direct_stream_auto_shred = not bv._direct_stream_auto_shred
+        state = "ON" if bv._direct_stream_auto_shred else "OFF"
+        print(f"[S195] §AUTO_SHRED {state} budget={bv._DIRECT_STREAM_BUDGET:,}")
+        self.report({'INFO'}, f"Auto-Shred {state}")
+        return {'FINISHED'}
+
+
 class FedRTreeBakeAll(bpy.types.Operator):
     """S188: Bake all buildings in parallel (up to 4 concurrent)."""
     bl_idname = "bim.fed_rtree_bake_all"
@@ -2999,7 +4021,17 @@ def _live_link_baked(bld, baked_files, total_elements=0, elapsed=0):
     from . import bbox_visualization as bv
 
     _disc_suffixes = {'ARC','STR','MEP','ELEC','FP','OTHER',
-                      'PLB','HEAT','HVAC','VENT','SAN','ACMV'}
+                      'PLB','HEAT','HVAC','VENT','SAN','ACMV','VOID'}
+    # S189z: extend with DB disciplines dynamically
+    if bv._db_path_cache:
+        try:
+            import sqlite3 as _sq_ll
+            _dc = _sq_ll.connect(bv._db_path_cache)
+            _disc_suffixes |= {r[0] for r in _dc.execute(
+                "SELECT DISTINCT discipline FROM elements_meta").fetchall() if r[0]}
+            _dc.close()
+        except Exception:
+            pass
 
     if isinstance(baked_files, str):
         baked_files = [baked_files]
@@ -3007,11 +4039,18 @@ def _live_link_baked(bld, baked_files, total_elements=0, elapsed=0):
     _bpy.context.window.cursor_set('WAIT')
     t_link = time.time()
     total_objs = 0
+    # S189w: create building parent collection for Outliner hierarchy
+    parent_col = _bpy.data.collections.get(bld)
+    if parent_col is None:
+        parent_col = _bpy.data.collections.new(bld)
+        _bpy.context.scene.collection.children.link(parent_col)
     for bf in baked_files:
         if not _P(bf).exists():
             continue
         t_f = time.time()
         with _bpy.data.libraries.load(bf, link=True) as (src, dst):
+            # S189z: link disc collections directly — discipline-based chunking
+            # ensures unique disc names across chunks
             disc_cols = [c for c in src.collections
                          if any(c.endswith(f'_{d}') for d in _disc_suffixes)]
             if disc_cols:
@@ -3020,12 +4059,12 @@ def _live_link_baked(bld, baked_files, total_elements=0, elapsed=0):
                 dst.collections = [src.collections[0]]
         for col in dst.collections:
             if col is not None:
-                _bpy.context.scene.collection.children.link(col)
+                parent_col.children.link(col)
                 total_objs += len(col.all_objects)
         bf_mb = _P(bf).stat().st_size / (1024*1024)
         link_s = time.time() - t_f
         print(f"[S189] {_ts()} §LIVE_LINK {_P(bf).name} ({bf_mb:.1f}MB) "
-              f"in {link_s:.1f}s — {total_objs} objects")
+              f"→ {bld} in {link_s:.1f}s — {total_objs} objects")
     total_link = time.time() - t_link
     _bpy.context.window.cursor_set('DEFAULT')
     print(f"[S189] {_ts()} §LINKED bld={bld} objects={total_objs} "
@@ -3054,6 +4093,12 @@ def _shred_building_partial(building):
                 _bpy.data.collections.remove(col)
                 removed_cols += 1
             del bv._loaded_collections[col_name]
+
+    # S189w: remove building parent collection if now empty
+    bld_parent = _bpy.data.collections.get(f"Loaded_{building}")
+    if bld_parent and len(bld_parent.children) == 0 and len(bld_parent.objects) == 0:
+        _bpy.data.collections.remove(bld_parent)
+        removed_cols += 1
 
     # Clear loaded guids for this building (they'll be re-tracked if needed)
     # We can't easily filter by building, so clear all — safe since baked .blend replaces everything
@@ -3125,7 +4170,7 @@ class FedRTreeShred(bpy.types.Operator):
                 bpy.data.objects.remove(obj, do_unlink=True)
                 removed += 1
 
-            # Clean up empty Baked_* parent collections
+            # Clean up empty Baked_* parent collections + library refs
             for pname in affected_parents:
                 pcol = bpy.data.collections.get(pname)
                 if pcol and len(pcol.objects) == 0:
@@ -3134,6 +4179,12 @@ class FedRTreeShred(bpy.types.Operator):
                         scene_col.children.unlink(pcol)
                     bpy.data.collections.remove(pcol)
                     print(f"[S187] §SHRED_BAKED parent_removed={pname}")
+                # Remove library links for this building so re-bake can re-link
+                _bld_stem = pname.replace("Baked_", "", 1)
+                for _lib in list(bpy.data.libraries):
+                    if _lib.filepath and _bld_stem in _lib.filepath:
+                        bpy.data.libraries.remove(_lib)
+                        print(f"[S187] §SHRED_BAKED lib_removed={_lib.name}")
 
             print(f"[S187] §SHRED_BAKED instances_removed={removed} "
                   f"parents={sorted(affected_parents)}")
@@ -3148,7 +4199,56 @@ class FedRTreeShred(bpy.types.Operator):
                 or any(c.name.startswith("Loaded_") for c in obj.users_collection)
             ]
 
-            if selected_loaded:
+            # S195: Also accept objects in DirectStream_* collections
+            selected_ds = [
+                obj for obj in context.selected_objects
+                if any(c.name.startswith("DirectStream_") for c in obj.users_collection)
+            ]
+
+            if selected_ds and not selected_loaded:
+                # Direct Stream objects selected — batch unlink + clean tracking
+                removed = 0
+                affected_labels = set()
+                for obj in selected_ds:
+                    ds_col = next(
+                        (c.name for c in obj.users_collection
+                         if c.name.startswith("DirectStream_")), None)
+                    if ds_col:
+                        affected_labels.add(ds_col)
+                    # Find guid by object reference
+                    _guid = None
+                    for g, o in list(bv._direct_stream_objects.items()):
+                        if o == obj:
+                            _guid = g
+                            break
+                    if _guid:
+                        bv._direct_stream_guids.discard(_guid)
+                        bv._direct_stream_objects.pop(_guid, None)
+                        for _bset in bv._direct_stream_buildings.values():
+                            _bset.discard(_guid)
+                    # Unlink from collections (pointer removal only)
+                    for col in list(obj.users_collection):
+                        col.objects.unlink(obj)
+                    removed += 1
+
+                # S195: skip orphans_purge — unlinking is enough for viewport
+
+                # Clean up empty DirectStream_* collections
+                for lbl in affected_labels:
+                    col = bpy.data.collections.get(lbl)
+                    if col and len(col.objects) == 0:
+                        _bld = lbl.replace("DirectStream_", "", 1)
+                        bv._direct_stream_buildings.pop(_bld, None)
+                        bv._direct_stream_disc_phase.pop(_bld, None)
+                        scene_col = bpy.context.scene.collection
+                        if col.name in {c.name for c in scene_col.children}:
+                            scene_col.children.unlink(col)
+                        bpy.data.collections.remove(col)
+
+                print(f"[S195] §SHRED_DS objects_removed={removed} labels={sorted(affected_labels)}")
+                self.report({'INFO'}, f"§SHRED DirectStream objects={removed}")
+
+            elif selected_loaded:
                 removed = 0
                 affected_labels = set()
                 for obj in selected_loaded:
@@ -3203,20 +4303,63 @@ class FedRTreeShred(bpy.types.Operator):
                     if baked_cols:
                         target = baked_cols[-1]  # most recently added
                         inst_count = len(target.objects)
+                        _bld_stem = target.name.replace("Baked_", "", 1)
                         for obj in list(target.objects):
                             bpy.data.objects.remove(obj, do_unlink=True)
                         context.scene.collection.children.unlink(target)
                         bpy.data.collections.remove(target)
+                        # Remove library links so re-bake can re-link
+                        for _lib in list(bpy.data.libraries):
+                            if _lib.filepath and _bld_stem in _lib.filepath:
+                                bpy.data.libraries.remove(_lib)
+                                print(f"[S187] §SHRED_BAKED lib_removed={_lib.name}")
                         print(f"[S187] §SHRED_BAKED fallback label={target.name} "
                               f"instances={inst_count}")
                         self.report({'INFO'},
                                     f"§SHRED_BAKED {target.name} ({inst_count} instances)")
                     else:
-                        props.rtree_last_loaded = ""
-                        self.report({'WARNING'},
-                                    "Nothing to shred — select loaded mesh objects "
-                                    "or run LOAD MESH first")
-                        return {'CANCELLED'}
+                        # S195: Fallback to shredding last DirectStream_* collection
+                        ds_cols = [
+                            col for col in context.scene.collection.children
+                            if col.name.startswith("DirectStream_")
+                        ]
+                        if ds_cols:
+                            target = ds_cols[-1]
+                            _target_name = target.name
+                            _bld = _target_name.replace("DirectStream_", "", 1)
+                            # Clean tracking FIRST (before touching Blender data)
+                            for g in list(bv._direct_stream_buildings.get(_bld, set())):
+                                bv._direct_stream_guids.discard(g)
+                                bv._direct_stream_objects.pop(g, None)
+                            bv._direct_stream_buildings.pop(_bld, None)
+                            bv._direct_stream_disc_phase.pop(_bld, None)
+                            bv._direct_stream_disc_loaded.pop(_bld, None)
+                            if bv._direct_stream_active_bld == _bld:
+                                bv._direct_stream_active_bld = None
+                            # Unlink objects from disc sub-collections
+                            obj_count = 0
+                            for child in list(target.children):
+                                for obj in list(child.objects):
+                                    child.objects.unlink(obj)
+                                    obj_count += 1
+                                target.children.unlink(child)
+                                bpy.data.collections.remove(child)
+                            for obj in list(target.objects):
+                                target.objects.unlink(obj)
+                                obj_count += 1
+                            context.scene.collection.children.unlink(target)
+                            bpy.data.collections.remove(target)
+                            # S195: skip orphans_purge — unlinking is enough
+                            print(f"[S195] §SHRED_DS fallback label={_target_name} "
+                                  f"objects={obj_count}")
+                            self.report({'INFO'},
+                                        f"§SHRED DirectStream {_bld} ({obj_count:,} objects)")
+                        else:
+                            props.rtree_last_loaded = ""
+                            self.report({'WARNING'},
+                                        "Nothing to shred — select loaded mesh objects "
+                                        "or run LOAD MESH first")
+                            return {'CANCELLED'}
 
         for area in context.screen.areas:
             if area.type == 'VIEW_3D':
@@ -3366,49 +4509,42 @@ class PreviewFederationViewport(bpy.types.Operator):
             # Enable discipline legend overlay (visual reference only, not clickable)
             discipline_legend.enable_legend()
 
-            # S189p: Link any pending baked files from previous BACKEND sessions
-            from . import bbox_visualization as _bv2
-            _db = _bv2._db_path_cache or props.federation_database_path or ""
-            _baked_dir = Path(_db).resolve().parent.parent / "baked" if _db else Path(".")
-            if _baked_dir.exists():
-                _disc_suffixes = {'ARC','STR','MEP','ELEC','FP','OTHER',
-                                  'PLB','HEAT','HVAC','VENT','SAN','ACMV'}
-                _baked_files = [f for f in sorted(_baked_dir.glob("*.blend"))
-                                if not f.name.startswith('session') and not f.name.startswith('City')]
-                if _baked_files:
-                    import time as _lt
-                    _n = len(_baked_files)
-                    context.workspace.status_text_set(
-                        f"Linking {_n} baked buildings... please wait")
-                    self.report({'INFO'}, f"Linking {_n} baked buildings...")
-                    print(f"\n[S189] {_ts()} §PREVIEW_LINK_START {_n} baked files in {_baked_dir.name}/")
-                    _t0 = _lt.time()
-                    _linked_count = 0
-                    for _i, _bf in enumerate(_baked_files):
-                        _tf = _lt.time()
-                        _bf_mb = _bf.stat().st_size / (1024*1024)
-                        context.workspace.status_text_set(
-                            f"Linking baked buildings ({_i+1}/{_n}): {_bf.name} ({_bf_mb:.0f}MB)")
-                        try:
-                            with bpy.data.libraries.load(str(_bf), link=True) as (src, dst):
-                                _dcols = [c for c in src.collections
-                                          if any(c.endswith(f'_{d}') for d in _disc_suffixes)]
-                                if _dcols:
-                                    dst.collections = _dcols
-                                elif src.collections:
-                                    dst.collections = [src.collections[0]]
-                            for _col in dst.collections:
-                                if _col is not None:
-                                    context.scene.collection.children.link(_col)
-                                    _linked_count += 1
-                            print(f"[S189] {_ts()} §PREVIEW_LINK ({_i+1}/{_n}) {_bf.name} "
-                                  f"({_bf_mb:.1f}MB) in {_lt.time()-_tf:.1f}s")
-                        except Exception as _e:
-                            print(f"[S189] §PREVIEW_LINK_WARN {_bf.name}: {_e}")
-                    _total_s = _lt.time() - _t0
-                    context.workspace.status_text_set(None)
-                    print(f"[S189] {_ts()} §PREVIEW_LINKED {_linked_count} collections "
-                          f"from {_n} files in {_total_s:.1f}s")
+            # S189x: Re-parent orphaned Loaded_{building}_{disc} collections
+            # from previous sessions that were created before S189w hierarchy fix
+            import re as _re_orph
+            # S189z: dynamic disc suffixes from DB — covers any discipline
+            _disc_suffixes = {'ARC','STR','MEP','ELEC','FP','OTHER',
+                              'PLB','HEAT','HVAC','VENT','SAN','ACMV','VOID'}
+            from . import bbox_visualization as _bv_ds
+            if _bv_ds._db_path_cache:
+                try:
+                    import sqlite3 as _sq_ds
+                    _dc = _sq_ds.connect(_bv_ds._db_path_cache)
+                    _db_discs = {r[0] for r in _dc.execute(
+                        "SELECT DISTINCT discipline FROM elements_meta").fetchall() if r[0]}
+                    _dc.close()
+                    _disc_suffixes = _disc_suffixes | _db_discs
+                except Exception:
+                    pass
+            _orphan_re = _re_orph.compile(
+                r'^Loaded_(.+?)_(' + '|'.join(_disc_suffixes) + r')$')
+            _reparented = 0
+            for _col in list(context.scene.collection.children):
+                _om = _orphan_re.match(_col.name)
+                if _om:
+                    _bld = _om.group(1)
+                    _parent_label = f"Loaded_{_bld}"
+                    _parent = bpy.data.collections.get(_parent_label)
+                    if _parent is None:
+                        _parent = bpy.data.collections.new(_parent_label)
+                        context.scene.collection.children.link(_parent)
+                    context.scene.collection.children.unlink(_col)
+                    _parent.children.link(_col)
+                    _reparented += 1
+            if _reparented:
+                print(f"[S189] {_ts()} §OUTLINER_FIX re-parented {_reparented} orphaned disc collections")
+
+            # S191: baked linking moved to save_post handler (see _on_save_link_baked)
 
             print(f"\n✓ Preview ready [{_FED_VERSION}] - INSTANT GPU bboxes loaded!")
             print("✓ All 49K elements visible - MEP engineers can work immediately!")
@@ -8406,34 +9542,69 @@ class BIM_OT_execute_nlp_query(bpy.types.Operator):
                     lines.append(f"  {count:,} elements")
 
         elif category == 'freetext':
-            # Free-text search results with friendly labels
+            # Free-text search results — lead with element_name, GUID secondary
             for row in rows[:15]:
                 ifc_class = row.get('ifc_class', row.get('IFC_Class', ''))
                 element_name = row.get('element_name', row.get('Name', row.get('name', '')))
                 storey = row.get('storey', row.get('Storey', ''))
+                guid = row.get('guid', row.get('GUID', ''))
 
+                # Primary line: element_name | ifc_class | storey
+                display_name = element_name[:45] if element_name and len(element_name) > 45 else (element_name or '')
+                if not display_name:
+                    display_name = get_friendly_label(ifc_class) if ifc_class else 'Unknown'
+
+                parts = [display_name]
                 if ifc_class:
-                    friendly_name = get_friendly_label(ifc_class, element_name)
-                    if storey:
-                        lines.append(f"  • {friendly_name} (Level: {storey})")
-                    else:
-                        lines.append(f"  • {friendly_name}")
-                else:
-                    lines.append(f"  • {element_name}")
+                    parts.append(ifc_class)
+                if storey:
+                    parts.append(storey)
+                lines.append(f"  {' | '.join(parts)}")
+
+                # Secondary line: GUID (dimmed via indentation)
+                if guid:
+                    lines.append(f"    GUID: {guid}")
 
         else:
-            # Generic table format with friendly labels where possible
+            # Generic table format — element_name first if present, GUID secondary
             columns = result['columns']
             for row in rows[:15]:
                 ifc_class = row.get('ifc_class', row.get('IFC_Class', ''))
-                if ifc_class:
-                    friendly_name = get_friendly_label(ifc_class)
-                    # Replace ifc_class with friendly name in output
-                    formatted_row = {k: (friendly_name if k in ['ifc_class', 'IFC_Class'] else v) for k, v in row.items()}
-                    row_str = " | ".join(f"{k}: {v}" for k, v in formatted_row.items())
+                element_name = row.get('element_name', row.get('Name', row.get('name', '')))
+                storey = row.get('storey', row.get('Storey', ''))
+                guid = row.get('guid', row.get('GUID', ''))
+
+                if element_name or guid:
+                    # Friendly format: element_name | ifc_class | storey
+                    display_name = element_name[:45] if element_name and len(element_name) > 45 else (element_name or '')
+                    if not display_name and ifc_class:
+                        display_name = get_friendly_label(ifc_class)
+                    elif not display_name:
+                        display_name = 'Unknown'
+
+                    parts = [display_name]
+                    if ifc_class:
+                        parts.append(ifc_class)
+                    if storey:
+                        parts.append(storey)
+                    # Add any extra columns not already shown
+                    skip_keys = {'guid', 'GUID', 'ifc_class', 'IFC_Class', 'element_name',
+                                 'Name', 'name', 'storey', 'Storey'}
+                    for k, v in row.items():
+                        if k not in skip_keys and v:
+                            parts.append(f"{k}: {v}")
+                    lines.append(f"  {' | '.join(parts)}")
+                    if guid:
+                        lines.append(f"    GUID: {guid}")
                 else:
-                    row_str = " | ".join(f"{k}: {v}" for k, v in row.items())
-                lines.append(f"  {row_str}")
+                    # Fallback: key-value pairs
+                    if ifc_class:
+                        friendly_name = get_friendly_label(ifc_class)
+                        formatted_row = {k: (friendly_name if k in ['ifc_class', 'IFC_Class'] else v) for k, v in row.items()}
+                        row_str = " | ".join(f"{k}: {v}" for k, v in formatted_row.items())
+                    else:
+                        row_str = " | ".join(f"{k}: {v}" for k, v in row.items())
+                    lines.append(f"  {row_str}")
 
         if result['row_count'] > 15:
             lines.append(f"\n... and {result['row_count'] - 15} more rows (see console)")
@@ -8802,7 +9973,7 @@ class FedRTreeSearch(bpy.types.Operator):
         props.rtree_result_disc = result.get('disc', '')
         props.rtree_result_class = result.get('ifc_class', '')
         props.rtree_result_guid = result.get('guid', '')
-        props.rtree_result_count = len(bv._highlighted_bboxes)  # number of buildings highlighted
+        props.rtree_result_count = len(bv._search_results)  # number of building results
 
         # S186: auto-populate discipline counts when search activates a building
         if bv._active_building:
@@ -8843,9 +10014,9 @@ class FedRTreeFlyToResult(bpy.types.Operator):
         # Element listing is expensive on large buildings and premature here.
         # User flow: Building → Discipline bar → IFC Type → Elements populate.
         bv._building_elements.clear()
-        # S188b: Remove building-level envelope bbox — user already knows it's the whole building.
-        # Storey/element bboxes will be added when user drills deeper.
+        # S189z: keep building envelope bbox highlighted — visual anchor for the user
         bv._highlighted_bboxes.clear()
+        bv._highlighted_bboxes.append(r['bbox'])
         # Set active building (fly_to_result sets it for multi-tile, but not single-tile)
         bv._active_building = r['building']
 

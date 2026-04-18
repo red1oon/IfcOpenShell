@@ -1780,7 +1780,11 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
                     short = cg['ifc_class'].replace('Ifc', '').replace('StandardCase', '')
                     cg_col.label(text=f"{short}  ({cg['count']:,})")
 
-            # ── Discipline bars ──
+            # ── Discipline filter + HUD drag ──
+            _hud_row = bx.row(align=True)
+            _hud_row.scale_y = 0.7
+            _hud_row.operator("bim.fed_progress_hud_drag", text="", icon='GRIP')
+            _hud_row.label(text="Disciplines (drag HUD \u2192)")
             self._draw_discipline_bars(bx, props, bv)
 
             # ── S187: IFC type list within active discipline filter ──
@@ -1803,9 +1807,8 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
                     op_cg.term = cg['ifc_class']
 
         # ── ELEMENT LIST (L2 — shown when storey is active, or building has no storeys) ──
-        # S187: collapsible — keeps SHORT-CUT visible without scrolling
-        # Auto-collapse when overnight/bake is active for prominence
-        if has_building and bv._building_elements:
+        # S191: elements list only at storey/disc level (not building top level)
+        if has_building and has_storey and bv._building_elements:
             layout.separator(factor=0.3)
             box2 = layout.box()
             scope_label = bv._active_storey if has_storey else "top"
@@ -1843,126 +1846,62 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
             layout.separator(factor=0.3)
             act_box = layout.box()
 
-            # S189p: If this building was baked, show status instead of mesh buttons
-            if bv._active_building in bv._bake_done and not is_baking:
-                done_box = act_box.box()
-                done_box.label(text=f"\u2713 {bv._active_building} \u2014 baked",
-                               icon='CHECKMARK')
-                done_box.label(text="Re-Preview to link all baked buildings.")
-            # S186-s2: building being baked offline — show live countdown
-            elif is_baking:
-                import time as _time
-                info = bv._baking_buildings.get(bv._active_building, {})
-                sc_box = act_box.box()
-                sc_box.alert = True
-                # S189: prominent status — large red box, same style as BACKEND DONE
-                sc_row = sc_box.row(align=True)
-                sc_row.alert = True
-                sc_row.scale_y = 2.0
-                elapsed = _time.time() - info.get('start_time', _time.time())
-                eta_total = info.get('offline_eta', 0)
-                remaining_s = max(eta_total - elapsed, 0)
-                n_chunks = len(info.get('_chunk_procs', [None]))
-                chunk_txt = f" ({n_chunks} chunks)" if n_chunks > 1 else ""
-                if remaining_s > 0:
-                    if remaining_s < 120:
-                        eta_disp = f"{int(remaining_s)}s"
-                    else:
-                        eta_disp = f"{int(remaining_s/60)}m"
-                    sc_row.label(text=f"\u26a1 BACKEND BAKING{chunk_txt}  ~{eta_disp}",
-                                 icon='SORTTIME')
+            # S191: simplified N-panel — just action buttons. Progress in GPU HUD.
+            scope_txt = f"MESH ({bv._active_storey})" if has_storey else "MESH ACTIONS"
+            act_box.label(text=scope_txt, icon='IMPORT')
+            disc_list = list(bv._building_disc_counts.keys()) if bv._building_disc_counts else ['ARC', 'STR', 'MEP', 'ELEC', 'FP']
+            grid = act_box.grid_flow(row_major=True, columns=3, align=True)
+            for disc in disc_list:
+                op3 = grid.operator("bim.fed_rtree_load_mesh",
+                                    text=f"+{disc}", icon='NONE')
+                op3.target_disc = disc
+
+            sh_row = act_box.row(align=True)
+            sh_row.scale_y = 1.2
+            sh_row.operator("bim.fed_rtree_shred", text="SHRED SELECTED  \u2702", icon='TRASH')
+
+            act_box.separator(factor=0.3)
+            # Action row: OVERNIGHT + BACKEND + controls
+            btn_row = act_box.row(align=True)
+            if bv._overnight_running:
+                if bv._overnight_paused:
+                    btn_row.operator("bim.fed_rtree_overnight_pause",
+                                     text="RESUME", icon='PLAY')
                 else:
-                    sc_row.label(text=f"\u23f3 BACKEND BAKING{chunk_txt}  {int(elapsed)}s",
-                                 icon='SORTTIME')
-                # Progress bar
-                if eta_total > 0:
-                    pct = min(elapsed / eta_total, 1.0)
-                    sc_box.progress(factor=pct, type='BAR')
-                # Small cancel below
-                cancel_row = sc_box.row(align=True)
-                op_cb = cancel_row.operator("bim.fed_rtree_cancel_bake",
-                                            text="CANCEL", icon='X')
-                op_cb.building = bv._active_building
-            else:
-                scope_txt = f"MESH ({bv._active_storey})" if has_storey else "MESH ACTIONS"
-                act_box.label(text=scope_txt, icon='IMPORT')
-                disc_list = list(bv._building_disc_counts.keys()) if bv._building_disc_counts else ['ARC', 'STR', 'MEP', 'ELEC', 'FP']
-                grid = act_box.grid_flow(row_major=True, columns=3, align=True)
-                for disc in disc_list:
-                    op3 = grid.operator("bim.fed_rtree_load_mesh",
-                                        text=f"+{disc}", icon='NONE')
-                    op3.target_disc = disc
-
-                sh_row = act_box.row(align=True)
-                sh_row.scale_y = 1.2
-                sh_row.operator("bim.fed_rtree_shred", text="SHRED SELECTED  \u2702", icon='TRASH')
-
-                # S186: Overnight loader — batch-load everything
-                act_box.separator(factor=0.3)
-
-                # S187: detect if building already baked (Baked_* collection in scene)
-                import bpy as _bpy_ui
-                _baked_col_name = f"Baked_{bv._active_building}"
-                is_fully_baked = _bpy_ui.data.collections.get(_baked_col_name) is not None
-
-                if is_fully_baked and not bv._overnight_running:
-                    done_box = act_box.box()
-                    done_box.label(text=f"\u2713 {bv._active_building} — fully baked",
-                                   icon='CHECKMARK')
-                    ov_row = done_box.row(align=True)
-                    ov_row.enabled = False
-                    ov_row.operator("bim.fed_rtree_overnight",
-                                    text="OVERNIGHT", icon='TIME')
-                elif bv._overnight_running:
-                    prog_box = act_box.box()
-                    prog_box.alert = True
-                    prog_box.label(text=bv._overnight_progress, icon='SORTTIME')
-                    pct = int(100 * bv._overnight_placed / max(bv._overnight_total, 1))
-                    prog_box.progress(factor=pct / 100.0, type='BAR')
-                    btn_row = prog_box.row(align=True)
-                    if bv._overnight_paused:
-                        btn_row.operator("bim.fed_rtree_overnight_pause",
-                                         text="RESUME", icon='PLAY')
-                    else:
-                        btn_row.operator("bim.fed_rtree_overnight_pause",
-                                         text="PAUSE", icon='PAUSE')
-                    btn_row.operator("bim.fed_rtree_overnight_cancel",
-                                     text="CANCEL", icon='X')
-                    # S189: SHORT-CUT → Backend multi-chunk bake
-                    if bv._overnight_shortcut_factor > 0:
-                        sc_row = prog_box.row(align=True)
-                        sc_row.alert = True
-                        sc_row.scale_y = 1.5
-                        eta_txt = bv._overnight_shortcut_eta or "?"
-                        sc_op = sc_row.operator("bim.fed_rtree_switch_offline",
-                                        text=f"\u26a1 BACKEND  ~{eta_txt}",
-                                        icon='NONE')
-                elif bv._overnight_progress:
-                    prog_box = act_box.box()
-                    is_done = (bv._overnight_progress.startswith("DONE")
-                               or bv._overnight_progress.startswith("\u2713"))
-                    prog_box.label(text=bv._overnight_progress,
-                                   icon='CHECKMARK' if is_done else 'INFO')
-                    if is_done:
-                        prog_box.operator("bim.fed_rtree_overnight_dismiss",
-                                          text="OK", icon='NONE')
-                    else:
-                        prog_box.operator("bim.fed_rtree_overnight",
-                                          text="OVERNIGHT", icon='TIME')
-                else:
-                    ov_row = act_box.row(align=True)
-                    ov_row.operator("bim.fed_rtree_overnight",
-                                    text="OVERNIGHT", icon='TIME')
-                    # S189: BACKEND button — disabled only if THIS building already baking/done
-                    _this_busy = (bv._active_building in bv._baking_buildings
-                                  or bv._active_building in bv._bake_done)
-                    be_row = act_box.row(align=True)
-                    be_row.alert = True
-                    be_row.scale_y = 1.5
-                    be_row.enabled = not _this_busy
-                    be_row.operator("bim.fed_rtree_switch_offline",
-                                    text="\u26a1 BACKEND",
+                    btn_row.operator("bim.fed_rtree_overnight_pause",
+                                     text="PAUSE", icon='PAUSE')
+                btn_row.operator("bim.fed_rtree_overnight_cancel",
+                                 text="CANCEL", icon='X')
+                # SHORT-CUT → Backend
+                if bv._overnight_shortcut_factor > 0:
+                    sc_row = act_box.row(align=True)
+                    sc_row.scale_y = 1.3
+                    eta_txt = bv._overnight_shortcut_eta or "?"
+                    sc_row.operator("bim.fed_rtree_switch_offline",
+                                    text=f"\u26a1 BACKEND  ~{eta_txt}",
                                     icon='NONE')
+            elif bv._overnight_progress and not bv._overnight_running:
+                is_done = (bv._overnight_progress.startswith("DONE")
+                           or bv._overnight_progress.startswith("\u2713"))
+                if is_done:
+                    btn_row.operator("bim.fed_rtree_overnight_dismiss",
+                                     text="OK", icon='CHECKMARK')
+                else:
+                    btn_row.operator("bim.fed_rtree_overnight",
+                                     text="OVERNIGHT", icon='TIME')
+            else:
+                _this_busy = (is_baking or bv._active_building in bv._bake_done)
+                btn_row.operator("bim.fed_rtree_overnight",
+                                 text="OVERNIGHT", icon='TIME')
+                be_btn = btn_row.operator("bim.fed_rtree_switch_offline",
+                                          text="\u26a1 BACKEND", icon='NONE')
+                btn_row.enabled = not _this_busy if _this_busy else True
+            # Cancel bake (only when baking)
+            if is_baking:
+                c_row = act_box.row(align=True)
+                op_cb = c_row.operator("bim.fed_rtree_cancel_bake",
+                                       text="CANCEL BAKE", icon='X')
+                op_cb.building = bv._active_building
 
         # ── S188: BAKE ALL — parallel bake for multi-building DBs ──
         if (len(bv._search_results) > 1
@@ -1985,31 +1924,7 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
             ba_box.label(text=f"Baking {running}/{bv._MAX_BAKE_WORKERS}, queued {queued}",
                          icon='RENDER_ANIMATION')
 
-        # ── S189p: Sticky BACKEND status — baking progress + baked status ──
-        _any_baking = bool(bv._baking_buildings)
-        _any_done = bool(bv._bake_done)
-        if _any_baking or _any_done:
-            layout.separator(factor=0.3)
-            be_box = layout.box()
-            be_box.alert = True
-            if _any_baking:
-                import time as _btime
-                for _bld, _info in list(bv._baking_buildings.items()):
-                    _el = _btime.time() - _info.get('start_time', _btime.time())
-                    _eta = max(_info.get('offline_eta', 0) - _el, 0)
-                    _chunks = len(_info.get('_chunk_procs', [None]))
-                    _chunk_txt = f" ({_chunks} chunks)" if _chunks > 1 else ""
-                    if _eta > 0:
-                        _e = f"{int(_eta)}s" if _eta < 120 else f"{int(_eta/60)}m"
-                        be_box.label(text=f"\u23f3 {_bld}: baking{_chunk_txt} ~{_e}",
-                                     icon='SORTTIME')
-                    else:
-                        be_box.label(text=f"\u23f3 {_bld}: finishing{_chunk_txt}...",
-                                     icon='SORTTIME')
-            if _any_done:
-                for _bld in bv._bake_done:
-                    be_box.label(text=f"\u2713 {_bld} \u2014 baked", icon='CHECKMARK')
-                be_box.label(text="Save & re-Preview to link.")
+        # S191: backend/bake status moved to GPU HUD
 
         # ── PICK ──
         layout.separator(factor=0.3)
@@ -2028,64 +1943,42 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
                 op_cp2.guid = guid
         layout.label(text="Eye icon on \u25cf DISC = hide/show")
 
+        # ── S195: Direct Stream controls (bottom of panel) ──
+        layout.separator(factor=0.8)
+        _ds_box = layout.box()
+        _ds_row = _ds_box.row(align=True)
+        _ds_row.scale_y = 1.4
+        _ds_row.alert = bv._direct_stream_enabled  # red bar when streaming
+        _ds_icon = 'PAUSE' if bv._direct_stream_enabled else 'PLAY'
+        _ds_row.operator("bim.fed_rtree_direct_stream",
+                         text="Stream", icon=_ds_icon)
+        _ds_row.operator("bim.fed_rtree_shred",
+                         text="Shred", icon='TRASH')
+        _auto_text = "Auto ON" if bv._direct_stream_auto_shred else "Auto"
+        _auto_icon = 'CHECKBOX_HLT' if bv._direct_stream_auto_shred else 'LOOP_BACK'
+        _ds_row.operator("bim.fed_rtree_auto_shred_toggle",
+                         text=_auto_text, icon=_auto_icon,
+                         depress=bv._direct_stream_auto_shred)
+
     def _draw_discipline_bars(self, bx, props, bv):
-        """Draw discipline bar graph with LOD progress. S186: fully dynamic."""
+        """S191: simplified — disc filter buttons only. Progress moved to GPU HUD."""
         disc_counts = bv._building_disc_counts
         if not disc_counts:
             return
 
-        max_count = max(disc_counts.values()) if disc_counts else 1
-
-        # S187: detect if building is fully baked (Baked_* collection)
-        import bpy as _bpy_bars
-        _baked_col = _bpy_bars.data.collections.get(f"Baked_{bv._active_building}")
-        _is_baked = _baked_col is not None
-
-        # Count loaded meshes per discipline from _loaded_collections
-        _loaded_per_disc = {}
-        if _is_baked:
-            # All disciplines fully loaded via baked instances
-            _loaded_per_disc = dict(disc_counts)
-        else:
-            for lbl, obj_names in bv._loaded_collections.items():
-                if bv._active_building and bv._active_building in lbl:
-                    for d_name in disc_counts:
-                        if lbl.endswith(f'_{d_name}') or f'_{d_name}_' in lbl:
-                            _loaded_per_disc[d_name] = _loaded_per_disc.get(d_name, 0) + len(obj_names)
-
-        total_loaded = sum(_loaded_per_disc.values())
-        for disc, cnt in disc_counts.items():
-            if cnt == 0:
-                continue
-            loaded = _loaded_per_disc.get(disc, 0)
-            bar_width = 12
-            n_total = max(int(round(bar_width * cnt / max_count)), 1)
-            if cnt > 0 and loaded > 0:
-                n_loaded = max(int(round(n_total * min(loaded, cnt) / cnt)), 0)
-            else:
-                n_loaded = 0
-            bar = '\u2588' * n_loaded + '\u2592' * (n_total - n_loaded) + '\u2591' * (bar_width - n_total)
-            suffix = f"  {loaded:,}/{cnt:,}" if loaded > 0 else f"  {cnt:,}"
+        # Compact discipline filter buttons (2 per row)
+        _disc_icons = {
+            'ARC': 'HOME', 'STR': 'MOD_LATTICE', 'MEP': 'CURVES',
+            'ELEC': 'LIGHT', 'FP': 'MESH_CIRCLE', 'ACMV': 'FORCE_WIND',
+            'PLB': 'MOD_FLUIDSIM', 'HVAC': 'FORCE_WIND',
+        }
+        _discs = [d for d, c in disc_counts.items() if c > 0]
+        for i in range(0, len(_discs), 2):
             row_d = bx.row(align=True)
-            row_d.scale_y = 0.9
-            # S187: clickable discipline bars — filter element list
-            # Highlight loaded disciplines with alert tint
-            if loaded > 0:
-                row_d.alert = True
-            _disc_icons = {
-                'ARC': 'HOME', 'STR': 'MOD_LATTICE', 'MEP': 'CURVES',
-                'ELEC': 'LIGHT', 'FP': 'MESH_CIRCLE', 'ACMV': 'FORCE_WIND',
-                'PLB': 'MOD_FLUIDSIM', 'HVAC': 'FORCE_WIND',
-            }
-            op_d = row_d.operator("bim.fed_rtree_filter_disc",
-                                  text=f"{disc:5s}{bar}{suffix}",
-                                  icon=_disc_icons.get(disc, 'DOT'),
-                                  emboss=False)
-            op_d.disc = disc
-
-        if total_loaded >= props.rtree_bld_total and total_loaded > 0:
-            row_done = bx.row(align=True)
-            row_done.alert = True
-            row_done.label(text="ALL DONE \u2014 FULLY MESHED", icon='CHECKMARK')
-        else:
-            bx.label(text=f"Total  {total_loaded:,} / {props.rtree_bld_total:,}", icon='OBJECT_DATA')
+            row_d.scale_y = 0.8
+            for d in _discs[i:i+2]:
+                op_d = row_d.operator("bim.fed_rtree_filter_disc",
+                                      text=f"{d} ({disc_counts[d]:,})",
+                                      icon=_disc_icons.get(d, 'DOT'),
+                                      emboss=False)
+                op_d.disc = d
