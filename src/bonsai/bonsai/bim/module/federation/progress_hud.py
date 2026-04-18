@@ -48,10 +48,9 @@ def _get_progress_data():
     if not disc_counts and bv._direct_stream_enabled:
         # Find the building currently being streamed (active or most recent)
         _ds_bld = bv._direct_stream_active_bld
-        if not _ds_bld and bv._direct_stream_buildings:
-            # Pick building with most elements streamed
-            _ds_bld = max(bv._direct_stream_buildings,
-                          key=lambda b: len(bv._direct_stream_buildings[b]))
+        if not _ds_bld:
+            # Use last active building (persists after pause)
+            _ds_bld = bv._direct_stream_last_bld
         if _ds_bld:
             disc_counts = bv._direct_stream_disc_totals.get(_ds_bld, {})
             loaded_per_disc = bv._direct_stream_disc_loaded.get(_ds_bld, {})
@@ -170,11 +169,11 @@ def draw_progress_hud():
 
     from . import bbox_visualization as bv
 
-    # S195: show HUD when Direct Stream is active (even before first element)
-    if not rows and not bv._direct_stream_enabled:
+    # S195: show HUD when streaming OR when streamed buildings exist (paused state)
+    _has_ds_data = bool(bv._direct_stream_buildings)
+    if not rows and not bv._direct_stream_enabled and not _has_ds_data:
         return
     if not rows:
-        # Direct Stream ON but no elements yet — show minimal status
         rows = []
         total_count = 0
         total_loaded = 0

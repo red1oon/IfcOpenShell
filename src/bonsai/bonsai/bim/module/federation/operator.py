@@ -3160,7 +3160,31 @@ def _direct_stream_tick():
     from . import bbox_visualization as bv
 
     if not bv._direct_stream_enabled:
-        return None  # unregister
+        # Auto-shred while paused: clean up buildings one per tick, furthest first
+        if bv._direct_stream_auto_shred and bv._direct_stream_buildings:
+            _farthest = None
+            _farthest_dist = 0
+            cam = bv._dlod_eye_pos
+            if cam:
+                _off = bv._model_offset
+                cx = cam[0] - (_off.x if _off else 0.0)
+                cy = cam[1] - (_off.y if _off else 0.0)
+                cz = cam[2] - (_off.z if _off else 0.0)
+                for _sb in list(bv._direct_stream_buildings.keys()):
+                    _sc = bv._building_centres.get(_sb)
+                    if _sc:
+                        _sd = math.sqrt((cx-_sc[0])**2 + (cy-_sc[1])**2 + (cz-_sc[2])**2)
+                        if _sd > _farthest_dist:
+                            _farthest_dist = _sd
+                            _farthest = _sb
+            else:
+                # No eye pos — just pick any
+                _farthest = next(iter(bv._direct_stream_buildings))
+            if _farthest:
+                print(f"[S195] §AUTO_SHRED_IDLE {_farthest} dist={_farthest_dist:.0f}m")
+                _direct_stream_remove_building(_farthest)
+            return 2.0  # slower interval while cleaning up
+        return None  # unregister — nothing to do
 
     if not bv._building_centres or not bv._db_path_cache:
         return 2.0
@@ -3236,6 +3260,7 @@ def _direct_stream_tick():
             _candidates.sort()
             _, bld = _candidates[0]
             bv._direct_stream_active_bld = bld
+            bv._direct_stream_last_bld = bld
             # Query disc totals for HUD bars
             if bld not in bv._direct_stream_disc_totals:
                 try:
@@ -3258,7 +3283,7 @@ def _direct_stream_tick():
             _disc_str = ' '.join(f"{d}={c:,}" for d, c in sorted(_dtot.items()))
             print(f"[S195] §DS_START {bld} "
                   f"elements={bv._building_element_counts.get(bld, 0):,} [{_disc_str}]")
-            # S195: fly camera to face the building (only for first or large buildings)
+            # S195: snap camera to building + set dynamic radius
             _el_count = bv._building_element_counts.get(bld, 0)
             _is_first = len(bv._direct_stream_buildings) == 0
             _centre = bv._building_centres.get(bld)
@@ -3268,35 +3293,23 @@ def _direct_stream_tick():
                 _by = _centre[1] - (_off2.y if _off2 else 0.0)
                 _bz = _centre[2] - (_off2.z if _off2 else 0.0)
                 _target_dist = max(80, min(300, _el_count ** 0.4))
-                # Smooth fly-to: interpolate over 10 steps
                 for _area in _bpy.context.screen.areas:
                     if _area.type == 'VIEW_3D':
                         _r3d = _area.spaces[0].region_3d
-                        _sx = _r3d.view_location.x
-                        _sy = _r3d.view_location.y
-                        _sz = _r3d.view_location.z
-                        _sd = _r3d.view_distance
-                        _steps = 10
-                        _step = [0]
-                        def _fly_step(_sx=_sx, _sy=_sy, _sz=_sz, _sd=_sd,
-                                      _tx=_bx, _ty=_by, _tz=_bz, _td=_target_dist,
-                                      _r3d=_r3d, _area=_area, _step=_step, _n=_steps):
-                            _step[0] += 1
-                            t = _step[0] / _n
-                            # Ease-out cubic
-                            t = 1 - (1 - t) ** 3
-                            _r3d.view_location.x = _sx + (_tx - _sx) * t
-                            _r3d.view_location.y = _sy + (_ty - _sy) * t
-                            _r3d.view_location.z = _sz + (_tz - _sz) * t
-                            _r3d.view_distance = _sd + (_td - _sd) * t
-                            _area.tag_redraw()
-                            if _step[0] >= _n:
-                                return None  # unregister
-                            return 0.03  # ~30fps
-                        _bpy.app.timers.register(_fly_step, first_interval=0.03)
-                        print(f"[S195] §DS_FLY {bld} centre=({_bx:.0f},{_by:.0f},{_bz:.0f}) "
-                              f"dist={_target_dist:.0f}m")
+                        _r3d.view_location = (_bx, _by, _bz)
+                        _r3d.view_distance = _target_dist
+                        _area.tag_redraw()
                         break
+                # Dynamic radius: large building → short radius (stay focused)
+                # small building → wide radius (scan area)
+                if _el_count > 20000:
+                    bv._DIRECT_STREAM_RADIUS = 100
+                elif _el_count > 5000:
+                    bv._DIRECT_STREAM_RADIUS = 150
+                else:
+                    bv._DIRECT_STREAM_RADIUS = 300
+                print(f"[S195] §DS_FLY {bld} centre=({_bx:.0f},{_by:.0f},{_bz:.0f}) "
+                      f"dist={_target_dist:.0f}m radius={bv._DIRECT_STREAM_RADIUS}m")
             # S195: Pre-tessellate all unique hashes for this building
             # One upfront cost → all subsequent ticks are pure placement (fast)
             if bv._library_db_cache and bv._db_path_cache:
@@ -3438,13 +3451,11 @@ def _direct_stream_tick():
             bld_col = _bpy.data.collections.new(bld_col_label)
             _new_bld_col = True
 
-        # Per-batch collection — avoids O(n) reindex on growing collections
-        # Each tick creates a fresh small collection, linked under parent at end
-        _batch_num = len(bld_col.children) if bld_col else 0
-        _batch_col = _bpy.data.collections.new(f"DS_{bld}_{_batch_num}")
-        _disc_cols = {}
-        _new_disc_cols = []
-        _flat_mode = True  # always flat within batch — disc sub-cols add overhead
+        # Per-disc collections under building, per-batch sub-collections under disc
+        # Disc col = organizational (persists), batch col = speed (max 1000 objects)
+        _disc_cols = {}       # disc_key → disc collection
+        _batch_cols = {}      # disc_key → current batch collection
+        _new_disc_cols = []   # disc collections to link to building at end
 
         ox = _off.x if _off else 0.0
         oy = _off.y if _off else 0.0
@@ -3460,7 +3471,27 @@ def _direct_stream_tick():
                 continue
 
             disc_key = disc or 'OTHER'
-            col = _batch_col
+            # Get or create disc parent collection
+            if disc_key not in _disc_cols:
+                _dc_label = f"DirectStream_{bld}_{disc_key}"
+                _dc = _bpy.data.collections.get(_dc_label)
+                if _dc is None:
+                    _dc = _bpy.data.collections.new(_dc_label)
+                    _new_disc_cols.append(_dc)
+                _disc_cols[disc_key] = _dc
+                # Create batch sub-collection under disc
+                _bn = len(_dc.children)
+                _bc = _bpy.data.collections.new(f"DS_{bld}_{disc_key}_{_bn}")
+                _batch_cols[disc_key] = (_bc, 0)  # (collection, count)
+            # Get batch col, rotate if full
+            _bc, _bc_count = _batch_cols[disc_key]
+            if _bc_count >= 1000:
+                # Link full batch, create new one
+                _disc_cols[disc_key].children.link(_bc)
+                _bn = len(_disc_cols[disc_key].children)
+                _bc = _bpy.data.collections.new(f"DS_{bld}_{disc_key}_{_bn}")
+                _bc_count = 0
+            col = _bc
 
             obj = _bpy.data.objects.new(obj_name, mesh)
             obj.hide_select = False
@@ -3508,16 +3539,20 @@ def _direct_stream_tick():
             bv._direct_stream_guids.add(guid)
             bv._direct_stream_objects[guid] = obj
             bv._direct_stream_buildings.setdefault(bld, set()).add(guid)
-            # Track per-disc loaded count for HUD
             _dl = bv._direct_stream_disc_loaded.setdefault(bld, {})
             _dl[disc_key] = _dl.get(disc_key, 0) + 1
+            _batch_cols[disc_key] = (_bc, _bc_count + 1)
+            _bc_count += 1
             placed += 1
 
-        # Deferred linking — batch col under building, building under scene
-        if placed > 0:
-            bld_col.children.link(_batch_col)
-        else:
-            _bpy.data.collections.remove(_batch_col)  # empty batch — discard
+        # Deferred linking — batch cols under disc, disc under building, building under scene
+        for _dk, (_bc_final, _bc_cnt) in _batch_cols.items():
+            if _bc_cnt > 0:
+                _disc_cols[_dk].children.link(_bc_final)
+            else:
+                _bpy.data.collections.remove(_bc_final)
+        for _ndc in _new_disc_cols:
+            bld_col.children.link(_ndc)
         if _new_bld_col:
             _bpy.context.scene.collection.children.link(bld_col)
 

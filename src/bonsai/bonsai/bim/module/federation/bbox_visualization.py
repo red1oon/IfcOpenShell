@@ -153,6 +153,7 @@ _DIRECT_STREAM_SHELL_DISCS = {'ARC', 'STR'}  # shell disciplines — streamed fi
 _DIRECT_STREAM_NEAR = 50         # metres — within this, stream all disciplines
 _direct_stream_disc_phase = {}   # building_name → 'shell' | 'detail' (tracks phase)
 _direct_stream_active_bld = None # building currently being streamed — finish before switching
+_direct_stream_last_bld = None   # last building that was streamed (for HUD when paused)
 _direct_stream_disc_totals = {}  # building_name → {disc: count} — total per discipline from DB
 _direct_stream_disc_loaded = {}  # building_name → {disc: count} — loaded so far per discipline
 _direct_stream_auto_shred = False  # True = auto-shred furthest building when lagging
