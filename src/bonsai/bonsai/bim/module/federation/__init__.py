@@ -39,7 +39,7 @@ merging, solving spatial hierarchy mismatch problems through coordinate-based qu
 import bpy
 from bpy.app.handlers import persistent
 from pathlib import Path
-from . import ui, prop, operator, discipline_legend, progress_hud, cache_monitor, color_palette, crud_operators, webui_sync
+from . import ui, prop, operator, direct_stream, discipline_legend, progress_hud, cache_monitor, color_palette, crud_operators, webui_sync
 # from . import ui_federation_tab  # Old experimental sandbox - replaced by ui_federation_project
 from . import ui_federation_project  # Clean enterprise layout under Project Overview
 from . import river  # River Equipment Monitoring - Item 11
@@ -92,9 +92,10 @@ classes = (
     operator.FedRTreeCancelBake,            # S186-s2: cancel bake subprocess
     operator.FedRTreeBakeAll,               # S188: parallel bake all buildings
     operator.FedRTreeRelinkBaked,           # S193: crash recovery — relink from baked/
-    operator.FedRTreeDirectStream,         # S195: direct DB streaming (no .blend files)
-    operator.FedRTreeDirectStreamClear,    # S195: clear direct-streamed objects
-    operator.FedRTreeAutoShredToggle,      # S195: auto-shred furthest when lagging
+    direct_stream.FedRTreeDirectStream,     # S195: direct DB streaming (no .blend files)
+    direct_stream.FedRTreeDirectStreamClear,  # S195: clear direct-streamed objects
+    direct_stream.FedRTreeAutoShredToggle, # S195: auto-shred furthest when lagging
+    direct_stream.FedRTreeCinematic,     # S198: one-click cinematic scene
     operator.FedRTreeShred,                 # S180: remove last loaded collection
     operator.FedRTreeCountBuilding,         # S183: cockpit discipline counts
     operator.FedRTreeCopyGuid,              # S183: clipboard GUID copy
@@ -798,7 +799,14 @@ def register():
     try:
         progress_hud.enable_hud()
     except Exception:
-        pass  # 3D view may not exist yet at registration time
+        # S196: 3D view may not exist yet — retry after 1s when Blender is ready
+        def _deferred_hud_enable():
+            try:
+                progress_hud.enable_hud()
+            except Exception:
+                return 2.0  # retry again
+            return None  # done
+        bpy.app.timers.register(_deferred_hud_enable, first_interval=1.0)
 
     # Attach properties to Blender's Scene
     bpy.types.Scene.BIMFederationProperties = bpy.props.PointerProperty(

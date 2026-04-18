@@ -39,21 +39,72 @@ _link_total_mb = 0     # total MB being linked (for ETA)
 
 def _get_progress_data():
     """Gather discipline progress from bbox_visualization state.
-    S195: also shows DirectStream progress when no active RTree building."""
+    S195: also shows DirectStream progress when no active RTree building.
+    S196: suppress stale disc bars during BAKE ALL (no active building)."""
     from . import bbox_visualization as bv
 
     disc_counts = bv._building_disc_counts
 
-    # S195: If no RTree active building but DirectStream is running, show DS progress
-    if not disc_counts and bv._direct_stream_enabled:
-        # Find the building currently being streamed (active or most recent)
+    # S196: during BAKE ALL, stale disc_counts from a previous session are misleading
+    # Only show disc bars when there's an active building context to match them
+    if disc_counts and not bv._active_building and (bv._baking_buildings or bv._bake_queue):
+        disc_counts = {}
+
+    # S195: If no RTree active building but DirectStream is active or has data, show DS progress
+    # S198: show nearest building to camera — streamed or just in-sight from DB totals
+    if not disc_counts and (bv._direct_stream_enabled or bv._direct_stream_buildings):
         _ds_bld = bv._direct_stream_active_bld
+        if not _ds_bld and bv._dlod_eye_pos:
+            import math as _m
+            _cam = bv._dlod_eye_pos
+            _off = bv._model_offset
+            _cx = _cam[0] + (_off.x if _off else 0.0)
+            _cy = _cam[1] + (_off.y if _off else 0.0)
+            _cz = _cam[2] + (_off.z if _off else 0.0)
+            _nearest_dist = float('inf')
+            # First try nearest streamed building
+            for _sb in bv._direct_stream_buildings:
+                _sc = bv._building_centres.get(_sb)
+                if _sc:
+                    _sd = _m.sqrt((_cx-_sc[0])**2 + (_cy-_sc[1])**2)
+                    if _sd < _nearest_dist:
+                        _nearest_dist = _sd
+                        _ds_bld = _sb
+            # S198: if no streamed building nearby, show nearest ANY building in sight
+            if not _ds_bld or _nearest_dist > 300:
+                for _sb, _sc in bv._building_centres.items():
+                    _sd = _m.sqrt((_cx-_sc[0])**2 + (_cy-_sc[1])**2)
+                    if _sd < _nearest_dist:
+                        _nearest_dist = _sd
+                        _ds_bld = _sb
         if not _ds_bld:
-            # Use last active building (persists after pause)
             _ds_bld = bv._direct_stream_last_bld
         if _ds_bld:
             disc_counts = bv._direct_stream_disc_totals.get(_ds_bld, {})
+            # S198: query disc totals on-demand for buildings not yet streamed
+            if not disc_counts and bv._db_path_cache:
+                try:
+                    import sqlite3 as _sq
+                    _dc = _sq.connect(bv._db_path_cache)
+                    _bc = "m.building = ? AND" if bv._has_building_column else ""
+                    _bp = (_ds_bld,) if bv._has_building_column else ()
+                    _dr = _dc.execute(f"""
+                        SELECT m.discipline, COUNT(*)
+                        FROM elements_meta m
+                        JOIN element_instances i ON m.guid = i.guid
+                        WHERE {_bc} i.geometry_hash IS NOT NULL
+                          AND m.ifc_class != 'IfcOpeningElement'
+                        GROUP BY m.discipline
+                    """, _bp).fetchall()
+                    disc_counts = {d: c for d, c in _dr}
+                    bv._direct_stream_disc_totals[_ds_bld] = disc_counts
+                    _dc.close()
+                except Exception:
+                    pass
             loaded_per_disc = bv._direct_stream_disc_loaded.get(_ds_bld, {})
+            # S196: snap to 100% when building phase is done
+            _phase = bv._direct_stream_disc_phase.get(_ds_bld)
+            _is_done = _phase in ('done', 'shell_done', 'envelope_done')
             total_count = sum(disc_counts.values())
             total_loaded = sum(loaded_per_disc.values())
             rows = []
@@ -61,8 +112,14 @@ def _get_progress_data():
                 if cnt == 0:
                     continue
                 loaded = loaded_per_disc.get(disc, 0)
-                pct = min(loaded / cnt, 1.0) if cnt > 0 else 0.0
+                # When done, use actual loaded as the denominator (skip gap)
+                if _is_done and loaded > 0:
+                    pct = 1.0
+                else:
+                    pct = min(loaded / cnt, 1.0) if cnt > 0 else 0.0
                 rows.append((disc, cnt, loaded, pct))
+            if _is_done:
+                total_loaded = total_count  # title shows ✓
             rows.sort(key=lambda r: r[1], reverse=True)
             # Inject building name for title
             _get_progress_data._ds_building = _ds_bld
@@ -169,9 +226,10 @@ def draw_progress_hud():
 
     from . import bbox_visualization as bv
 
-    # S195: show HUD when streaming OR when streamed buildings exist (paused state)
+    # S195: show HUD when streaming, baking, or streamed buildings exist
     _has_ds_data = bool(bv._direct_stream_buildings)
-    if not rows and not bv._direct_stream_enabled and not _has_ds_data:
+    _has_bake_data = bool(bv._baking_buildings or bv._bake_queue or bv._bake_done)
+    if not rows and not bv._direct_stream_enabled and not _has_ds_data and not _has_bake_data:
         return
     if not rows:
         rows = []
@@ -217,8 +275,16 @@ def draw_progress_hud():
 
     _cx = x0 + (panel_w - padding * 2) // 2  # center x
 
-    # Title: "Building (total)" idle, "Building (pct%)" when streaming
-    if total_loaded > 0 and total_pct < 100:
+    # S196: during BAKE ALL, show bake progress as title instead of stale building name
+    _n_baking = len(bv._baking_buildings)
+    _n_done = len(bv._bake_done)
+    _n_queued = len(bv._bake_queue)
+    if _n_baking > 0 or (_n_queued > 0 and _n_done > 0):
+        _n_total_bake = _n_baking + _n_done + _n_queued
+        _title = f"\u26a1 Baking {_n_done}/{_n_total_bake}"
+    elif _n_done > 0 and not bv._direct_stream_enabled and not total_count:
+        _title = f"\u2713 {_n_done} Buildings Baked"
+    elif total_loaded > 0 and total_pct < 100:
         _title = f"{building} ({total_pct:.0f}%)"
     elif total_pct >= 100:
         _title = f"{building} \u2713"
@@ -228,7 +294,13 @@ def draw_progress_hud():
     blf.size(font_id, 16)
     _tw = blf.dimensions(font_id, _title)[0]
     blf.position(font_id, _cx - _tw / 2, y0 - 4, 0)
-    if total_pct >= 100:
+    if _n_baking > 0 or _n_queued > 0:
+        pulse = 0.6 + 0.4 * math.sin(now * 3)
+        blf.color(font_id, 0.3 * pulse, 0.55 * pulse, 1.0 * pulse, 1.0)
+    elif _n_done > 0 and not total_count:
+        pulse = 0.7 + 0.3 * math.sin(now * 2)
+        blf.color(font_id, 0.1, 1.0 * pulse, 0.35, 1.0)
+    elif total_pct >= 100:
         pulse = 0.7 + 0.3 * math.sin(now * 2)
         blf.color(font_id, 0.3 * pulse, 0.7 * pulse, 1.0 * pulse, 1.0)
     elif total_loaded > 0:
@@ -268,6 +340,47 @@ def draw_progress_hud():
                            (0.3 * pulse, 0.55 * pulse, 1.0 * pulse, 0.9))
             y_cursor -= 10
 
+    # ── S196: During BAKE ALL, show total elements progress bar instead of disc bars ──
+    if not rows and (_n_baking > 0 or _n_queued > 0 or (_n_done > 0 and not bv._direct_stream_enabled)):
+        _total_db = sum(bv._building_element_counts.values()) if bv._building_element_counts else 0
+        _baked_elements = sum(
+            bv._building_element_counts.get(b, 0) for b in bv._bake_done
+        )
+        # Also count currently baking buildings (partial credit)
+        for _bb in bv._baking_buildings:
+            _baked_elements += bv._building_element_counts.get(_bb, 0) // 2
+
+        if _total_db > 0:
+            _elem_pct = min(_baked_elements / _total_db, 1.0)
+            _prog_bar_w = panel_w - padding * 2
+
+            # Total progress bar — full width
+            _draw_rect(shader, x0, y_cursor - 22, _prog_bar_w, 18,
+                       (0.12, 0.12, 0.18, 0.85))
+            # Border
+            _draw_rect(shader, x0, y_cursor - 22,
+                       _prog_bar_w, 1, (0.3, 0.4, 0.7, 0.5))  # bottom
+            _draw_rect(shader, x0, y_cursor - 5,
+                       _prog_bar_w, 1, (0.3, 0.4, 0.7, 0.5))  # top
+            _draw_rect(shader, x0 + _prog_bar_w - 1, y_cursor - 22,
+                       1, 18, (0.3, 0.4, 0.7, 0.5))  # right
+
+            if _elem_pct > 0:
+                pulse = 0.7 + 0.3 * math.sin(now * 3)
+                _fill_w = max(int(_prog_bar_w * _elem_pct), 2)
+                _draw_rect(shader, x0, y_cursor - 22, _fill_w, 18,
+                           (0.15 * pulse, 0.4 * pulse, 0.9 * pulse, 0.85))
+
+            # Label: "245,000 / 1,063,911 elements"
+            blf.size(font_id, 12)
+            _elem_txt = f"{_baked_elements:,} / {_total_db:,} elements"
+            _etw = blf.dimensions(font_id, _elem_txt)[0]
+            blf.position(font_id, x0 + (_prog_bar_w - _etw) / 2, y_cursor - 18, 0)
+            blf.color(font_id, 0.9, 0.95, 1.0, 0.95)
+            blf.draw(font_id, _elem_txt)
+
+            y_cursor -= 30
+
     # ── Discipline bars ──
     if not rows:
         max_count = 0
@@ -291,9 +404,17 @@ def draw_progress_hud():
         _draw_rect(shader, x0 + label_width - accent_width - 2, y_cursor - bar_height,
                    accent_width, bar_height, (dr, dg, db, 0.9))
 
-        # Dull background — full bar in dim disc color (shows total capacity)
+        # S196: darker background with visible disc-tinted outline (shows total capacity)
         _draw_rect(shader, x0 + label_width, y_cursor - bar_height,
-                   bar_w, bar_height, (dr * 0.2, dg * 0.2, db * 0.2, 0.6))
+                   bar_w, bar_height, (dr * 0.12, dg * 0.12, db * 0.12, 0.85))
+        # Border — thin outline in disc color so max extent is always visible
+        _border_a = 0.5
+        _draw_rect(shader, x0 + label_width, y_cursor - bar_height,
+                   bar_w, 1, (dr * 0.5, dg * 0.5, db * 0.5, _border_a))  # bottom
+        _draw_rect(shader, x0 + label_width, y_cursor - 1,
+                   bar_w, 1, (dr * 0.5, dg * 0.5, db * 0.5, _border_a))  # top
+        _draw_rect(shader, x0 + label_width + bar_w - 1, y_cursor - bar_height,
+                   1, bar_height, (dr * 0.5, dg * 0.5, db * 0.5, _border_a))  # right edge
 
         # Bright fill — progress pushing out
         fill_w = 0
@@ -380,18 +501,33 @@ def draw_progress_hud():
             _bk_eta = ""
         _status_txt = f"BAKING{_bk_eta}"
         _status_color = (0.3, 0.6 * pulse, 1.0 * pulse, 1.0)
-    elif bv._active_building and bv._active_building in bv._bake_done:
-        pulse = 0.7 + 0.3 * math.sin(now * 2)
-        _status_txt = "BAKED \u2014 SAVE TO LINK"
-        _status_color = (0.1, 1.0 * pulse, 0.35, 1.0)
-    elif bv._active_building and bpy.data.collections.get(f"Baked_{bv._active_building}"):
-        _status_txt = "\u2713 BAKED LINK SUCCESS"
-        _status_color = (0.1, 0.85, 0.3, 0.9)
     elif bv._direct_stream_enabled:
-        from . import operator as _op
-        _tick_ms = getattr(_op._direct_stream_tick, '_last_tick_ms', 0)
+        from . import direct_stream as _ds
+        _tick_ms = getattr(_ds._direct_stream_tick, '_last_tick_ms', 0)
         _ds_total = len(bv._direct_stream_guids)
-        if _tick_ms > 1500:
+
+        # S197: detect camera-moving / settling state for HUD
+        _cam_moving = False
+        _cam_settling = False
+        _prev_cam = bv._direct_stream_cam_last
+        if _prev_cam and bv._dlod_eye_pos:
+            _off = bv._model_offset
+            _hcx = bv._dlod_eye_pos[0] + (_off.x if _off else 0.0)
+            _hcy = bv._dlod_eye_pos[1] + (_off.y if _off else 0.0)
+            _hcz = bv._dlod_eye_pos[2] + (_off.z if _off else 0.0)
+            _cd = math.sqrt((_hcx-_prev_cam[0])**2+(_hcy-_prev_cam[1])**2+(_hcz-_prev_cam[2])**2)
+            if _cd > bv._DIRECT_STREAM_CAM_THRESH:
+                _cam_moving = True
+            elif (now - bv._direct_stream_cam_still_t) < bv._DIRECT_STREAM_SETTLE_S:
+                _cam_settling = True
+
+        if _cam_moving:
+            _status_txt = f"PAUSED \u2014 CAM MOVE {_ds_total:,}"
+            _status_color = (0.9, 0.7, 0.2, 0.9)
+        elif _cam_settling:
+            _status_txt = f"SETTLING... {_ds_total:,}"
+            _status_color = (0.7, 0.6, 0.3, 0.8)
+        elif _tick_ms > 1500:
             pulse = 0.6 + 0.4 * abs(math.sin(now * 4))
             _shred_hint = "auto-shredding" if bv._direct_stream_auto_shred else "SHRED to free up"
             _status_txt = f"LAG {int(_tick_ms)}ms \u2014 {_shred_hint}"
@@ -400,11 +536,73 @@ def draw_progress_hud():
             _status_txt = f"BUDGET {_ds_total:,}/{bv._DIRECT_STREAM_BUDGET:,} \u2014 SHRED to continue"
             _status_color = (1.0, 0.7, 0.1, 0.9)
         elif bv._direct_stream_active_bld:
-            _status_txt = f"STREAMING {_ds_total:,}"
-            _status_color = (0.3, 0.8, 1.0, 0.9)
+            # S197: show RESUMING briefly after cam settle, then STREAMING
+            _since_settle = now - bv._direct_stream_cam_still_t
+            _ab = bv._direct_stream_active_bld
+            _ab_total = bv._building_element_counts.get(_ab, 0)
+            _ab_done = len(bv._direct_stream_buildings.get(_ab, set()))
+            _ab_phase = bv._direct_stream_disc_phase.get(_ab, 'envelope')
+            if _since_settle < 2.0 and _ds_total > 0:
+                _status_txt = f"RESUMING {_ab} {_ab_done:,}/{_ab_total:,}"
+                _status_color = (0.2, 0.9, 0.6, 0.9)
+            elif _ab_phase == 'envelope':
+                _status_txt = f"ENVELOPE {_ab} {_ab_done:,}"
+                _status_color = (0.4, 0.9, 0.5, 0.9)
+            else:
+                _status_txt = f"STREAMING {_ab} {_ab_done:,}/{_ab_total:,}"
+                _status_color = (0.3, 0.8, 1.0, 0.9)
         else:
-            _status_txt = f"IDLE {_ds_total:,}"
-            _status_color = (0.5, 0.7, 0.5, 0.7)
+            # S197: check if all buildings in radius are done
+            _all_done = True
+            if bv._building_centres:
+                _cam = bv._dlod_eye_pos
+                if _cam:
+                    _off = bv._model_offset
+                    _ecx = _cam[0] + (_off.x if _off else 0.0)
+                    _ecy = _cam[1] + (_off.y if _off else 0.0)
+                    _ecz = _cam[2] + (_off.z if _off else 0.0)
+                    for _bn, _bc in bv._building_centres.items():
+                        _ed = math.sqrt((_ecx-_bc[0])**2+(_ecy-_bc[1])**2+(_ecz-_bc[2])**2)
+                        if _ed < bv._DIRECT_STREAM_RADIUS:
+                            _bph = bv._direct_stream_disc_phase.get(_bn, 'shell')
+                            if _bph not in ('done', 'shell_done', 'envelope_done'):
+                                _all_done = False
+                                break
+            if _all_done and _ds_total > 0:
+                _status_txt = f"DONE {_ds_total:,}"
+                _status_color = (0.1, 1.0, 0.35, 0.9)
+            elif len(bv._building_centres) > 5:
+                # S198: cycle — stats 6s (default), building 2s (brief)
+                _cycle_pos = now % 8.0  # 8s period: 0-6 = stats, 6-8 = building
+                _n_blds = len(bv._building_centres)
+                _n_total = sum(bv._building_element_counts.values())
+                if _cycle_pos < 6.0 or not _get_progress_data._ds_building:
+                    if _ds_total > 0:
+                        _status_txt = (f"{_ds_total:,} in scene"
+                                       f" \u00b7 {_n_blds} buildings \u00b7 {_n_total:,} in DB")
+                    else:
+                        _status_txt = f"{_n_blds} buildings \u00b7 {_n_total:,} elements"
+                    _status_color = (0.6, 0.7, 0.8, 0.8)
+                else:
+                    # Show nearest building name + element count
+                    _nb = _get_progress_data._ds_building
+                    _nb_total = bv._building_element_counts.get(_nb, 0)
+                    _nb_done = len(bv._direct_stream_buildings.get(_nb, set()))
+                    if _nb_done > 0:
+                        _status_txt = f"{_nb} \u00b7 {_nb_done:,}/{_nb_total:,}"
+                    else:
+                        _status_txt = f"{_nb} \u00b7 {_nb_total:,} elements"
+                    _status_color = (0.5, 0.8, 0.9, 0.8)
+            else:
+                pulse = 0.6 + 0.4 * abs(math.sin(now * 1.5))
+                _status_txt = f"PAN CAM TO STREAM"
+                _status_color = (0.8 * pulse, 0.7 * pulse, 0.2, 0.9)
+    elif bv._bake_done:
+        # S196: baked but not yet streaming — prompt user
+        pulse = 0.7 + 0.3 * math.sin(now * 2)
+        _n_baked = len(bv._bake_done)
+        _status_txt = f"\u2713 BAKED ({_n_baked}) \u2014 STREAM TO VIEW"
+        _status_color = (0.1, 1.0 * pulse, 0.35, 1.0)
 
     if _status_txt:
         blf.size(font_id, 16)

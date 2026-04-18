@@ -122,6 +122,7 @@ _bake_queue = []             # S188: buildings waiting to bake, sorted smallest-
 _MAX_BAKE_WORKERS = 4        # S188: max concurrent bake subprocesses
 _CHUNK_THRESHOLD = 100000    # S189: split into chunks above this element count
 _bake_done = {}              # S189: building_name → baked_path (completed, ready to reopen)
+_baked_on_disk = None        # S196: set of building names with _baked.blend on disk (lazy)
 _linking_active = False      # S191: True during save_post linking (HUD shows DO NOT CLOSE)
 _merge_done_path = ""        # S189: path to merged session .blend (ready to reopen)
 
@@ -145,20 +146,37 @@ _direct_stream_enabled = False   # True when direct-stream timer is active
 _direct_stream_guids = set()     # guids currently in viewport (for dedup + removal)
 _direct_stream_objects = {}      # guid → bpy.types.Object (for distance-based removal)
 _direct_stream_buildings = {}    # building_name → set(guid) (track per-building)
-_DIRECT_STREAM_RADIUS = 100      # metres — stream elements within this distance
-_DIRECT_STREAM_HYSTERESIS = 50   # unlink at radius + hysteresis
+_DIRECT_STREAM_RADIUS = 300      # metres — stream buildings within this distance
 _DIRECT_STREAM_BUDGET = 200000   # max total elements — user shreds manually when needed
 _DIRECT_STREAM_BATCH = 500       # elements per tick
 _DIRECT_STREAM_SHELL_DISCS = {'ARC', 'STR'}  # shell disciplines — streamed first
 _DIRECT_STREAM_NEAR = 50         # metres — within this, stream all disciplines
-_direct_stream_disc_phase = {}   # building_name → 'shell' | 'detail' (tracks phase)
+_direct_stream_disc_phase = {}   # building_name → 'envelope'|'envelope_done'|'shell'|'shell_done'|'detail'|'done'
 _direct_stream_active_bld = None # building currently being streamed — finish before switching
 _direct_stream_last_bld = None   # last building that was streamed (for HUD when paused)
+# S197: camera-settle — halt streaming while user navigates
+_direct_stream_cam_last = None   # (x, y, z) last camera position for settle detection
+_direct_stream_cam_still_t = 0.0 # time.time() when camera last became still
+_DIRECT_STREAM_SETTLE_S = 1.0   # seconds camera must be still before streaming resumes
+_DIRECT_STREAM_CAM_THRESH = 2.0 # metres — movement beyond this = user is navigating
+_direct_stream_bld_index = {}    # building_name → counter (e.g. "01") for Outliner labels
+_direct_stream_free_indices = [] # recycled counters from shredded buildings
+_direct_stream_next_index = 1    # next counter to assign if no free indices
 _direct_stream_disc_totals = {}  # building_name → {disc: count} — total per discipline from DB
 _direct_stream_disc_loaded = {}  # building_name → {disc: count} — loaded so far per discipline
+_direct_stream_shred_blacklist = []  # last 3 shredded buildings — don't re-stream immediately
 _direct_stream_auto_shred = False  # True = auto-shred furthest building when lagging
 _direct_stream_lag_history = []    # last N tick_ms values for budget tuning
 _DIRECT_STREAM_LAG_TARGET = 1500   # ms — target max tick time (user feels lag above this)
+# S198: Envelope-first streaming
+_direct_stream_bld_bbox = {}  # building_name → (minX, maxX, minY, maxY, minZ, maxZ)
+_DIRECT_STREAM_ENVELOPE_CLASSES = (
+    'IfcWall', 'IfcWallStandardCase', 'IfcRoof', 'IfcSlab',
+    'IfcCurtainWall', 'IfcPlate', 'IfcDoor', 'IfcWindow', 'IfcCovering',
+    'IfcRailing', 'IfcMember', 'IfcBeam', 'IfcColumn', 'IfcBuildingElementProxy',
+)
+_DIRECT_STREAM_MERGE_MIN = 20   # min elements in group to trigger merge
+_DIRECT_STREAM_MERGE_VOL = 2.0  # max avg bbox volume (m³) for merge
 
 # S182: Progressive load state
 LOAD_DISC_ORDER = ['ARC', 'STR', 'MEP', 'ELEC', 'FP']
@@ -515,22 +533,13 @@ def draw_bboxes():
             continue
 
         color = _color_override if _color_override else DISCIPLINE_COLORS.get(discipline, DISCIPLINE_COLORS['DEFAULT'])
-        # Ghost wireframes when building is active and solid meshes block the view.
-        # Keep full alpha when x-ray is on (user wants to see through).
-        # S195: extra-light when DirectStream has meshed the building.
+        # S196: when DS active, all bboxes super-light so streamed meshes dominate
         _has_ds = bool(_direct_stream_buildings)
-        if _active_building or _has_ds:
-            xray_on = False
-            for area in bpy.context.screen.areas:
-                if area.type == 'VIEW_3D':
-                    xray_on = area.spaces[0].shading.show_xray
-                    break
-            if xray_on:
-                alpha = color[3]
-            elif _has_ds and not _active_building:
-                # DirectStream mode — near-invisible so meshes dominate
-                alpha = 0.02
-            elif _loaded_collections:
+        if _has_ds:
+            alpha = 0.06
+            color = (color[0], color[1], color[2], alpha)
+        elif _active_building:
+            if _loaded_collections:
                 alpha = 0.15
             else:
                 alpha = 0.25

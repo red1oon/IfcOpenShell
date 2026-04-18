@@ -1860,71 +1860,28 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
             sh_row.scale_y = 1.2
             sh_row.operator("bim.fed_rtree_shred", text="SHRED SELECTED  \u2702", icon='TRASH')
 
-            act_box.separator(factor=0.3)
-            # Action row: OVERNIGHT + BACKEND + controls
-            btn_row = act_box.row(align=True)
-            if bv._overnight_running:
-                if bv._overnight_paused:
-                    btn_row.operator("bim.fed_rtree_overnight_pause",
-                                     text="RESUME", icon='PLAY')
-                else:
-                    btn_row.operator("bim.fed_rtree_overnight_pause",
-                                     text="PAUSE", icon='PAUSE')
-                btn_row.operator("bim.fed_rtree_overnight_cancel",
-                                 text="CANCEL", icon='X')
-                # SHORT-CUT → Backend
-                if bv._overnight_shortcut_factor > 0:
-                    sc_row = act_box.row(align=True)
-                    sc_row.scale_y = 1.3
-                    eta_txt = bv._overnight_shortcut_eta or "?"
-                    sc_row.operator("bim.fed_rtree_switch_offline",
-                                    text=f"\u26a1 BACKEND  ~{eta_txt}",
-                                    icon='NONE')
-            elif bv._overnight_progress and not bv._overnight_running:
-                is_done = (bv._overnight_progress.startswith("DONE")
-                           or bv._overnight_progress.startswith("\u2713"))
-                if is_done:
-                    btn_row.operator("bim.fed_rtree_overnight_dismiss",
-                                     text="OK", icon='CHECKMARK')
-                else:
-                    btn_row.operator("bim.fed_rtree_overnight",
-                                     text="OVERNIGHT", icon='TIME')
-            else:
-                _this_busy = (is_baking or bv._active_building in bv._bake_done)
-                btn_row.operator("bim.fed_rtree_overnight",
-                                 text="OVERNIGHT", icon='TIME')
-                be_btn = btn_row.operator("bim.fed_rtree_switch_offline",
-                                          text="\u26a1 BACKEND", icon='NONE')
-                btn_row.enabled = not _this_busy if _this_busy else True
-            # Cancel bake (only when baking)
+            # S198: BACKEND/OVERNIGHT removed from UI — Direct Stream is the primary path.
+            # Legacy bake cancel still shown if a bake is already running.
             if is_baking:
+                act_box.separator(factor=0.3)
                 c_row = act_box.row(align=True)
                 op_cb = c_row.operator("bim.fed_rtree_cancel_bake",
                                        text="CANCEL BAKE", icon='X')
                 op_cb.building = bv._active_building
 
-        # ── S188: BAKE ALL — parallel bake for multi-building DBs ──
-        if (len(bv._search_results) > 1
-                and not bv._overnight_running
-                and not bv._bake_queue
-                and not any(True for _ in bv._baking_buildings)):
-            layout.separator(factor=0.3)
-            ba_row = layout.row(align=True)
-            ba_row.scale_y = 1.3
-            ba_row.operator("bim.fed_rtree_bake_all",
-                            text=f"BAKE ALL ({len(bv._search_results)} buildings)",
-                            icon='RENDER_ANIMATION')
-        elif bv._bake_queue or len(bv._baking_buildings) > 1:
-            # Show queue status during parallel bake
+        # S198: BAKE ALL / BACKEND removed — Direct Stream replaces bake pipeline.
+        # Show queue status only if a bake is already running (legacy).
+        if bv._bake_queue or bv._baking_buildings:
             layout.separator(factor=0.3)
             ba_box = layout.box()
             ba_box.alert = True
             running = len(bv._baking_buildings)
             queued = len(bv._bake_queue)
-            ba_box.label(text=f"Baking {running}/{bv._MAX_BAKE_WORKERS}, queued {queued}",
-                         icon='RENDER_ANIMATION')
-
-        # S191: backend/bake status moved to GPU HUD
+            ba_row2 = ba_box.row(align=True)
+            ba_row2.label(text=f"Baking {running}/{bv._MAX_BAKE_WORKERS}, queued {queued}",
+                          icon='RENDER_ANIMATION')
+            ba_row2.operator("bim.fed_rtree_cancel_bake",
+                             text="", icon='X').building = ""
 
         # ── PICK ──
         layout.separator(factor=0.3)
@@ -1959,6 +1916,9 @@ class BIM_PT_rtree_inspector(bpy.types.Panel):
         _ds_row.operator("bim.fed_rtree_auto_shred_toggle",
                          text=_auto_text, icon=_auto_icon,
                          depress=bv._direct_stream_auto_shred)
+        # S198: cinematic sun/sky button
+        _ds_row.operator("bim.fed_rtree_cinematic",
+                         text="", icon='LIGHT_SUN')
 
     def _draw_discipline_bars(self, bx, props, bv):
         """S191: simplified — disc filter buttons only. Progress moved to GPU HUD."""
