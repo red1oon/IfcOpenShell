@@ -525,22 +525,46 @@ def load_building_level_bboxes(db_path: str) -> Dict[str, List[Tuple]]:
 
     _building_level_data.clear()
     result = {}  # disc → [(bbox, building_name)]
+    # S201: track total element count per building across ALL disciplines
+    _bld_counts = {}
     for building, disc, mnX, mnY, mnZ, mxX, mxY, mxZ, count in rows:
         if not building:
             continue
         bbox = (mnX, mnY, mnZ, mxX, mxY, mxZ)
         d = disc or 'DEFAULT'
         result.setdefault(d, []).append((bbox, building))
-        # Building envelope = union of all disciplines (update min/max)
+        _bld_counts[building] = _bld_counts.get(building, 0) + count
+        # S201: Building pick-bbox = ARC+STR only — MEP/ELEC extend far beyond
+        # the physical envelope and cause overlapping bboxes with neighbours.
+        if d not in ('ARC', 'STR', 'ARCHITECTURE', 'STRUCTURE'):
+            continue
         if building not in _building_level_data:
             _building_level_data[building] = {
-                'bbox': bbox, 'count': count}
+                'bbox': bbox, 'count': 0}
         else:
             prev = _building_level_data[building]
             pb = prev['bbox']
             prev['bbox'] = (min(pb[0], mnX), min(pb[1], mnY), min(pb[2], mnZ),
                             max(pb[3], mxX), max(pb[4], mxY), max(pb[5], mxZ))
-            prev['count'] += count
+    # S201: set total count from all disciplines (for progress tracking)
+    # Also fallback: buildings with NO ARC/STR get their full-discipline bbox
+    # so they remain pickable (rare — e.g. pure MEP models).
+    for building, count in _bld_counts.items():
+        if building in _building_level_data:
+            _building_level_data[building]['count'] = count
+        else:
+            # No ARC/STR rows — build bbox from all disciplines as fallback
+            for b2, d2, mnX, mnY, mnZ, mxX, mxY, mxZ, c2 in rows:
+                if b2 != building:
+                    continue
+                bbox2 = (mnX, mnY, mnZ, mxX, mxY, mxZ)
+                if building not in _building_level_data:
+                    _building_level_data[building] = {'bbox': bbox2, 'count': count}
+                else:
+                    pb = _building_level_data[building]['bbox']
+                    _building_level_data[building]['bbox'] = (
+                        min(pb[0], mnX), min(pb[1], mnY), min(pb[2], mnZ),
+                        max(pb[3], mxX), max(pb[4], mxY), max(pb[5], mxZ))
 
     total_rows = sum(len(v) for v in result.values())
     elapsed_ms = (time.time() - t0) * 1000

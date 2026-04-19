@@ -121,13 +121,18 @@ def _direct_stream_remove_building(bld_name):
 
 
 def _is_camera_inside_bbox(bld, cx, cy, cz):
-    """S198: check if camera is inside building ARC/STR bounding box (generous margin)."""
+    """S198: check if camera is inside building ARC/STR bounding box.
+    S201: margin scaled to 10% of building footprint (was flat 20m — caused
+    bleed to neighbours when buildings are closer than 40m apart)."""
     from . import bbox_visualization as bv
     bbox = bv._direct_stream_bld_bbox.get(bld)
     if not bbox:
         return False
     minX, maxX, minY, maxY, minZ, maxZ = bbox
-    margin = 20  # metres — generous, user doesn't need to be literally inside
+    # S201: margin = 10% of the longer footprint edge, clamped [5m, 15m]
+    dx = maxX - minX
+    dy = maxY - minY
+    margin = max(5.0, min(15.0, max(dx, dy) * 0.10))
     return (minX - margin <= cx <= maxX + margin and
             minY - margin <= cy <= maxY + margin and
             minZ <= cz <= maxZ + 10)  # +10m above roof
@@ -1059,6 +1064,14 @@ def _direct_stream_tick():
 
     except Exception as e:
         print(f"[S195] §DS_ERROR {e}")
+
+    # S201: flush depsgraph so newly placed objects have correct selection bounds.
+    # Without this, Blender's selection ray-test uses stale bounding boxes and
+    # clicking one building selects objects from far-away buildings.
+    try:
+        _bpy.context.view_layer.update()
+    except Exception:
+        pass
 
     # S196: force viewport redraw so HUD stays in sync with streaming
     try:

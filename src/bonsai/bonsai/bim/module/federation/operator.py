@@ -3553,20 +3553,49 @@ class FedRTreeShred(bpy.types.Operator):
             ]
 
             if selected_ds and not selected_loaded:
-                affected_blds = set()
+                # S201: scope shred to majority building — box/circle select
+                # grabs nearby buildings' objects; don't shred those.
+                _bld_objs = {}  # building_name → [obj, ...]
                 for obj in selected_ds:
+                    _guid = _obj_to_guid.get(obj)
+                    if not _guid:
+                        continue
+                    _obj_bld = None
+                    for _bname, _bset in bv._direct_stream_buildings.items():
+                        if _guid in _bset:
+                            _obj_bld = _bname
+                            break
+                    if _obj_bld:
+                        _bld_objs.setdefault(_obj_bld, []).append(obj)
+
+                # Pick building with most selected objects (= user's intent)
+                _target_bld = max(_bld_objs, key=lambda b: len(_bld_objs[b])) if _bld_objs else None
+                if not _target_bld:
+                    self.report({'WARNING'}, "Selected objects not tracked — nothing to shred")
+                    return {'CANCELLED'}
+
+                _target_objs = _bld_objs[_target_bld]
+                _spill = sum(len(v) for k, v in _bld_objs.items() if k != _target_bld)
+
+                # Deselect objects from other buildings (don't shred them)
+                for _other_bld, _other_objs in _bld_objs.items():
+                    if _other_bld != _target_bld:
+                        for obj in _other_objs:
+                            obj.select_set(False)
+
+                affected_blds = {_target_bld}
+                for obj in _target_objs:
                     _guid = _obj_to_guid.get(obj)
                     if _guid:
                         bv._direct_stream_guids.discard(_guid)
                         bv._direct_stream_objects.pop(_guid, None)
-                        for _bname, _bset in bv._direct_stream_buildings.items():
-                            if _guid in _bset:
-                                _bset.discard(_guid)
-                                affected_blds.add(_bname)
+                        _bset = bv._direct_stream_buildings.get(_target_bld)
+                        if _bset:
+                            _bset.discard(_guid)
 
-                # S197: batch_remove all selected DS objects in one C call
-                removed = len(selected_ds)
-                bpy.data.batch_remove(selected_ds)
+                # S197: batch_remove all target building's selected DS objects
+                removed = len(_target_objs)
+                bpy.data.batch_remove(_target_objs)
 
                 # Clean up empty building collections
                 from .direct_stream import _bld_label, _free_bld_label
@@ -3591,8 +3620,9 @@ class FedRTreeShred(bpy.types.Operator):
                             bpy.data.batch_remove(_to_rm)
                         _free_bld_label(_bname)
 
-                print(f"[S195] §SHRED_DS objects_removed={removed} blds={sorted(affected_blds)}")
-                self.report({'INFO'}, f"§SHRED DirectStream objects={removed}")
+                _spill_msg = f" (ignored {_spill} from neighbours)" if _spill else ""
+                print(f"[S201] §SHRED_DS bld={_target_bld} removed={removed} spill={_spill}")
+                self.report({'INFO'}, f"§SHRED {_target_bld} objects={removed}{_spill_msg}")
 
             elif selected_loaded:
                 removed = 0
