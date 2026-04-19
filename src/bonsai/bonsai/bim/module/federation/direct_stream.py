@@ -1085,6 +1085,88 @@ def _direct_stream_tick():
     return 1.0  # re-check every 1 second
 
 
+# ── S201: Selection guard — auto-scope selection to one building ──
+# Blender's box/circle select is depth-agnostic in perspective view, so
+# selecting objects from one building also grabs objects from far-away
+# buildings that project to the same screen region (35K objects can share
+# one mesh across 43 buildings). This timer polls selection every 0.5s
+# and keeps only the majority building, deselecting the rest.
+
+_sel_guard_last = set()  # object id_data set — skip if unchanged
+
+
+def _selection_guard_tick():
+    """Timer: if selected DS objects span multiple buildings, keep majority only."""
+    import bpy as _bpy
+    from . import bbox_visualization as bv
+    global _sel_guard_last
+
+    # Only guard when DS objects exist (streaming or saved file with DS collections)
+    if not bv._direct_stream_objects:
+        return 1.0
+
+    try:
+        sel = _bpy.context.selected_objects
+    except Exception:
+        return 1.0
+
+    if not sel:
+        _sel_guard_last = set()
+        return 0.5
+
+    # Quick check: did selection change?
+    sel_ids = {id(o) for o in sel}
+    if sel_ids == _sel_guard_last:
+        return 0.5
+    _sel_guard_last = sel_ids
+
+    # Map selected objects to buildings
+    _obj_to_guid = {o: g for g, o in bv._direct_stream_objects.items()}
+    _bld_objs = {}
+    _non_ds = 0
+    for obj in sel:
+        guid = _obj_to_guid.get(obj)
+        if not guid:
+            _non_ds += 1
+            continue
+        for bname, bset in bv._direct_stream_buildings.items():
+            if guid in bset:
+                _bld_objs.setdefault(bname, []).append(obj)
+                break
+
+    if len(_bld_objs) <= 1:
+        return 0.5  # single building or no DS objects — nothing to filter
+
+    # Multiple buildings — keep majority, deselect rest
+    target = max(_bld_objs, key=lambda b: len(_bld_objs[b]))
+    spill = 0
+    for bname, objs in _bld_objs.items():
+        if bname != target:
+            for obj in objs:
+                obj.select_set(False)
+                spill += 1
+
+    _sel_guard_last = {id(o) for o in _bpy.context.selected_objects}
+    _ds_log(f"[S201] §SEL_GUARD kept={target} ({len(_bld_objs[target])}), "
+            f"deselected={spill} from {len(_bld_objs)-1} other buildings")
+    return 0.5
+
+
+def enable_selection_guard():
+    """Register the selection guard timer (idempotent)."""
+    if not bpy.app.timers.is_registered(_selection_guard_tick):
+        bpy.app.timers.register(_selection_guard_tick, first_interval=1.0,
+                                persistent=True)
+        print("[S201] §SEL_GUARD enabled (persistent)")
+
+
+def disable_selection_guard():
+    """Unregister the selection guard timer."""
+    if bpy.app.timers.is_registered(_selection_guard_tick):
+        bpy.app.timers.unregister(_selection_guard_tick)
+        print("[S201] §SEL_GUARD disabled")
+
+
 class FedRTreeDirectStream(bpy.types.Operator):
     """S195 POC: Toggle direct DB streaming — tessellate from BLOBs, no .blend files."""
     bl_idname = "bim.fed_rtree_direct_stream"
@@ -1264,6 +1346,8 @@ class FedRTreeDirectStream(bpy.types.Operator):
             print(f"[S195] §DS_ON radius={bv._DIRECT_STREAM_RADIUS}m "
                   f"buildings={len(bv._building_centres)} "
                   f"elements_in_db={_total:,} budget={bv._DIRECT_STREAM_BUDGET:,}")
+            # S201: enable selection guard — auto-scope to one building
+            enable_selection_guard()
             self.report({'INFO'}, f"Direct Stream ON — {len(bv._building_centres)} buildings, "
                         f"{bv._DIRECT_STREAM_RADIUS}m radius")
         else:

@@ -702,6 +702,35 @@ def federation_load_post_meshes(dummy):
     else:
         print(f"{_TAG} §FINE no federation collections found — normal .blend open")
 
+    # S201: auto-enable selection guard if saved file has DS objects
+    _ds_cols = [c for c in bpy.data.collections if c.name.startswith("DS_")]
+    if _ds_cols:
+        from . import bbox_visualization as bv
+        # Rebuild _direct_stream_objects from scene so the guard can map obj→building
+        _rebuilt = 0
+        for _col_top in bpy.context.scene.collection.children:
+            # DS building collections are named like "01_BuildingName"
+            if not any(c.name.startswith("DS_") for c in _col_top.children_recursive):
+                continue
+            # Extract building name: strip leading "NN_" index
+            _bld_name = _col_top.name
+            if len(_bld_name) > 3 and _bld_name[2] == '_':
+                _bld_name = _bld_name[3:]
+            for _obj in _col_top.all_objects:
+                if _obj.type != 'MESH':
+                    continue
+                # Use object name as pseudo-guid (actual guid in name suffix)
+                _pg = _obj.name
+                bv._direct_stream_objects[_pg] = _obj
+                bv._direct_stream_buildings.setdefault(_bld_name, set()).add(_pg)
+                bv._direct_stream_guids.add(_pg)
+                _rebuilt += 1
+        if _rebuilt:
+            from .direct_stream import enable_selection_guard
+            enable_selection_guard()
+            print(f"{_TAG} §S201 rebuilt DS tracking: {_rebuilt} objects, "
+                  f"{len(bv._direct_stream_buildings)} buildings — selection guard ON")
+
     # S170: Rebuild LOD index from database on file open
     _init_lod_from_scene()
 
