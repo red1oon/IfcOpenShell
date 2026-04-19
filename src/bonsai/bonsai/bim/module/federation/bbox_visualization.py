@@ -539,7 +539,9 @@ def draw_bboxes():
             _ab = _direct_stream_active_bld
             if _ab:
                 _ab_done = len(_direct_stream_buildings.get(_ab, set()))
-                _ab_total = _building_element_counts.get(_ab, 1) or 1
+                # Use ARC+STR total (envelope) not all disciplines
+                _ab_disc = _direct_stream_disc_totals.get(_ab, {})
+                _ab_total = sum(_ab_disc.get(d, 0) for d in ('ARC', 'STR')) or _building_element_counts.get(_ab, 1) or 1
                 _pct = min(_ab_done / _ab_total, 1.0)
                 if _pct < 0.05:
                     alpha = 0.10  # brief flash at start of new building

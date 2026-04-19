@@ -385,8 +385,10 @@ def _direct_stream_tick():
         # S0_0_SampleHouse → base "SampleHouse"
         import re as _re
         def _base_type(name):
-            """Strip tile/slot prefixes to get building archetype."""
-            return _re.sub(r'^[ST]\d+_(\d+_)?', '', name)
+            """Strip tile/slot prefixes AND trailing _N/_Federated to get archetype."""
+            name = _re.sub(r'^[ST]\d+_(\d+_)?', '', name)
+            name = _re.sub(r'(_\d+|_Federated)$', '', name)
+            return name
 
         _visited_types = set()
         for _vb in bv._direct_stream_buildings:
