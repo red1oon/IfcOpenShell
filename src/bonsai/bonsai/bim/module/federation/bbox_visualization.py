@@ -47,6 +47,7 @@ DISCIPLINE_COLORS = {
     'FAC': (0.6, 0.6, 0.6, 1.0),         # Concrete gray (facilities)
     'IOT': (0.2, 0.8, 0.3, 1.0),         # Monitoring green (IoT sensors)
     'DEFAULT': (0.7, 0.7, 0.7, 0.5),     # Light gray
+    'BUILDING': (0.3, 0.8, 1.0, 0.6),   # S200: Building-level bbox — bright blue outline
 }
 
 # S191: auto-generate diverse colors for unknown disciplines
@@ -177,6 +178,13 @@ _DIRECT_STREAM_ENVELOPE_CLASSES = (
 )
 _DIRECT_STREAM_MERGE_MIN = 20   # min elements in group to trigger merge
 _DIRECT_STREAM_MERGE_VOL = 2.0  # max avg bbox volume (m³) for merge
+
+# S200: Two-level bbox loading — building-level on initial Preview, element-level on drill-in
+_building_level_mode = False  # True when showing building-level bboxes (multi-building DB)
+_building_level_data = {}     # building_name → {'bbox': (6-tuple), 'count': int, 'disc': str}
+_expanded_buildings = set()   # buildings whose element bboxes have been loaded into GPU batches
+_element_bbox_batches = {}    # disc → GPUBatch — element-level batches (separate from building-level)
+_expanded_disc_verts = {}     # disc → [Vector, ...] — accumulated element vertices across expansions
 
 # S182: Progressive load state
 LOAD_DISC_ORDER = ['ARC', 'STR', 'MEP', 'ELEC', 'FP']
@@ -460,6 +468,145 @@ def load_federation_bboxes(db_path: str, limit: Optional[int] = None,
     return discipline_bboxes
 
 
+# S200: Module-level cache — survives across Preview clicks within one Blender session.
+# Keyed by db_path so switching DBs re-queries. Cleared on disable.
+_building_bbox_cache = {}  # db_path → [(building, discipline, minX..maxZ, count)]
+
+
+def load_building_level_bboxes(db_path: str) -> Dict[str, List[Tuple]]:
+    """S200: Load ONE bbox per building per discipline instead of per-element.
+
+    First call per DB: ~2s (rtree GROUP BY scan, cached in-memory).
+    Subsequent calls in same Blender session: instant (reads from cache).
+    Retains discipline coloring — each building has one box per discipline.
+
+    Returns:
+        Dict mapping discipline to list of (bbox, building_name) tuples.
+        Also populates _building_level_data (per-building envelope) for drill-in.
+    """
+    global _building_level_data
+    import time
+    t0 = time.time()
+
+    if not Path(db_path).exists():
+        return {}
+
+    # Tier 1: in-memory cache (instant — same Blender session)
+    if db_path in _building_bbox_cache:
+        rows = _building_bbox_cache[db_path]
+        print(f"[S200] §CACHE HIT building_bbox {len(rows)} rows")
+    else:
+        conn = sqlite3.connect(db_path)
+        # Tier 2: pre-built building_bbox table (7ms — built at extraction time)
+        has_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='building_bbox'"
+        ).fetchone()
+        if has_table:
+            rows = conn.execute("""
+                SELECT building, discipline, minX, minY, minZ, maxX, maxY, maxZ,
+                       element_count
+                FROM building_bbox
+            """).fetchall()
+            print(f"[S200] §TABLE HIT building_bbox {len(rows)} rows")
+        else:
+            # Tier 3: live rtree query (~2s for 1M — fallback for older DBs)
+            print("[S200] §QUERY building_bbox from rtree (no pre-built table)...")
+            rows = conn.execute("""
+                SELECT m.building, m.discipline,
+                       MIN(r.minX), MIN(r.minY), MIN(r.minZ),
+                       MAX(r.maxX), MAX(r.maxY), MAX(r.maxZ),
+                       COUNT(*)
+                FROM elements_rtree r
+                JOIN elements_meta m ON r.id = m.rowid
+                GROUP BY m.building, m.discipline
+            """).fetchall()
+        conn.close()
+        _building_bbox_cache[db_path] = rows
+
+    _building_level_data.clear()
+    result = {}  # disc → [(bbox, building_name)]
+    for building, disc, mnX, mnY, mnZ, mxX, mxY, mxZ, count in rows:
+        if not building:
+            continue
+        bbox = (mnX, mnY, mnZ, mxX, mxY, mxZ)
+        d = disc or 'DEFAULT'
+        result.setdefault(d, []).append((bbox, building))
+        # Building envelope = union of all disciplines (update min/max)
+        if building not in _building_level_data:
+            _building_level_data[building] = {
+                'bbox': bbox, 'count': count}
+        else:
+            prev = _building_level_data[building]
+            pb = prev['bbox']
+            prev['bbox'] = (min(pb[0], mnX), min(pb[1], mnY), min(pb[2], mnZ),
+                            max(pb[3], mxX), max(pb[4], mxY), max(pb[5], mxZ))
+            prev['count'] += count
+
+    total_rows = sum(len(v) for v in result.values())
+    elapsed_ms = (time.time() - t0) * 1000
+    print(f"[S200] §PROOF BUILDING_BBOXES buildings={len(_building_level_data)} "
+          f"disc_rows={total_rows} disciplines={len(result)} "
+          f"total_elements={sum(r['count'] for r in _building_level_data.values()):,} "
+          f"{elapsed_ms:.0f}ms")
+    return result
+
+
+def expand_building_bboxes(building: str, db_path: str = None) -> bool:
+    """S200: Load element-level bboxes for one building into GPU batches.
+
+    Called on fly-to, click, or Direct Stream activation.
+    Element batches go into _element_bbox_batches (separate from building-level
+    _bbox_batches) so other buildings' building-level boxes stay visible.
+    Returns True if elements were loaded.
+    """
+    global _element_bbox_batches, _expanded_buildings
+
+    if building in _expanded_buildings:
+        return True  # already expanded
+
+    _db = db_path or _db_path_cache
+    if not _db or not Path(_db).exists():
+        return False
+
+    import time
+    t0 = time.time()
+
+    conn = sqlite3.connect(_db)
+    rows = conn.execute("""
+        SELECT r.minX, r.minY, r.minZ, r.maxX, r.maxY, r.maxZ,
+               m.guid, m.discipline
+        FROM elements_rtree r
+        JOIN elements_meta m ON r.id = m.rowid
+        WHERE m.building = ?
+    """, (building,)).fetchall()
+    conn.close()
+
+    if not rows:
+        return False
+
+    # Group by discipline — accumulate into _expanded_disc_verts so multiple
+    # buildings' element bboxes coexist. Write to _element_bbox_batches (NOT
+    # _bbox_batches) to preserve building-level boxes for unexpanded buildings.
+    global _expanded_disc_verts
+    shader = gpu.shader.from_builtin('UNIFORM_COLOR')
+    for mnX, mnY, mnZ, mxX, mxY, mxZ, guid, disc in rows:
+        bbox = (mnX, mnY, mnZ, mxX, mxY, mxZ)
+        edges = create_bbox_edges(bbox)
+        _expanded_disc_verts.setdefault(disc or 'DEFAULT', []).extend(edges)
+
+    for disc, verts in _expanded_disc_verts.items():
+        if verts:
+            batch = batch_for_shader(shader, 'LINES', {"pos": verts})
+            _element_bbox_batches[disc] = batch
+
+    _expanded_buildings.add(building)
+    n_discs = len(set(r[7] or 'DEFAULT' for r in rows))
+    elapsed_ms = (time.time() - t0) * 1000
+    print(f"[S200] §PROOF EXPAND building='{building}' elements={len(rows)} "
+          f"disciplines={n_discs} {elapsed_ms:.0f}ms")
+    return True
+
+
 def create_discipline_batches(discipline_bboxes: Dict[str, List[Tuple]], offset: Vector) -> Dict[str, gpu.types.GPUBatch]:
     """
     Create GPU batches for each discipline's bounding boxes.
@@ -519,6 +666,9 @@ def draw_bboxes():
     gpu.state.line_width_set(1.0)
     shader = gpu.shader.from_builtin('UNIFORM_COLOR')
 
+    # S198: pre-compute DS fade state (used by both building-level and element-level loops)
+    _has_ds = bool(_direct_stream_buildings)
+
     # Draw each discipline's batch — skip if hidden via Outliner proxy eye icon
     for discipline, batch in _bbox_batches.items():
         # Outliner eye icon: use hide_get() — respects collection eye toggle hierarchy.
@@ -533,23 +683,61 @@ def draw_bboxes():
             continue
 
         color = _color_override if _color_override else DISCIPLINE_COLORS.get(discipline, DISCIPLINE_COLORS['DEFAULT'])
-        # S198: aggressive bbox fade — gone by 40%, stays gone until new building starts
-        _has_ds = bool(_direct_stream_buildings)
-        if _has_ds:
+        if _building_level_mode:
+            # S200: building-level boxes stay as gentle backdrop — dim but always visible
+            # so the city silhouette remains while meshes stream in
+            if _has_ds or _active_building:
+                alpha = 0.06 if _loaded_collections else 0.12
+            else:
+                alpha = color[3]  # original discipline alpha
+            color = (color[0], color[1], color[2], alpha)
+        elif _has_ds:
+            # S198: aggressive element-level fade (original single-building path)
             _ab = _direct_stream_active_bld
             if _ab:
                 _ab_done = len(_direct_stream_buildings.get(_ab, set()))
-                # Use ARC+STR total (envelope) not all disciplines
                 _ab_disc = _direct_stream_disc_totals.get(_ab, {})
                 _ab_total = sum(_ab_disc.get(d, 0) for d in ('ARC', 'STR')) or _building_element_counts.get(_ab, 1) or 1
                 _pct = min(_ab_done / _ab_total, 1.0)
                 if _pct < 0.05:
-                    alpha = 0.10  # brief flash at start of new building
+                    alpha = 0.10
                 else:
-                    # Gone by 40% progress
                     alpha = max(0.01, 0.10 * max(0.0, (0.4 - _pct) / 0.4))
             else:
-                # Done or flying — stay invisible
+                alpha = 0.01
+            color = (color[0], color[1], color[2], alpha)
+        elif _active_building:
+            if _loaded_collections:
+                alpha = 0.15
+            else:
+                alpha = 0.25
+            color = (color[0], color[1], color[2], alpha)
+        shader.bind()
+        shader.uniform_float("color", color)
+        batch.draw(shader)
+
+    # S200: Draw element-level batches (expanded buildings) — same fade as above
+    for discipline, batch in _element_bbox_batches.items():
+        proxy_name = _disc_proxy_objects.get(discipline)
+        if proxy_name:
+            proxy = bpy.data.objects.get(proxy_name)
+            if proxy and proxy.hide_get():
+                continue
+        if not _discipline_visibility.get(discipline, True):
+            continue
+        color = _color_override if _color_override else DISCIPLINE_COLORS.get(discipline, DISCIPLINE_COLORS['DEFAULT'])
+        if _has_ds:
+            _ab = _direct_stream_active_bld
+            if _ab:
+                _ab_done = len(_direct_stream_buildings.get(_ab, set()))
+                _ab_disc = _direct_stream_disc_totals.get(_ab, {})
+                _ab_total = sum(_ab_disc.get(d, 0) for d in ('ARC', 'STR')) or _building_element_counts.get(_ab, 1) or 1
+                _pct = min(_ab_done / _ab_total, 1.0)
+                if _pct < 0.05:
+                    alpha = 0.10
+                else:
+                    alpha = max(0.01, 0.10 * max(0.0, (0.4 - _pct) / 0.4))
+            else:
                 alpha = 0.01
             color = (color[0], color[1], color[2], alpha)
         elif _active_building:
@@ -618,6 +806,7 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
         (success: bool, message: str)
     """
     global _bbox_batches, _draw_handler, _is_enabled, _db_path_cache, _disc_proxy_objects, _model_offset, _library_blend_cache, _library_db_cache
+    global _building_level_mode, _expanded_buildings
 
     # Disable first if already enabled
     if _is_enabled:
@@ -630,9 +819,32 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
     if limit:
         print(f"Limit: {limit} elements (testing mode)")
 
-    # Load bboxes from database
-    print(f"\nLoading bounding boxes from federation database...")
-    discipline_bboxes = load_federation_bboxes(db_path, limit)
+    # S200: Early detect multi-building DB — needed before choosing load strategy
+    _early_has_building = False
+    try:
+        _tc = sqlite3.connect(db_path)
+        _cols = [r[1] for r in _tc.execute("PRAGMA table_info(elements_meta)").fetchall()]
+        _early_has_building = 'building' in _cols
+        if _early_has_building:
+            _bld_count = _tc.execute(
+                "SELECT COUNT(DISTINCT building) FROM elements_meta WHERE building IS NOT NULL"
+            ).fetchone()[0]
+            _early_has_building = _bld_count > 1  # only use building-level for truly multi-building
+        _tc.close()
+    except Exception:
+        pass
+
+    # S200: Two-level loading — building-level for multi-building, element-level for single
+    _building_level_mode = False
+    _expanded_buildings.clear()
+    if _early_has_building and not limit:
+        print(f"\n[S200] Multi-building DB detected ({_bld_count} buildings) — loading building-level bboxes...")
+        discipline_bboxes = load_building_level_bboxes(db_path)
+        _building_level_mode = True
+    else:
+        # Load bboxes from database — element level (original path)
+        print(f"\nLoading bounding boxes from federation database...")
+        discipline_bboxes = load_federation_bboxes(db_path, limit)
 
     if not discipline_bboxes:
         return False, "No bounding boxes loaded from database"
@@ -853,14 +1065,20 @@ def enable_bbox_visualization(db_path: str, limit: Optional[int] = None) -> Tupl
                   f"clip_end={max(max_dim * 4.0, 5000.0):.0f}")
 
     print(f"\n{'='*70}")
-    print(f"✅ BBOX VISUALIZATION ENABLED")
+    print(f"BBOX VISUALIZATION ENABLED")
     print(f"{'='*70}")
-    print(f"Elements rendered: {total_elements:,}")
-    print(f"Disciplines: {', '.join(_bbox_batches.keys())}")
+    if _building_level_mode:
+        print(f"Mode: BUILDING-LEVEL (S200) — {len(_building_level_data)} buildings")
+        print(f"Total elements in DB: {sum(r['count'] for r in _building_level_data.values()):,}")
+        print(f"Click a building to expand element bboxes")
+    else:
+        print(f"Elements rendered: {total_elements:,}")
+        print(f"Disciplines: {', '.join(_bbox_batches.keys())}")
     print(f"GPU batches: {len(_bbox_batches)}")
-    print(f"Viewport: Building centered near origin (no auto-framing)")
     print(f"{'='*70}\n")
 
+    if _building_level_mode:
+        return True, f"Rendering {len(_building_level_data)} building bboxes (click to expand)"
     return True, f"Rendering {total_elements:,} elements as wireframe bboxes"
 
 
@@ -871,7 +1089,7 @@ def disable_bbox_visualization() -> Tuple[bool, str]:
     Returns:
         (success: bool, message: str)
     """
-    global _bbox_batches, _draw_handler, _is_enabled
+    global _bbox_batches, _draw_handler, _is_enabled, _building_level_mode, _expanded_buildings
 
     if not _is_enabled:
         return True, "BBox visualization not enabled"
@@ -886,6 +1104,12 @@ def disable_bbox_visualization() -> Tuple[bool, str]:
     _highlighted_bboxes.clear()
     _selected_element.clear()
     _is_enabled = False
+    _building_level_mode = False
+    _building_level_data.clear()
+    _expanded_buildings.clear()
+    _expanded_disc_verts.clear()
+    _element_bbox_batches.clear()
+    # Note: _building_bbox_cache intentionally NOT cleared — survives disable/re-enable
 
     # Remove discipline proxy objects + collections
     for obj_name in _disc_proxy_objects.values():
@@ -1147,6 +1371,10 @@ def navigate_to_element(search_term: str, context) -> dict:
         print(f"[RTree] §SEARCH MISS — no buildings matched '{term}'")
         return {}
 
+    # S200: expand element-level bboxes for the best-match building on navigate
+    if _building_level_mode:
+        expand_building_bboxes(results[0]['building'])
+
     # Fly to the building with most matches (first row after ORDER BY count DESC).
     # IFC coords → Blender coords: subtract model offset.
     first = results[0]['bbox']
@@ -1230,6 +1458,10 @@ def fly_to_result(result_index: int, context) -> bool:
             except Exception as e:
                 print(f"[RTree] §FLY_NEAREST_FAIL {e} — falling back to search result bbox")
 
+    # S200: expand building element bboxes on fly-to (if in building-level mode)
+    if _building_level_mode:
+        expand_building_bboxes(r['building'])
+
     cx_ifc = (bbox[0] + bbox[3]) / 2
     cy_ifc = (bbox[1] + bbox[4]) / 2
     cz_ifc = (bbox[2] + bbox[5]) / 2
@@ -1263,6 +1495,10 @@ def fetch_building_elements(building: str, search_term: str) -> list:
     _active_building = building
     # Clear stale selected element — its white bbox would mislead if from a previous search
     _selected_element.clear()
+
+    # S200: expand building element bboxes on drill-in
+    if _building_level_mode:
+        expand_building_bboxes(building)
 
     term = search_term.strip()
     # S186: wildcard support — * → %, bare * matches all elements
@@ -1462,6 +1698,40 @@ def pick_element_at_ray(ray_origin: Vector, ray_dir: Vector) -> dict:
     print(f"[RTree] §PICK ray_blender=({ray_origin.x:.1f},{ray_origin.y:.1f},{ray_origin.z:.1f}) "
           f"offset=({off.x:.1f},{off.y:.1f},{off.z:.1f}) "
           f"ray_ifc=({ifc_origin.x:.1f},{ifc_origin.y:.1f},{ifc_origin.z:.1f})")
+
+    # ── S200 Pass 0: building-level bbox test (when in building-level mode) ──
+    if _building_level_mode and _building_level_data:
+        ox, oy, oz = ifc_origin.x, ifc_origin.y, ifc_origin.z
+        dx, dy, dz = ray_dir.x, ray_dir.y, ray_dir.z
+        best_t_bld = float('inf')
+        best_bld = None
+        for bld_name, bld_info in _building_level_data.items():
+            mnX, mnY, mnZ, mxX, mxY, mxZ = bld_info['bbox']
+            t_min, t_max = -float('inf'), float('inf')
+            for o_ax, d_ax, lo, hi in ((ox, dx, mnX, mxX),
+                                        (oy, dy, mnY, mxY),
+                                        (oz, dz, mnZ, mxZ)):
+                if abs(d_ax) < 1e-9:
+                    if o_ax < lo or o_ax > hi:
+                        t_min = float('inf')
+                        break
+                else:
+                    t1, t2 = (lo - o_ax) / d_ax, (hi - o_ax) / d_ax
+                    if t1 > t2:
+                        t1, t2 = t2, t1
+                    t_min = max(t_min, t1)
+                    t_max = min(t_max, t2)
+                    if t_min > t_max:
+                        break
+            if t_min <= t_max and t_min < best_t_bld and t_min > 0:
+                best_t_bld = t_min
+                best_bld = bld_name
+
+        if best_bld:
+            print(f"[S200] §PROOF PICK_BUILDING building={best_bld} t={best_t_bld:.1f}m")
+            expand_building_bboxes(best_bld)
+            return {'type': 'building', 'building': best_bld,
+                    'name': best_bld, 'disc': '', 'ifc_class': '', 'guid': ''}
 
     # ── Pass 1: building envelope slab test (highlighted search results) ──
     # Clicking a yellow building envelope triggers L2 drill-down, same as N-panel click.

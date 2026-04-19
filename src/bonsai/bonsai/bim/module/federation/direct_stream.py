@@ -413,9 +413,9 @@ def _direct_stream_tick():
             if _d < _ap_dist:
                 _ap_dist = _d
                 _ap_best = _b
-        # S198: if user parked near a building (<100m), stream THAT one — respect user position.
-        # Only prefer novel type when user is far from all buildings (autopilot touring).
-        if _ap_novel and _ap_dist > 100:
+        # S200: ALWAYS prefer novel type — only fall back to repeats when
+        # all unique archetypes have been visited (exhausted).
+        if _ap_novel:
             _ap_best = _ap_novel
             _ap_dist = _ap_novel_dist
         if _ap_best:
@@ -458,6 +458,9 @@ def _direct_stream_tick():
             bv._direct_stream_active_bld = _ap_best
             bv._direct_stream_last_bld = _ap_best
             bv._direct_stream_cam_still_t = _now
+            # S200: expand element-level bboxes on autopilot
+            if bv._building_level_mode:
+                bv.expand_building_bboxes(_ap_best)
             _ds_log(f"[S198] §DS_AUTOPILOT {_ap_best} dist={_ap_dist:.0f}m frames={_n_frames}")
             return 0.3  # let animation play
 
@@ -495,7 +498,6 @@ def _direct_stream_tick():
 
     # ── Detail streaming: camera must be INSIDE building bbox ──
     # S198: interior disciplines (MEP, ELEC, FP, ACMV…) only visible from inside.
-    # Distance alone is not enough — camera must pass the bbox-inside check.
     bld = None
     phase = None
     for _b, _d in _bld_dists.items():
@@ -541,14 +543,23 @@ def _direct_stream_tick():
             if _last and _last in bv._building_centres:
                 _last_centre = bv._building_centres[_last]
 
+            # S200: novelty — prefer unvisited building types before repeats
+            import re as _re2
+            def _base_type2(name):
+                name = _re2.sub(r'^[ST]\d+_(\d+_)?', '', name)
+                name = _re2.sub(r'(_\d+|_Federated)$', '', name)
+                return name
+            _visited2 = set()
+            for _vb in bv._direct_stream_buildings:
+                _visited2.add(_base_type2(_vb))
+
             _candidates = []
+            _novel_candidates = []
             for _b, _d in _bld_dists.items():
                 if _d < bv._DIRECT_STREAM_RADIUS:
-                    # Skip recently shredded (blacklist max 3)
                     if _b in bv._direct_stream_shred_blacklist:
                         continue
                     _ph = bv._direct_stream_disc_phase.get(_b, 'envelope')
-                    # S198: shell requires camera inside bbox — envelope streams from outside
                     if _ph == 'shell' and not _is_camera_inside_bbox(_b, cx, cy, cz):
                         continue
                     if _ph in ('envelope', 'shell'):
@@ -556,25 +567,29 @@ def _direct_stream_tick():
                         total = bv._building_element_counts.get(_b, 0)
                         if already < total:
                             _bc = bv._building_centres[_b]
-                            # Forward scoring (XY only)
                             _dir_x, _dir_y = _bc[0]-cx, _bc[1]-cy
                             _norm = max(_d, 0.1)
                             if _cam_fwd:
                                 _dot = (_dir_x*_cam_fwd.x + _dir_y*_cam_fwd.y) / _norm
                             else:
                                 _dot = 0
-                            # Adjacency bonus: buildings near last streamed score lower
                             _adj = 0
                             if _last_centre:
                                 _adj_d = math.sqrt((_bc[0]-_last_centre[0])**2 +
                                                    (_bc[1]-_last_centre[1])**2)
-                                _adj = min(_adj_d, 100)  # cap at 100m
-                            # Score: distance + adjacency, minus forward bonus
+                                _adj = min(_adj_d, 100)
                             _score = _d * 0.3 + _adj * 0.7 - _dot * 50
                             _candidates.append((_score, _d, _b))
+                            if _base_type2(_b) not in _visited2:
+                                _novel_candidates.append((_score, _d, _b))
             if not _candidates:
                 return 1.0
-            _candidates.sort()
+            # S200: always prefer novel type — only fall back when all types exhausted
+            if _novel_candidates:
+                _novel_candidates.sort()
+                _candidates = _novel_candidates
+            else:
+                _candidates.sort()
             # S197: debug — log camera pos + top 3 candidates on first pick
             if not bv._direct_stream_buildings:
                 _top3 = _candidates[:3]
@@ -590,6 +605,9 @@ def _direct_stream_tick():
             _, _, bld = _candidates[0]
             bv._direct_stream_active_bld = bld
             bv._direct_stream_last_bld = bld
+            # S200: expand element-level bboxes when Direct Stream activates a building
+            if bv._building_level_mode:
+                bv.expand_building_bboxes(bld)
             # Query disc totals for HUD bars
             if bld not in bv._direct_stream_disc_totals:
                 try:
@@ -726,43 +744,30 @@ def _direct_stream_tick():
         bld_clause = "m.building = ? AND" if bv._has_building_column else ""
         bld_params = (bld,) if bv._has_building_column else ()
         _shell = tuple(bv._DIRECT_STREAM_SHELL_DISCS)
-        # ── S198: ENVELOPE — exterior shell of ARC+STR only ──
-        # Two filters: (1) exclude known interior classes, (2) bbox shell proximity
-        # Elements must be near the building's outer boundary to be visible from outside.
+        # ── S198/S200: ENVELOPE — exterior shell only ──
+        # S200: large buildings (>=40K) get tight envelope (walls+roof+slab+doors+windows).
+        #       IfcBeam/Column/Member/Plate/BuildingElementProxy deferred to shell phase.
+        #       IfcPlate/IfcCovering pre-merged (one mesh per class, not per-batch).
         if phase == 'envelope':
             disc_clause = f"AND m.discipline IN ({','.join('?' * len(_shell))})"
             disc_params = _shell
 
-            # Bbox shell filter: elements within margin of building boundary
-            # S198: bbox shell proximity — fixed 5m depth for exterior shell
-            # Only applied to buildings >30m in both X and Y (small buildings stream all)
-            _bbox = bv._direct_stream_bld_bbox.get(bld)
+            _bld_total = bv._building_element_counts.get(bld, 0)
+            _is_large = _bld_total >= 40000
+
+            # S200: envelope streams all ARC+STR except furniture.
+            # Class filter + furniture exclusion is sufficient — no bbox proximity filter.
+            _env_clause = ""
+            _env_params = ()
             _shell_clause = ""
             _shell_params = ()
-            if _bbox:
-                _mnx, _mxx, _mny, _mxy, _mnz, _mxz = _bbox
-                _dx = _mxx - _mnx
-                _dy = _mxy - _mny
-                if _dx > 30 and _dy > 30:
-                    _margin = 5.0  # 5m = typical facade-to-interior depth
-                    _inner_mnx = _mnx + _margin
-                    _inner_mxx = _mxx - _margin
-                    _inner_mny = _mny + _margin
-                    _inner_mxy = _mxy - _margin
-                    _inner_mxz = _mxz - _margin
-                    _inner_mnz = _mnz + _margin
-                    # Element is "exterior" if any face within 5m of building boundary
-                    _shell_clause = ("AND (r.minX < ? OR r.maxX > ? "
-                                     "OR r.minY < ? OR r.maxY > ? "
-                                     "OR r.maxZ > ? OR r.minZ < ?)")
-                    _shell_params = (_inner_mnx, _inner_mxx,
-                                     _inner_mny, _inner_mxy,
-                                     _inner_mxz, _inner_mnz)
 
             _interior_classes = ('IfcFurnishingElement', 'IfcFurniture',
                                  'IfcSystemFurnitureElement')
             _interior_clause = f"AND m.ifc_class NOT IN ({','.join('?' * len(_interior_classes))})"
 
+            # S200: no merge, no proximity filter — stream all ARC+STR except furniture.
+            # Each element streams individually, preserving identity.
             rows = conn.execute(f"""
                 SELECT m.guid, i.geometry_hash, m.material_rgba, m.element_name,
                        m.material_name, m.discipline, m.ifc_class
@@ -773,14 +778,12 @@ def _direct_stream_tick():
                   AND m.ifc_class != 'IfcOpeningElement'
                   {disc_clause}
                   {_interior_clause}
-                  {_shell_clause}
                 ORDER BY (r.maxX-r.minX)*(r.maxY-r.minY)*(r.maxZ-r.minZ) DESC
                 LIMIT ? OFFSET ?
-            """, bld_params + disc_params + _interior_classes + _shell_params + (batch, offset)).fetchall()
+            """, bld_params + disc_params + _interior_classes + (batch, offset)).fetchall()
 
             elements = []
             unique_hashes = set()
-            _merge_classes = {'IfcPlate', 'IfcCovering'}  # homogeneous roof tiles — merge
             for row in rows:
                 guid, ghash, rgba, ename = row[0], row[1], row[2], row[3]
                 mat_name, disc, ifc_class = row[4], row[5], row[6]
@@ -851,46 +854,8 @@ def _direct_stream_tick():
                     _batch_cols[disc_key] = (_bc, _bc_count)
                 return _bc
 
-            # S198: separate merge candidates (IfcPlate/IfcCovering) from individuals
-            _to_merge = {}  # ifc_class → [elements]
-            _individuals = []
+            # S200: all elements stream individually — no merge (preserves identity).
             for el in elements:
-                if el[7] in _merge_classes:  # ifc_class
-                    _to_merge.setdefault(el[7], []).append(el)
-                else:
-                    _individuals.append(el)
-
-            # Merge homogeneous roof groups (>20 same-class elements)
-            for _mc, _group in _to_merge.items():
-                if len(_group) > 20:
-                    verts, faces, merged_guids = _merge_envelope_group(
-                        _group, xform, ox, oy, oz)
-                    if verts:
-                        mesh_name = f"{_mc}_roof_merged"
-                        merged_mesh = _bpy.data.meshes.new(mesh_name)
-                        merged_mesh.from_pydata(verts, [], faces)
-                        obj = _bpy.data.objects.new(mesh_name, merged_mesh)
-                        disc_key = _group[0][6] or 'ARC'
-                        col = _env_get_col(disc_key)
-                        col.objects.link(obj)
-                        apply_material(obj, _group[0][2], _group[0][5], _group[0][6], styles)
-                        for mg in merged_guids:
-                            bv._direct_stream_guids.add(mg)
-                            bv._direct_stream_objects[mg] = obj
-                            bv._direct_stream_buildings.setdefault(bld, set()).add(mg)
-                        _dl = bv._direct_stream_disc_loaded.setdefault(bld, {})
-                        _dl[disc_key] = _dl.get(disc_key, 0) + len(merged_guids)
-                        _bc_cur, _bc_cnt = _batch_cols[disc_key]
-                        _batch_cols[disc_key] = (_bc_cur, _bc_cnt + 1)
-                        placed += 1
-                        _ds_log(f"[S198] §DS_MERGE {bld} class={_mc} "
-                                f"elements={len(merged_guids)} → 1 mesh")
-                        continue
-                # <20 or merge failed — stream individually
-                _individuals.extend(_group)
-
-            # Individual elements (full material + identity)
-            for el in _individuals:
                 guid, ghash, rgba, ename, obj_name, mat_name, disc = el[:7]
                 mesh = _bpy.data.meshes.get(ghash)
                 if not mesh:
