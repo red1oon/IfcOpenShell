@@ -533,10 +533,22 @@ def draw_bboxes():
             continue
 
         color = _color_override if _color_override else DISCIPLINE_COLORS.get(discipline, DISCIPLINE_COLORS['DEFAULT'])
-        # S196: when DS active, all bboxes super-light so streamed meshes dominate
+        # S198: aggressive bbox fade — gone by 40%, stays gone until new building starts
         _has_ds = bool(_direct_stream_buildings)
         if _has_ds:
-            alpha = 0.06
+            _ab = _direct_stream_active_bld
+            if _ab:
+                _ab_done = len(_direct_stream_buildings.get(_ab, set()))
+                _ab_total = _building_element_counts.get(_ab, 1) or 1
+                _pct = min(_ab_done / _ab_total, 1.0)
+                if _pct < 0.05:
+                    alpha = 0.10  # brief flash at start of new building
+                else:
+                    # Gone by 40% progress
+                    alpha = max(0.01, 0.10 * max(0.0, (0.4 - _pct) / 0.4))
+            else:
+                # Done or flying — stay invisible
+                alpha = 0.01
             color = (color[0], color[1], color[2], alpha)
         elif _active_building:
             if _loaded_collections:

@@ -52,7 +52,7 @@ def _get_progress_data():
 
     # S195: If no RTree active building but DirectStream is active or has data, show DS progress
     # S198: show nearest building to camera — streamed or just in-sight from DB totals
-    if not disc_counts and (bv._direct_stream_enabled or bv._direct_stream_buildings):
+    if not disc_counts and (bv._direct_stream_enabled or bv._direct_stream_buildings or bv._building_centres):
         _ds_bld = bv._direct_stream_active_bld
         if not _ds_bld and bv._dlod_eye_pos:
             import math as _m
@@ -79,6 +79,13 @@ def _get_progress_data():
                         _ds_bld = _sb
         if not _ds_bld:
             _ds_bld = bv._direct_stream_last_bld
+        # S198: log nearest building pick (throttled — once per building change)
+        if _ds_bld and _ds_bld != getattr(_get_progress_data, '_last_hud_bld', None):
+            _get_progress_data._last_hud_bld = _ds_bld
+            _cached = _ds_bld in bv._direct_stream_disc_totals
+            print(f"[S198] §HUD_PICK {_ds_bld} cached={_cached} "
+                  f"streamed={_ds_bld in bv._direct_stream_buildings} "
+                  f"enabled={bv._direct_stream_enabled}")
         if _ds_bld:
             disc_counts = bv._direct_stream_disc_totals.get(_ds_bld, {})
             # S198: query disc totals on-demand for buildings not yet streamed
@@ -99,8 +106,10 @@ def _get_progress_data():
                     disc_counts = {d: c for d, c in _dr}
                     bv._direct_stream_disc_totals[_ds_bld] = disc_counts
                     _dc.close()
-                except Exception:
-                    pass
+                    _disc_str = ' '.join(f"{d}={c:,}" for d, c in sorted(disc_counts.items()))
+                    print(f"[S198] §HUD_DISC_QUERY {_ds_bld} [{_disc_str}]")
+                except Exception as _e:
+                    print(f"[S198] §HUD_DISC_QUERY FAIL {_ds_bld}: {_e}")
             loaded_per_disc = bv._direct_stream_disc_loaded.get(_ds_bld, {})
             # S196: snap to 100% when building phase is done
             _phase = bv._direct_stream_disc_phase.get(_ds_bld)
@@ -568,35 +577,27 @@ def draw_progress_hud():
                             if _bph not in ('done', 'shell_done', 'envelope_done'):
                                 _all_done = False
                                 break
+            # S198: brief processed stats — types streamed / elements in scene
+            _n_types = len(bv._direct_stream_buildings)
             if _all_done and _ds_total > 0:
-                _status_txt = f"DONE {_ds_total:,}"
+                _status_txt = f"DONE \u2014 {_n_types} types/{_ds_total:,}"
                 _status_color = (0.1, 1.0, 0.35, 0.9)
-            elif len(bv._building_centres) > 5:
-                # S198: cycle — stats 6s (default), building 2s (brief)
-                _cycle_pos = now % 8.0  # 8s period: 0-6 = stats, 6-8 = building
-                _n_blds = len(bv._building_centres)
-                _n_total = sum(bv._building_element_counts.values())
-                if _cycle_pos < 6.0 or not _get_progress_data._ds_building:
-                    if _ds_total > 0:
-                        _status_txt = (f"{_ds_total:,} in scene"
-                                       f" \u00b7 {_n_blds} buildings \u00b7 {_n_total:,} in DB")
-                    else:
-                        _status_txt = f"{_n_blds} buildings \u00b7 {_n_total:,} elements"
-                    _status_color = (0.6, 0.7, 0.8, 0.8)
-                else:
-                    # Show nearest building name + element count
-                    _nb = _get_progress_data._ds_building
-                    _nb_total = bv._building_element_counts.get(_nb, 0)
-                    _nb_done = len(bv._direct_stream_buildings.get(_nb, set()))
-                    if _nb_done > 0:
-                        _status_txt = f"{_nb} \u00b7 {_nb_done:,}/{_nb_total:,}"
-                    else:
-                        _status_txt = f"{_nb} \u00b7 {_nb_total:,} elements"
-                    _status_color = (0.5, 0.8, 0.9, 0.8)
+            elif _ds_total > 0:
+                _status_txt = f"DONE \u2014 {_n_types} types/{_ds_total:,}"
+                _status_color = (0.6, 0.8, 0.7, 0.8)
             else:
                 pulse = 0.6 + 0.4 * abs(math.sin(now * 1.5))
                 _status_txt = f"PAN CAM TO STREAM"
                 _status_color = (0.8 * pulse, 0.7 * pulse, 0.2, 0.9)
+    elif bv._building_centres and not bv._direct_stream_enabled:
+        # S198: streaming OFF — show processed stats
+        _ds_total = len(bv._direct_stream_guids)
+        _n_types = len(bv._direct_stream_buildings)
+        if _ds_total > 0:
+            _status_txt = f"PAUSED \u2014 {_n_types} types/{_ds_total:,}"
+        else:
+            _status_txt = f"{len(bv._building_centres)} buildings ready"
+        _status_color = (0.6, 0.7, 0.8, 0.8)
     elif bv._bake_done:
         # S196: baked but not yet streaming — prompt user
         pulse = 0.7 + 0.3 * math.sin(now * 2)

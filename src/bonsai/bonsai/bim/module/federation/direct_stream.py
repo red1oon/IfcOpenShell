@@ -191,6 +191,8 @@ _anim_pan_end_rot = None    # Quaternion — target view_rotation
 _anim_pan_frame = 0         # current frame (0..N)
 _anim_pan_frames = 15       # total frames (~450ms at 30ms/frame)
 _anim_pan_clip = 5000.0     # clip_end to set
+_anim_pan_done_time = 0.0   # time.time() when animation finished — pause before streaming
+_ANIM_PAN_HOLD_S = 0.8     # seconds to hold after fly-to before streaming starts
 # S198: cinematic auto-pilot — dramatic fly-in if user idle after DS start
 _ds_start_time = 0.0
 _ds_autopilot_fired = False
@@ -207,6 +209,10 @@ def _anim_pan_tick():
         return None  # unregister
 
     _anim_pan_frame += 1
+    if _anim_pan_frame == 1:
+        print(f"[S198] §ANIM_START frames={_anim_pan_frames}")
+    if _anim_pan_frame == _anim_pan_frames:
+        print(f"[S198] §ANIM_END frame={_anim_pan_frame}")
     t = _anim_pan_frame / _anim_pan_frames
     # Ease-out cubic: 1 - (1-t)^3 — fast start, gentle landing
     t_ease = 1.0 - (1.0 - t) ** 3
@@ -227,6 +233,9 @@ def _anim_pan_tick():
 
     if _anim_pan_frame >= _anim_pan_frames:
         _anim_pan_active = False
+        import time as _t2
+        global _anim_pan_done_time
+        _anim_pan_done_time = _t2.time()
         # Snap to exact final values
         for _area in _bpy.context.screen.areas:
             if _area.type == 'VIEW_3D':
@@ -255,12 +264,12 @@ def _anim_pan_tick():
 
 
 def _start_anim_pan(start_loc, target_loc, start_dist, target_dist, clip_end,
-                     start_rot=None, end_rot=None):
-    """Kick off animated camera fly-to with optional rotation."""
+                     start_rot=None, end_rot=None, frames=None):
+    """Kick off animated camera fly-to with optional rotation and custom frame count."""
     import bpy as _bpy
     global _anim_pan_active, _anim_pan_start, _anim_pan_end
     global _anim_pan_start_dist, _anim_pan_end_dist, _anim_pan_frame, _anim_pan_clip
-    global _anim_pan_start_rot, _anim_pan_end_rot
+    global _anim_pan_start_rot, _anim_pan_end_rot, _anim_pan_frames
 
     _anim_pan_active = True
     _anim_pan_start = start_loc.copy()
@@ -270,6 +279,7 @@ def _start_anim_pan(start_loc, target_loc, start_dist, target_dist, clip_end,
     _anim_pan_start_rot = start_rot.copy() if start_rot else None
     _anim_pan_end_rot = end_rot.copy() if end_rot else None
     _anim_pan_frame = 0
+    _anim_pan_frames = frames or 15  # custom frame count for distant autopilot
     _anim_pan_clip = clip_end
     if not _bpy.app.timers.is_registered(_anim_pan_tick):
         _bpy.app.timers.register(_anim_pan_tick, first_interval=0.03)
@@ -286,9 +296,16 @@ def _direct_stream_tick():
     from mathutils import Quaternion
     from . import bbox_visualization as bv
 
-    # S198: don't stream while camera is animating — let fly-to play first
+    # S198: don't stream while camera is animating — let fly-to complete first
     if _anim_pan_active:
-        return 0.3
+        return 0.1  # fast poll so animation is smooth
+    # Brief hold after animation — user sees building wireframe before streaming
+    global _anim_pan_done_time
+    if _anim_pan_done_time:
+        _hold_elapsed = time.time() - _anim_pan_done_time
+        if _hold_elapsed < _ANIM_PAN_HOLD_S:
+            return 0.2
+        _anim_pan_done_time = 0.0  # clear — one-shot hold
 
     if not bv._direct_stream_enabled:
         # Auto-shred while paused: clean up buildings one per tick, furthest first
@@ -353,9 +370,10 @@ def _direct_stream_tick():
         if (_now - bv._direct_stream_cam_still_t) < bv._DIRECT_STREAM_SETTLE_S:
             return 0.3  # still settling — wait
     else:
-        # First tick — snapshot camera position
+        # First tick — snapshot camera position, don't stream yet
         bv._direct_stream_cam_last = _cam_pos
         bv._direct_stream_cam_still_t = _now
+        return 0.5  # let settle timer start before first building selection
     # Camera settled — proceed with streaming
     bv._direct_stream_cam_last = _cam_pos
 
@@ -393,57 +411,50 @@ def _direct_stream_tick():
             if _d < _ap_dist:
                 _ap_dist = _d
                 _ap_best = _b
-        # Prefer novel type if available, otherwise fall back to nearest
-        if _ap_novel:
+        # S198: if user parked near a building (<100m), stream THAT one — respect user position.
+        # Only prefer novel type when user is far from all buildings (autopilot touring).
+        if _ap_novel and _ap_dist > 100:
             _ap_best = _ap_novel
             _ap_dist = _ap_novel_dist
         if _ap_best:
+            # S198: ALWAYS fly-to — even nearby buildings. Camera must center the building.
             _bc = bv._building_centres[_ap_best]
             _off2 = bv._model_offset
             _bx = _bc[0] - (_off2.x if _off2 else 0.0)
             _by = _bc[1] - (_off2.y if _off2 else 0.0)
             _bz = _bc[2] - (_off2.z if _off2 else 0.0)
-            # Get building height for framing
             _bld_h = 10
             _bbox = bv._direct_stream_bld_bbox.get(_ap_best)
             if _bbox:
                 _bld_h = max(10, _bbox[5] - _bbox[4])
-            _diag = _bld_h * 3  # approximate
+            _dx, _dy, _dz = _bld_h * 2, _bld_h * 2, _bld_h  # fallback
             if _bbox:
                 _dx = _bbox[1] - _bbox[0]
                 _dy = _bbox[3] - _bbox[2]
                 _dz = _bbox[5] - _bbox[4]
-                _diag = math.sqrt(_dx**2 + _dy**2 + _dz**2)
-            _target_dist = max(60, min(800, _diag * 1.2))
+            _target_dist = max(60, min(600, max(_dz * 3.5, max(_dx, _dy) * 0.6)))
             _pivot_z = _bld_h * 0.45
             from mathutils import Vector
             _tgt = Vector((_bx, _by, _bz + _pivot_z))
             _clip = max(5000, _target_dist * 10)
-            # Dramatic frames: scale with distance (far = more frames for smooth sweep)
-            _n_frames = max(15, min(45, int(_ap_dist / 30)))
+            # Frame count: nearby=15 (quick), far=45 (dramatic)
+            _n_frames = max(15, min(45, int(_ap_dist / 20)))
             for _area in _bpy.context.screen.areas:
                 if _area.type == 'VIEW_3D':
                     _r3d = _area.spaces[0].region_3d
                     _cur_loc = Vector(_r3d.view_location)
                     _cur_dist = _r3d.view_distance
                     _cur_rot = _r3d.view_rotation.copy()
-                    # Nice cinematic angle with slight random orbit
                     import random as _rnd
-                    _orb = _rnd.uniform(-0.12, 0.12)
+                    _orb = 0.0
                     _nice_rot = Quaternion((0.8460, 0.4404,
                                             -0.1389 + _orb, -0.2667 + _orb))
                     _nice_rot.normalize()
-                    global _anim_pan_frames
-                    _old_frames = _anim_pan_frames
-                    _anim_pan_frames = _n_frames
                     _start_anim_pan(_cur_loc, _tgt, _cur_dist, _target_dist, _clip,
-                                    _cur_rot, _nice_rot)
-                    _anim_pan_frames = _old_frames  # restore default
+                                    _cur_rot, _nice_rot, frames=_n_frames)
                     break
-            # Set as active so normal tick picks it up after animation
             bv._direct_stream_active_bld = _ap_best
             bv._direct_stream_last_bld = _ap_best
-            # Reset settle so the 5s doesn't re-trigger
             bv._direct_stream_cam_still_t = _now
             _ds_log(f"[S198] §DS_AUTOPILOT {_ap_best} dist={_ap_dist:.0f}m frames={_n_frames}")
             return 0.3  # let animation play
@@ -627,7 +638,7 @@ def _direct_stream_tick():
                         _dx, _dy, _dz = _ext_row
                         _bld_height = _dz or 10
                         _diag = math.sqrt(_dx**2 + _dy**2 + _dz**2)
-                        _target_dist = max(60, min(800, _diag * 1.2))
+                        _target_dist = max(60, min(600, max(_dz * 3.5, max(_dx, _dy) * 0.6)))
                 except Exception:
                     pass
                 _pivot_z_offset = _bld_height * 0.45
@@ -639,7 +650,7 @@ def _direct_stream_tick():
                 # Standard isometric: (0.8460, 0.4404, -0.1389, -0.2667)
                 # Offset by ~25° orbit for cinematic variety
                 import random as _rnd
-                _orbit_offset = _rnd.uniform(-0.12, 0.12)  # slight random orbit variety
+                _orbit_offset = 0.0  # slight random orbit variety
                 _nice_rot = Quaternion((0.8460, 0.4404,
                                         -0.1389 + _orbit_offset,
                                         -0.2667 + _orbit_offset))
@@ -672,30 +683,12 @@ def _direct_stream_tick():
                 _oz = _off2.z if _off2 else 0.0
                 bv._direct_stream_cam_last = (_bx + _ox, _by + _oy, _bz + _pivot_z_offset + _oz)
                 bv._direct_stream_cam_still_t = _now
-                _ds_log(f"[S195] §DS_FLY {bld} centre=({_bx:.0f},{_by:.0f},{_bz:.0f}) "
-                      f"dist={_target_dist:.0f}m height={_bld_height:.0f}m")
-            # S197: query total unique hashes for progress tracking (non-blocking)
-            if bv._library_db_cache and bv._db_path_cache:
-                try:
-                    _ptconn = sqlite3.connect(bv._db_path_cache)
-                    _bc2 = "m.building = ? AND" if bv._has_building_column else ""
-                    _bp2 = (bld,) if bv._has_building_column else ()
-                    _hash_count = _ptconn.execute(f"""
-                        SELECT COUNT(DISTINCT i.geometry_hash)
-                        FROM elements_meta m
-                        JOIN element_instances i ON m.guid = i.guid
-                        WHERE {_bc2} i.geometry_hash IS NOT NULL
-                    """, _bp2).fetchone()[0]
-                    _ptconn.close()
-                    _already_count = sum(1 for h in _bpy.data.meshes if True)  # total meshes in scene
-                    print(f"[S195] §TESS_INFO {bld} unique_hashes={_hash_count:,} "
-                          f"(tessellated incrementally per tick)")
-                except Exception as _pe:
-                    print(f"[S195] §TESS_INFO WARN: {_pe}")
-            # No blocking pre-tessellation — ensure_meshes handles it per tick
-            # S198: let fly-to animation play before streaming starts
+                _ds_log(f"[S198] §DS_FLY {bld} centre=({_bx:.0f},{_by:.0f},{_bz:.0f}) "
+                      f"dist={_target_dist:.0f}m anim={_anim_pan_active} frames={_anim_pan_frames}")
+            # S198: let fly-to animation play before streaming starts — return IMMEDIATELY
             if _anim_pan_active:
-                return 0.3
+                _ds_log(f"[S198] §DS_FLY_HOLD — animation active, deferring stream")
+                return 0.1
         # S198: use building's current phase (envelope for new, shell if transitioned)
         phase = bv._direct_stream_disc_phase.get(bld, 'envelope')
 
@@ -1372,8 +1365,8 @@ class FedRTreeCinematic(bpy.types.Operator):
         bg_n = nodes.new('ShaderNodeBackground')
         sky_n = nodes.new('ShaderNodeTexSky')
         sky_n.sky_type = 'HOSEK_WILKIE'
-        sky_n.sun_direction = (0.5, -0.6, 0.62)  # ~35° elevation, slight west
-        bg_n.inputs['Strength'].default_value = 1.2
+        sky_n.sun_direction = (0.4, -0.5, 0.76)  # higher sun — softer shadows
+        bg_n.inputs['Strength'].default_value = 0.8  # subtle sky, not overpowering
         links.new(sky_n.outputs['Color'], bg_n.inputs['Color'])
         links.new(bg_n.outputs['Background'], out_n.inputs['Surface'])
 
@@ -1384,16 +1377,16 @@ class FedRTreeCinematic(bpy.types.Operator):
             sun_data = _bpy.data.lights.new(sun_name, 'SUN')
             sun_obj = _bpy.data.objects.new(sun_name, sun_data)
             context.scene.collection.objects.link(sun_obj)
-        sun_obj.data.energy = 3.0
-        sun_obj.data.color = (1.0, 0.95, 0.9)  # warm daylight
-        sun_obj.rotation_euler = (math.radians(55), 0, math.radians(220))
+        sun_obj.data.energy = 1.2  # soft — light shadows, not black
+        sun_obj.data.color = (0.95, 0.95, 1.0)  # cool daylight
+        sun_obj.data.angle = math.radians(5)  # spread sun disc — softer shadow edges
+        sun_obj.rotation_euler = (math.radians(50), 0, math.radians(200))
 
-        # ── 4. Ground plane at Z=0 ──
+        # ── 4. Ground plane for shadow catching ──
         ground_name = "DS_Ground"
         ground_obj = _bpy.data.objects.get(ground_name)
         if not ground_obj:
-            # Size: span all buildings + margin
-            _extent = 500  # default
+            _extent = 500
             if bv._building_centres:
                 _all_x = [c[0] for c in bv._building_centres.values()]
                 _all_y = [c[1] for c in bv._building_centres.values()]
@@ -1402,31 +1395,45 @@ class FedRTreeCinematic(bpy.types.Operator):
             _bpy.ops.mesh.primitive_plane_add(size=_extent * 2)
             ground_obj = context.active_object
             ground_obj.name = ground_name
-            # Position at Z=0, centred on buildings
             if bv._building_centres and bv._model_offset:
                 _avg_x = sum(c[0] for c in bv._building_centres.values()) / len(bv._building_centres)
                 _avg_y = sum(c[1] for c in bv._building_centres.values()) / len(bv._building_centres)
                 _off = bv._model_offset
                 ground_obj.location = (_avg_x - _off.x, _avg_y - _off.y, -0.1 - _off.z)
-        # Ground material — subtle grey-green
+            # Deselect so yellow selection box doesn't show
+            ground_obj.select_set(False)
+            context.view_layer.objects.active = None
+        # Patchy dark earth — noise texture into ColorRamp (green↔brown)
         mat_name = "DS_Ground_Mat"
         mat = _bpy.data.materials.get(mat_name)
         if not mat:
             mat = _bpy.data.materials.new(mat_name)
             mat.use_nodes = True
-            mat_nodes = mat.node_tree.nodes
-            mat_nodes.clear()
-            out_m = mat_nodes.new('ShaderNodeOutputMaterial')
-            bsdf = mat_nodes.new('ShaderNodeBsdfPrincipled')
-            bsdf.inputs['Base Color'].default_value = (0.35, 0.42, 0.30, 1.0)
-            bsdf.inputs['Roughness'].default_value = 0.9
-            mat.node_tree.links.new(bsdf.outputs['BSDF'], out_m.inputs['Surface'])
+            _mn = mat.node_tree.nodes
+            _ml = mat.node_tree.links
+            _mn.clear()
+            out_m = _mn.new('ShaderNodeOutputMaterial')
+            bsdf = _mn.new('ShaderNodeBsdfPrincipled')
+            bsdf.inputs['Roughness'].default_value = 0.95
+            # Noise → ColorRamp (dark green to dark brown)
+            noise = _mn.new('ShaderNodeTexNoise')
+            noise.inputs['Scale'].default_value = 0.4
+            noise.inputs['Detail'].default_value = 6.0
+            noise.inputs['Roughness'].default_value = 0.8
+            ramp = _mn.new('ShaderNodeValToRGB')
+            ramp.color_ramp.elements[0].position = 0.3
+            ramp.color_ramp.elements[0].color = (0.12, 0.18, 0.08, 1.0)  # dark moss
+            ramp.color_ramp.elements[1].position = 0.7
+            ramp.color_ramp.elements[1].color = (0.22, 0.15, 0.08, 1.0)  # dark earth
+            _ml.new(noise.outputs['Fac'], ramp.inputs['Fac'])
+            _ml.new(ramp.outputs['Color'], bsdf.inputs['Base Color'])
+            _ml.new(bsdf.outputs['BSDF'], out_m.inputs['Surface'])
         if not ground_obj.data.materials:
             ground_obj.data.materials.append(mat)
         else:
             ground_obj.data.materials[0] = mat
 
-        # ── 5. Switch viewport to Material Preview or Rendered ──
+        # ── 5. Switch viewport to Material Preview ��─
         for area in context.screen.areas:
             if area.type == 'VIEW_3D':
                 space = area.spaces[0]
